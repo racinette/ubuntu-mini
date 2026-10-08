@@ -1,0 +1,44 @@
+# Private runtime state and host tooling
+.local/
+.aws/
+.codex/
+.agents/
+credentials.json
+.env
+.env.*
+!.env.example
+id_rsa
+id_ed25519
+*.key
+*.p12
+*.pfx
+
+# Python and editor output
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Downloaded applications, installation media and VM images
+*.iso
+assets/
+*.snap
+*.deb
+*.qcow2
+*.img
+*.raw
+*.vdi
+*.vmdk
+*.tar
+*.tar.gz
+*.tar.xz
+*.tgz
+*.zip
+
+# Generated logs
+*.log

@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+# The forking unit waits for swaylock's ready notification, before suspension.
+# Its hooks release mapped keys before lock and resume mapping after unlock.
+exec systemctl --user start mini-os-screen-lock.service

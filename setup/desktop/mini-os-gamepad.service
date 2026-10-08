@@ -1,0 +1,10 @@
+[Unit]
+Description=Mini OS gamepad desktop navigation
+PartOf=mini-os-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=/usr/local/bin/mini-os-gamepad
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=3

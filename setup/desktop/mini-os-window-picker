@@ -1,0 +1,54 @@
+#!/usr/bin/python3
+"""Choose an existing Sway window using the desktop's Fuzzel picker."""
+import fcntl
+import json
+import os
+from pathlib import Path
+import subprocess
+
+
+def windows(node, workspace=''):
+    if node.get('type') == 'workspace':
+        workspace = node['name']
+    result = []
+    if node.get('app_id') or node.get('window'):
+        app = node.get('app_id') or node.get('window_properties', {}).get('class') or 'Application'
+        title = node.get('name') or app
+        # Treat titles as plain labels, never commands or Fuzzel icon directives.
+        label = ' '.join(f'[{workspace}] {app}: {title}'.split()).replace('\0', '')
+        result.append((int(node['id']), label, node.get('focused', False)))
+    for child in node.get('nodes', []) + node.get('floating_nodes', []):
+        result.extend(windows(child, workspace))
+    return result
+
+
+def main():
+    if os.geteuid() == 0 or not os.environ.get('SWAYSOCK'):
+        raise SystemExit('Run the window picker inside your normal Sway session')
+    lock_path = Path(os.environ['XDG_RUNTIME_DIR']) / 'mini-os-window-picker.lock'
+    with lock_path.open('w') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return
+        tree = json.loads(subprocess.check_output(['swaymsg', '-r', '-t', 'get_tree'], text=True))
+        entries = sorted(windows(tree), key=lambda entry: not entry[2])
+        if not entries:
+            return
+        result = subprocess.run(['fuzzel', '--dmenu', '--index', '--layer=overlay', '--prompt=Windows > ',
+                                 '--width=60', '--lines=' + str(min(10, len(entries)))],
+                                input='\n'.join(entry[1] for entry in entries) + '\n',
+                                text=True, capture_output=True)
+        if result.returncode:
+            return  # Escape/cancel leaves the current window selected.
+        selection = result.stdout.strip()
+        if not selection.isdecimal() or not 0 <= int(selection) < len(entries):
+            raise SystemExit('Window picker returned an invalid selection')
+        target = entries[int(selection)][0]
+        response = json.loads(subprocess.check_output(['swaymsg', '-r', f'[con_id={target}] focus'], text=True))
+        if not all(item.get('success') for item in response):
+            raise SystemExit('The selected window is no longer available')
+
+
+if __name__ == '__main__':
+    main()

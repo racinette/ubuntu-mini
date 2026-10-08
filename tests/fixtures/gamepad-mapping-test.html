@@ -1,0 +1,41 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Mini OS controller navigation test</title>
+<style>
+body{font:20px sans-serif;margin:2em;background:#151820;color:#eee}
+textarea{font:22px monospace;width:90%;height:4em}button{font:20px sans-serif;padding:.6em}
+pre{font:15px monospace;white-space:pre-wrap}
+</style>
+<h1>Controller navigation</h1>
+<p>Triggers hold Shift/Ctrl. Face buttons and D-pad navigate this application.</p>
+<textarea id="editor" autofocus></textarea>
+<p><button id="next">Next focus target</button></p>
+<pre id="output"></pre>
+<script>
+const events=[]; let command=0;
+for(const type of ["keydown","keyup"]){
+  addEventListener(type,e=>{
+    events.push({type,key:e.key,code:e.code,shift:e.shiftKey,ctrl:e.ctrlKey,repeat:e.repeat});
+    if(events.length>120) events.shift();
+  });
+}
+const editor=document.querySelector("#editor");
+setInterval(async()=>{
+  const cmd=await (await fetch("/command")).json();
+  if(cmd.id!==command){
+    command=cmd.id;
+    if(cmd.clear) events.length=0;
+    if(cmd.text!==undefined) editor.value=cmd.text;
+    if(cmd.focus) document.getElementById(cmd.focus).focus();
+    if(cmd.selection) editor.setSelectionRange(...cmd.selection);
+  }
+  const pads=Array.from(navigator.getGamepads?.()||[]).filter(Boolean).map(p=>({
+    id:p.id,buttons:p.buttons.map(b=>({pressed:b.pressed,value:b.value})),axes:Array.from(p.axes)
+  }));
+  const state={focused:document.hasFocus(),target:document.activeElement.id,text:editor.value,
+    selection:[editor.selectionStart,editor.selectionEnd],events,pads,command};
+  document.querySelector("#output").textContent=JSON.stringify({target:state.target,
+    selection:state.selection,events:events.slice(-8)},null,2);
+  await fetch("/state",{method:"POST",body:JSON.stringify(state)});
+},80);
+</script>

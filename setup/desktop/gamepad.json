@@ -1,0 +1,110 @@
+{
+  "device": {},
+  "buttons": {
+    "BTN_SOUTH": "KEY_ENTER",
+    "BTN_EAST": "KEY_ESC",
+    "BTN_WEST": "KEY_BACKSPACE",
+    "BTN_NORTH": "KEY_TAB"
+  },
+  "actions": {
+    "BTN_START": "terminal",
+    "BTN_SELECT": "window_picker",
+    "BTN_MODE": "launcher",
+    "BTN_THUMBL": "layout",
+    "BTN_THUMBR": "fullscreen"
+  },
+  "dpad": {
+    "ABS_HAT0X": [
+      "KEY_LEFT",
+      "KEY_RIGHT"
+    ],
+    "ABS_HAT0Y": [
+      "KEY_UP",
+      "KEY_DOWN"
+    ]
+  },
+  "left_stick": [
+    "ABS_X",
+    "ABS_Y"
+  ],
+  "right_stick": [
+    "ABS_RX",
+    "ABS_RY"
+  ],
+  "shift_trigger": "ABS_Z",
+  "ctrl_trigger": "ABS_RZ",
+  "previous_bumper": "BTN_TL",
+  "next_bumper": "BTN_TR",
+  "toggle_buttons": [
+    "BTN_SELECT",
+    "BTN_START"
+  ],
+  "workspace_numbers": [
+    1,
+    2,
+    3,
+    4
+  ],
+  "stick_press": 0.55,
+  "stick_release": 0.35,
+  "trigger_press": 0.55,
+  "trigger_release": 0.35,
+  "repeat_delay": 0.45,
+  "repeat_interval": 0.18,
+  "resize_step": 5,
+  "toggle_hold": 0.75,
+  "chord_axes": [
+    "ABS_HAT0X",
+    "ABS_HAT0Y"
+  ],
+  "chords": {
+    "UP+X": "KEY_T",
+    "UP+Y": "KEY_E",
+    "UP+B": "KEY_R",
+    "UP+A": "KEY_O",
+    "LEFT+X": "KEY_A",
+    "LEFT+Y": "KEY_S",
+    "LEFT+B": "KEY_I",
+    "LEFT+A": "KEY_N",
+    "RIGHT+X": "KEY_L",
+    "RIGHT+Y": "KEY_D",
+    "RIGHT+B": "KEY_C",
+    "RIGHT+A": "KEY_F",
+    "DOWN+X": "KEY_M",
+    "DOWN+Y": "KEY_H",
+    "DOWN+B": "KEY_U",
+    "DOWN+A": "KEY_SPACE",
+    "UP+LEFT": "KEY_9",
+    "UP+RIGHT": "KEY_0",
+    "DOWN+LEFT": "KEY_MINUS",
+    "DOWN+RIGHT": "KEY_APOSTROPHE",
+    "X+Y": "KEY_COMMA",
+    "Y+B": "KEY_DOT",
+    "X+A": "KEY_SEMICOLON",
+    "A+B": "KEY_EQUAL",
+    "UP+LEFT+X": "KEY_LEFTBRACE",
+    "UP+LEFT+Y": "KEY_P",
+    "UP+LEFT+B": "KEY_G",
+    "UP+LEFT+A": "KEY_W",
+    "UP+RIGHT+X": "KEY_Y",
+    "UP+RIGHT+Y": "KEY_B",
+    "UP+RIGHT+B": "KEY_RIGHTBRACE",
+    "UP+RIGHT+A": "KEY_V",
+    "DOWN+LEFT+X": "KEY_1",
+    "DOWN+LEFT+Y": "KEY_2",
+    "DOWN+LEFT+B": "KEY_3",
+    "DOWN+LEFT+A": "KEY_4",
+    "DOWN+RIGHT+X": "KEY_5",
+    "DOWN+RIGHT+Y": "KEY_6",
+    "DOWN+RIGHT+B": "KEY_K",
+    "DOWN+RIGHT+A": "KEY_X",
+    "LEFT+X+Y": "KEY_7",
+    "RIGHT+Y+B": "KEY_8",
+    "UP+X+Y": "KEY_Q",
+    "UP+Y+B": "KEY_J",
+    "DOWN+X+A": "KEY_GRAVE",
+    "DOWN+A+B": "KEY_BACKSLASH",
+    "LEFT+X+A": "KEY_Z",
+    "RIGHT+A+B": "KEY_SLASH"
+  }
+}

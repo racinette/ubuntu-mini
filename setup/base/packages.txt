@@ -1,0 +1,12 @@
+linux-generic-hwe-24.04
+linux-firmware
+amd64-microcode
+libgl1-mesa-dri
+libegl-mesa0
+mesa-vulkan-drivers
+mesa-va-drivers
+mesa-utils
+alsa-ucm-conf
+alsa-utils
+snapd
+netplan.io

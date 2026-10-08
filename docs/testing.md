@@ -1,0 +1,146 @@
+# Testing setup and desktop behavior
+
+Tests run independently of device setup. Host checks use isolated commands or mapper frames. VM checks exercise the installed system through guest SSH and real keyboard/controller events. All runtime images, credentials, reports and screenshots remain under ignored `.local/`.
+
+## Host checks
+
+Run from the repository root:
+
+```bash
+python3 tests/check-setup-layout.py
+python3 tests/check-browser-download-mode.py
+python3 tests/check-chord-recognizer.py
+```
+
+The setup check verifies the root entry point, source staging and coordinator paths without installing packages. The browser check isolates Snap command selection and existing-browser retention. The chord check exercises all 960 press/release orders and all 48 late Shift/Ctrl combinations, plus invalid/reserved/rolling gestures and reset. It creates no host input device and reads Linux key codes from `/usr/include/linux/input-event-codes.h`.
+
+## VM host requirements
+
+On an Ubuntu host:
+
+```bash
+sudo apt-get install --no-install-recommends \
+  qemu-system-x86 qemu-system-gui qemu-utils ovmf \
+  cpu-checker openssh-client python3-pil sbsigntool
+kvm-ok
+test -r /dev/kvm && test -w /dev/kvm && echo 'KVM accessible'
+python3 tests/probe-host.py
+```
+
+QEMU runs as the ordinary host user. That user needs read/write access to `/dev/kvm`. The probe launches a diskless KVM/UEFI guest and shuts it down after inspecting QMP. An agent running in a sandbox may also need approved host execution for KVM, network sockets and QMP; filesystem access alone is insufficient.
+
+Place `ubuntu-24.04.5-live-server-amd64.iso` in the repository root. The launcher verifies SHA-256 `97f3d7ffb032c3eb3b23d2c8be9cc76e60c2c1f2c0146ba5ba9fe01cafae0fd8`. Installation media is ignored by Git. Start the [local mirror](local-mirror.md) and prepare its caches before repeated setup runs.
+
+## Create a manual installation fixture
+
+```bash
+python3 tests/vm.py prepare --secure-boot
+```
+
+Set `VM_DIR` to the printed directory, then launch:
+
+```bash
+VM_DIR=.local/vm/storage-server-EXAMPLE
+python3 tests/vm.py launch "$VM_DIR" install --window
+```
+
+Preparation creates a blank 80 GiB virtual disk, private firmware variables, an SSH key and `credentials.json`. Read that private file locally and use its account password and disk passphrase during manual Ubuntu installation. Set the hostname to `mini-os-vm`, the account to `vmuser`, choose encryption, and install OpenSSH. Use the local archive mirror URL from [mirror instructions](local-mirror.md). The launcher supplies no Autoinstall configuration and does not choose partitions.
+
+After installation, boot without the ISO using `launch ... boot --window`. In the guest, add the host fixture's `ssh-key.pub` contents to `/home/vmuser/.ssh/authorized_keys`; set the directory to mode 700 and the file to 600. Use `tests/vm.py ssh "$VM_DIR" vmuser 'true'` to verify access. Guest SSH uses a loopback port recorded in `state.json`.
+
+Cold-boot tests require disk unlock and login prompts on the serial console. Inside this test VM, add:
+
+```bash
+sudo mkdir -p /etc/default/grub.d
+sudo tee /etc/default/grub.d/99-mini-os-vm.cfg >/dev/null <<'CONFIG'
+GRUB_CMDLINE_LINUX="$GRUB_CMDLINE_LINUX console=tty0 console=ttyS0,115200n8"
+CONFIG
+sudo update-grub
+sudo apt-get install -y mokutil efibootmgr
+```
+
+Configure both APT archive/security URIs to use the local mirror, then shut down the guest normally. Keep this unconfigured Server image as the baseline. Existing project fixtures remain usable; their backing images and private runtime files must stay in place.
+
+## Test setup from sources
+
+Create a writable branch of a stopped Server baseline; the baseline is checked and made read-only:
+
+```bash
+python3 tests/vm.py branch "$SERVER_VM" --secure-boot
+# Set VM_DIR to the new directory printed above.
+python3 tests/vm.py launch "$VM_DIR" boot --setup-assets --window
+python3 tests/check-boot-authentication.py "$VM_DIR"
+python3 tests/check-post-install-setup.py "$VM_DIR"
+```
+
+`SERVER_VM` is the manually installed baseline directory. The setup checker copies the root `setup.sh` and `setup/` directly into the guest. It checks invalid-account/missing-cache refusals, read-only preflight, configuration backup, unchanged GPT geometry and deferred networking/login activation. It installs through the explicitly shared read-only cache. No source or binary archive is built.
+
+Before graphical checks, add fixture-only settings inside the guest:
+
+```bash
+sudo tee /etc/mini-os/vm-environment >/dev/null <<'CONFIG'
+export WLR_RENDERER=pixman
+export WLR_NO_HARDWARE_CURSORS=1
+CONFIG
+mkdir -p ~/.config/sway
+cat > ~/.config/sway/mini-os.conf <<'CONFIG'
+input type:keyboard {
+    xkb_layout us,ru
+    xkb_options grp:alt_shift_toggle
+}
+CONFIG
+sudo poweroff
+```
+
+These software-rendering and language settings support the GUI tests and are not device defaults. Launch again, then run:
+
+```bash
+python3 tests/vm.py launch "$VM_DIR" boot --setup-assets --audio
+python3 tests/check-boot-authentication.py "$VM_DIR"
+python3 tests/check-login.py "$VM_DIR"
+python3 tests/check-desktop-state.py "$VM_DIR"
+python3 tests/check-secure-boot.py "$VM_DIR"
+python3 tests/check-shell-editing.py "$VM_DIR"
+python3 tests/check-browser.py "$VM_DIR"
+python3 tests/check-history.py "$VM_DIR"
+python3 tests/check-lock.py "$VM_DIR"
+python3 tests/check-idle.py "$VM_DIR"
+python3 tests/check-suspend.py "$VM_DIR"
+```
+
+Run GUI checks while signed in and unlocked. The idle/suspend checks deliberately lock the desktop. History testing temporarily disconnects virtual networking and then restores it. Reports are written beside the VM disk. Shut down normally, run `qemu-img check` on the stopped disk, and retain the reports with that source revision.
+
+For setup reruns, run `check-post-install-setup.py "$VM_DIR" --rerun`; it tests retained personal settings and forces a real signed browser reinstall in this disposable guest. A source-only Git-clone rerun is available through `check-source-setup.py` on a branch of a passed setup VM. That checker intentionally downloads shell assets from upstream, so it does not measure local-cache reuse. `check-history-after-boot.py` checks persistence of a passing history test across a later reboot.
+
+## Gamepad tests
+
+Use a new branch of a passed desktop setup VM:
+
+```bash
+python3 tests/vm.py branch "$DESKTOP_VM" --secure-boot
+# Set VM_DIR to the printed branch directory.
+python3 tests/vm.py launch "$VM_DIR" boot
+python3 tests/check-boot-authentication.py "$VM_DIR"
+python3 tests/check-gamepad-mapping.py "$VM_DIR" --prepare
+```
+
+Preparation reapplies current setup sources through the local mirror and checks preserved settings/GPT and source hashes. Shut down and cold boot before testing the installed revision, then run:
+
+```bash
+python3 tests/check-boot-authentication.py "$VM_DIR"
+python3 tests/check-login.py "$VM_DIR"
+python3 tests/check-virtual-gamepad.py "$VM_DIR"
+python3 tests/check-gamepad-mapping.py "$VM_DIR"
+```
+
+The synthetic controller is created inside the guest. Mapping tests exercise real Firefox input, all assigned chords with normal/Shift output, constituent suppression, late modifiers, Sway focus/move/resize/workspaces, picker/launcher, passthrough, reconnect, lock, inactive-console and restart behavior. The test removes its controller and HTTP service afterward. Physical trigger axes, adjacent presses and comfort remain device checks.
+
+## Recorded results and current limits
+
+Previous standalone setup runs passed clean Server provisioning, reruns, personal-setting preservation, configuration backups, unchanged GPT geometry, cold boot, graphical login, desktop services, shell editing/local history and real signed Firefox installation through the cache. The source-clone rerun passed real upstream shell downloads while retaining an existing browser. [Standalone summary](../.local/vm/post-install-setup-summary.json), [source-clone report](../.local/vm/storage-desktop-69unztc4/source-setup-report.json).
+
+Signed boot and kernel lockdown passed before/after maintenance; earlier experiments also observed rejection of unsigned EFI code and a signature-stripped kernel. Maintenance retained the same kernel version. The automated installation/storage experiments have been removed from the source tree; those historical results do not describe a current automated device installer. [Signed boot report](../.local/vm/storage-desktop-zm9c2afx/secure-boot-boot-report.json).
+
+The retained chord VM passed 25 acceptance groups and 96 character cases covering 95 printable ASCII characters. Its layout predates the current frequency-based assignments. The current layout passed the host frame checker; its revised assignments still need a fresh VM run. [Gamepad acceptance summary](../.local/vm/gamepad-chords-summary.json), [mapping report](../.local/vm/storage-desktop-zm9c2afx/gamepad-mapping-report.json).
+
+These records describe the sources installed at the time of each run. The reorganized source tree and simplified manual-install launcher have host checks; a fresh complete VM installation has not been repeated after restructuring. Fresh Snap Store installation, a different-kernel update, screen sharing and physical hardware acceptance remain in the [validation plan](validation-plan.md).

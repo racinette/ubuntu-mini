@@ -1,0 +1,19 @@
+#!/bin/sh
+set -eu
+export XDG_CURRENT_DESKTOP=sway
+export XDG_SESSION_DESKTOP=sway
+export XDG_SESSION_TYPE=wayland
+# Only VM profiles set a software renderer. Device sessions use driver defaults.
+if [ -f /etc/mini-os/vm-environment ]; then
+    . /etc/mini-os/vm-environment
+fi
+test -S "${XDG_RUNTIME_DIR:?PAM must create the user runtime directory}/bus"
+xdg-user-dirs-update
+config="${XDG_CONFIG_HOME:-$HOME/.config}/sway/config"
+if [ ! -f "$config" ]; then config=/etc/mini-os/sway.conf; fi
+cleanup() {
+    systemctl --user stop mini-os-session.target graphical-session.target || true
+    systemctl --user unset-environment WAYLAND_DISPLAY DISPLAY SWAYSOCK I3SOCK XDG_CURRENT_DESKTOP XDG_SESSION_TYPE XDG_SESSION_DESKTOP || true
+}
+trap cleanup EXIT
+sway --config "$config"

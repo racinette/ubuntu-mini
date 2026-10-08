@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+printf '{"version":1}\n[\n'
+while :; do
+    printf '[{"full_text":"%s"}],\n' "$(date '+%a %d %b %H:%M')"
+    sleep 30
+done

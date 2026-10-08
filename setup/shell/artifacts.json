@@ -1,0 +1,14 @@
+{
+  "atuin": {
+    "version": "18.23.0",
+    "filename": "atuin-18.23.0-amd64.tar.gz",
+    "sha256": "d1b40dd6e7cd3d823867ffe22b39a025bc420f7875926ae9ca974155378da14d",
+    "url": "https://github.com/atuinsh/atuin/releases/download/v18.23.0/atuin-x86_64-unknown-linux-musl.tar.gz"
+  },
+  "ble": {
+    "version": "0.4 nightly 2026-09-08",
+    "filename": "ble-2026-09-08.tar.xz",
+    "sha256": "1b9b78ea0633ac331df150bf178fcf86210ce5916db54fb713252a51cd67cb97",
+    "url": "https://github.com/akinomyoga/ble.sh/releases/download/nightly/ble-nightly.tar.xz"
+  }
+}

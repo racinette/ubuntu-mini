@@ -1,0 +1,606 @@
+#!/usr/bin/python3
+"""Session-scoped gamepad keyboard and Sway navigation, with explicit passthrough."""
+import argparse
+from collections import deque
+import ctypes
+import fcntl
+import json
+import logging
+import os
+from pathlib import Path
+import select
+import signal
+import socket
+import struct
+import subprocess
+import time
+
+log = logging.getLogger('mini-os-gamepad')
+
+ACTION_COMMANDS = {
+    'terminal': 'exec foot',
+    'window_picker': 'exec mini-os-window-picker',
+    'launcher': 'exec fuzzel --layer=overlay',
+    'layout': 'layout toggle tabbed split',
+    'fullscreen': 'fullscreen toggle',
+}
+
+FACE_NAMES = {'A': 'BTN_SOUTH', 'B': 'BTN_EAST', 'X': 'BTN_WEST', 'Y': 'BTN_NORTH'}
+DIRECTION_PAIRS = ({'UP', 'LEFT'}, {'UP', 'RIGHT'}, {'DOWN', 'LEFT'}, {'DOWN', 'RIGHT'})
+FACE_PAIRS = ({'X', 'Y'}, {'Y', 'B'}, {'B', 'A'}, {'A', 'X'})
+
+
+def chord_tokens(name):
+    tokens = name.split('+')
+    directions = set(tokens) & {'UP', 'DOWN', 'LEFT', 'RIGHT'}
+    faces = set(tokens) & set(FACE_NAMES)
+    if (len(set(tokens)) != len(tokens) or set(tokens) != directions | faces
+            or len(directions) > 2 or len(faces) > 2
+            or len(directions) == 2 and directions not in DIRECTION_PAIRS
+            or len(faces) == 2 and faces not in FACE_PAIRS
+            or len(tokens) < 2):
+        raise ValueError('Invalid typing chord: ' + name)
+    return frozenset(tokens)
+
+
+class ReleaseGesture:
+    """Latch overlapping controls, then commit once all have been released."""
+    def __init__(self):
+        self.clear()
+
+    def clear(self):
+        self.previous = frozenset()
+        self.peak = frozenset()
+        self.releasing = False
+        self.invalid = False
+
+    def update(self, held):
+        held = frozenset(held)
+        if self.previous - held:
+            self.releasing = True
+        # A newly pressed control during release must not create a phantom chord.
+        if self.releasing and held - self.previous:
+            self.invalid = True
+        if not self.releasing:
+            self.peak = held
+        self.previous = held
+        if held:
+            return None
+        result = self.peak if not self.invalid else frozenset()
+        self.clear()
+        return result or None
+
+
+def runtime():
+    path = Path(os.environ['XDG_RUNTIME_DIR']) / 'mini-os-gamepad'
+    path.mkdir(mode=0o700, exist_ok=True)
+    if path.is_symlink() or path.stat().st_uid != os.getuid():
+        raise ValueError('Gamepad runtime directory must belong to the session user')
+    path.chmod(0o700)
+    return path
+
+
+def ipc(message, message_type=0):
+    with socket.socket(socket.AF_UNIX) as sock:
+        sock.settimeout(2)
+        sock.connect(os.environ['SWAYSOCK'])
+        data = message.encode()
+        sock.sendall(b'i3-ipc' + struct.pack('<II', len(data), message_type) + data)
+
+        def receive(size):
+            data = b''
+            while len(data) < size:
+                chunk = sock.recv(size - len(data))
+                if not chunk:
+                    raise EOFError('Sway disconnected')
+                data += chunk
+            return data
+
+        header = receive(14)
+        if header[:6] != b'i3-ipc':
+            raise ValueError('Unexpected Sway response')
+        length, _ = struct.unpack('<II', header[6:])
+        return json.loads(receive(length))
+
+
+class Session:
+    """libsystemd reads logind session state without spawning periodic processes."""
+    def __init__(self):
+        self.lib = ctypes.CDLL('libsystemd.so.0')
+        self.lib.sd_uid_get_display.argtypes = [ctypes.c_uint, ctypes.POINTER(ctypes.c_void_p)]
+        self.lib.sd_session_is_active.argtypes = [ctypes.c_void_p]
+        self.free = ctypes.CDLL(None).free
+        self.free.argtypes = [ctypes.c_void_p]
+
+    def active(self):
+        pointer = ctypes.c_void_p()
+        if self.lib.sd_uid_get_display(os.getuid(), ctypes.byref(pointer)) < 0:
+            return False
+        try:
+            return self.lib.sd_session_is_active(pointer) > 0
+        finally:
+            self.free(pointer)
+
+
+def configuration(path, codes):
+    config = json.loads(Path('/etc/mini-os/gamepad.json').read_text())
+    override = Path(path) if path else Path.home() / '.config/mini-os/gamepad.json'
+    if override.exists():
+        changes = json.loads(override.read_text())
+        if not isinstance(changes, dict) or set(changes) - set(config):
+            raise ValueError('Unknown gamepad profile setting')
+        config.update(changes)
+    for prefix in ('stick', 'trigger'):
+        if not 0 <= config[prefix + '_release'] < config[prefix + '_press'] <= 1:
+            raise ValueError('Invalid ' + prefix + ' thresholds')
+    for name in ('repeat_delay', 'repeat_interval', 'toggle_hold'):
+        if not .05 <= config[name] <= 10:
+            raise ValueError('Invalid ' + name)
+    if not isinstance(config['resize_step'], int) or not 1 <= config['resize_step'] <= 25:
+        raise ValueError('Invalid resize_step')
+    numbers = config['workspace_numbers']
+    if not numbers or len(set(numbers)) != len(numbers) or any(type(n) is not int or not 1 <= n <= 1000 for n in numbers):
+        raise ValueError('workspace_numbers must contain unique positive numbers')
+    if not isinstance(config['device'], dict) or set(config['device']) - {'name', 'vendor', 'product'}:
+        raise ValueError('device supports name, vendor and product selectors')
+    if len(config['toggle_buttons']) != 2:
+        raise ValueError('toggle_buttons requires two buttons')
+    for name in ('left_stick', 'right_stick'):
+        if len(config[name]) != 2:
+            raise ValueError(name + ' requires two axes')
+
+    def code(name, prefix):
+        if not isinstance(name, str) or not name.startswith(prefix) or name not in codes.ecodes:
+            raise ValueError('Unknown input symbol: ' + str(name))
+        return codes.ecodes[name]
+
+    config['buttons'] = {code(k, 'BTN_'): code(v, 'KEY_') for k, v in config['buttons'].items()}
+    config['actions'] = {code(k, 'BTN_'): v for k, v in config['actions'].items()}
+    if any(v not in ACTION_COMMANDS for v in config['actions'].values()):
+        raise ValueError('Unknown desktop button action')
+    config['dpad'] = {code(k, 'ABS_'): [code(v, 'KEY_') for v in values] for k, values in config['dpad'].items()}
+    if any(len(values) != 2 for values in config['dpad'].values()):
+        raise ValueError('Each D-pad axis needs negative and positive keys')
+    for name in ('left_stick', 'right_stick'):
+        config[name] = [code(v, 'ABS_') for v in config[name]]
+    for name in ('shift_trigger', 'ctrl_trigger'):
+        config[name] = code(config[name], 'ABS_')
+    for name in ('previous_bumper', 'next_bumper'):
+        config[name] = code(config[name], 'BTN_')
+    config['toggle_buttons'] = [code(v, 'BTN_') for v in config['toggle_buttons']]
+    config['chord_axes'] = [code(v, 'ABS_') for v in config['chord_axes']]
+    if len(config['chord_axes']) != 2 or len(set(config['chord_axes'])) != 2 or not set(config['chord_axes']) <= set(config['dpad']):
+        raise ValueError('chord_axes requires the horizontal and vertical D-pad axes')
+    chords = {}
+    for name, output in config['chords'].items():
+        tokens = chord_tokens(name)
+        if tokens in chords:
+            raise ValueError('Duplicate typing chord: ' + name)
+        chords[tokens] = code(output, 'KEY_')
+    config['chords'] = chords
+    config['chord_faces'] = {name: code(symbol, 'BTN_') for name, symbol in FACE_NAMES.items()}
+    if chords and not set(config['chord_faces'].values()) <= set(config['buttons']):
+        raise ValueError('Typing chords require all four face buttons in buttons')
+    action_keys = set(config['actions'])
+    bumpers = {config['previous_bumper'], config['next_bumper']}
+    if action_keys & set(config['buttons']) or bumpers & (action_keys | set(config['buttons'])):
+        raise ValueError('A button may have only one individual action')
+    if len(set(config['toggle_buttons'])) != 2 or len(bumpers) != 2:
+        raise ValueError('Toggle buttons and bumpers must be distinct pairs')
+    return config
+
+
+class Mapper:
+    def __init__(self, config, keyboard, codes, directory):
+        self.config, self.keyboard, self.e, self.directory = config, keyboard, codes, directory
+        self.device = None
+        self.grabbed = False
+        self.keys = set()
+        self.raw_keys = set()
+        self.raw_axes = {}
+        self.ranges = {}
+        self.triggers = [False, False]
+        self.sticks = [None, None]
+        self.next_repeat = [0, 0]
+        self.ready = False
+        self.running = True
+        self.chord_since = None
+        self.chord_consumed = False
+        self.chord_armed = False
+        self.pending_buttons = set()
+        self.text_gesture = ReleaseGesture()
+        self.unavailable_actions = []
+        self.actions = deque(maxlen=24)
+        self.reason = 'Waiting for a controller'
+        mode_path = directory / 'mode'
+        self.mode = mode_path.read_text().strip() if mode_path.exists() else 'desktop'
+        if self.mode not in ('desktop', 'passthrough'):
+            self.mode = 'desktop'
+
+    def write_keys(self, desired):
+        modifiers = {self.e.KEY_LEFTSHIFT, self.e.KEY_LEFTCTRL}
+        for key in sorted(self.keys - desired, key=lambda k: k in modifiers):
+            self.keyboard.write(self.e.EV_KEY, key, 0)
+        for key in sorted(desired - self.keys, key=lambda k: k not in modifiers):
+            self.keyboard.write(self.e.EV_KEY, key, 1)
+        if self.keys != desired:
+            self.keyboard.syn()
+        self.keys = set(desired)
+
+    def reset(self):
+        self.write_keys(set())
+        self.triggers = [False, False]
+        self.sticks = [None, None]
+        self.next_repeat = [0, 0]
+        self.ready = False
+        self.pending_buttons.clear()
+        self.text_gesture.clear()
+        self.chord_since = None
+        self.chord_consumed = self.chord_armed = False
+
+    def ungrab(self):
+        self.reset()
+        if self.grabbed:
+            try:
+                self.device.ungrab()
+            except OSError:
+                pass
+        self.grabbed = False
+
+    def detach(self):
+        self.ungrab()
+        if self.device:
+            self.device.close()
+        self.device = None
+        self.raw_keys.clear()
+        self.raw_axes.clear()
+
+    def attach(self, device):
+        self.device = device
+        self.ranges = {code: (info.min, info.max) for code, info in device.capabilities(absinfo=True).get(self.e.EV_ABS, [])}
+        available = set(device.capabilities(absinfo=False).get(self.e.EV_KEY, []))
+        self.unavailable_actions = [action for code, action in self.config['actions'].items() if code not in available]
+        self.resync()
+        log.info('Controller found: %s (%s)', device.name, device.path)
+
+    def resync(self):
+        self.reset()
+        self.raw_keys = set(self.device.active_keys())
+        self.raw_axes = {code: self.device.absinfo(code).value for code in self.ranges}
+
+    def axis(self, code, trigger=False):
+        low, high = self.ranges[code]
+        fraction = (self.raw_axes.get(code, low) - low) / (high - low)
+        return max(0, min(1, fraction)) if trigger else max(-1, min(1, fraction * 2 - 1))
+
+    def neutral(self):
+        return (not self.raw_keys and all(abs(self.axis(code)) < self.config['stick_release'] for code in
+                self.config['left_stick'] + self.config['right_stick'])
+                and all(self.axis(self.config[name], True) < self.config['trigger_release']
+                        for name in ('shift_trigger', 'ctrl_trigger'))
+                and all(not self.raw_axes.get(code, 0) for code in self.config['dpad']))
+
+    def toggle(self):
+        self.ungrab()
+        self.mode = 'passthrough' if self.mode == 'desktop' else 'desktop'
+        (self.directory / 'mode').write_text(self.mode + '\n')
+        log.info('Gamepad mode: %s', self.mode)
+        label = 'Desktop navigation enabled' if self.mode == 'desktop' else 'Normal gamepad input enabled'
+        subprocess.run(['notify-send', '-a', 'Mini OS', 'Gamepad controls', label], check=False)
+
+    def command(self, command):
+        try:
+            result = ipc(command)
+            passed = all(item.get('success') for item in result)
+            self.actions.append({'command': command, 'success': passed})
+            if not passed:
+                log.warning('Sway refused %s: %s', command, result)
+        except (OSError, ValueError, EOFError) as error:
+            log.warning('Sway command failed: %s', error)
+
+    def workspace(self, step):
+        current = next(w for w in ipc('', 1) if w['focused'])['num']
+        numbers = self.config['workspace_numbers']
+        target = numbers[(numbers.index(current) + step) % len(numbers)] if current in numbers else numbers[0 if step > 0 else -1]
+        command = 'move container to workspace number' if self.triggers[0] else 'workspace number'
+        self.command(f'{command} {target}')
+
+    def permitted(self, active):
+        return active and not (self.directory / 'paused').exists() and self.mode == 'desktop'
+
+    def button_gestures(self, pressed, released, now, active):
+        """Defer individual actions to release; consume overlapping toggle buttons."""
+        if not active or (self.directory / 'paused').exists():
+            self.pending_buttons.clear()
+            self.chord_since = None
+            self.chord_consumed = self.chord_armed = False
+            return
+        combo = set(self.config['toggle_buttons'])
+        desktop = self.permitted(active) and self.grabbed and self.ready
+        eligible = pressed if desktop else pressed & combo if self.mode == 'passthrough' else set()
+        if self.config['chords']:
+            eligible = eligible - set(self.config['chord_faces'].values())
+        self.pending_buttons.update(eligible)
+        held = combo & self.raw_keys
+        if held == combo and combo <= self.pending_buttons and not self.chord_consumed:
+            self.chord_since = now
+            self.chord_consumed = True
+        if self.chord_consumed:
+            self.pending_buttons.difference_update(combo)
+            if held != combo and self.chord_since is not None:
+                self.chord_armed = now - self.chord_since >= self.config['toggle_hold']
+                self.chord_since = None
+            if not held:
+                armed = self.chord_armed
+                self.chord_consumed = self.chord_armed = False
+                if armed:
+                    self.toggle()
+                    return
+        if desktop:
+            for button in sorted(released & self.pending_buttons):
+                if button in self.config['buttons']:
+                    key = self.config['buttons'][button]
+                    held_keys = set(self.keys)
+                    self.write_keys(held_keys | {key})
+                    self.write_keys(held_keys)
+                elif button == self.config['previous_bumper']:
+                    self.workspace(-1)
+                elif button == self.config['next_bumper']:
+                    self.workspace(1)
+                elif button in self.config['actions']:
+                    self.command(ACTION_COMMANDS[self.config['actions'][button]])
+        self.pending_buttons.difference_update(released)
+
+    def frame(self, pressed, released, now, active):
+        if not self.permitted(active) or not self.grabbed or not self.ready:
+            self.button_gestures(pressed, released, now, active)
+            return
+        for index, name in enumerate(('shift_trigger', 'ctrl_trigger')):
+            value = self.axis(self.config[name], True)
+            threshold = self.config['trigger_release' if self.triggers[index] else 'trigger_press']
+            self.triggers[index] = value > threshold
+        desired = set()
+        if not self.config['chords']:
+            for source, (negative, positive) in self.config['dpad'].items():
+                value = self.raw_axes.get(source, 0)
+                if value:
+                    desired.add(negative if value < 0 else positive)
+        if self.triggers[0]:
+            desired.add(self.e.KEY_LEFTSHIFT)
+        if self.triggers[1]:
+            desired.add(self.e.KEY_LEFTCTRL)
+        self.write_keys(desired)
+        if self.config['chords']:
+            self.typing_frame()
+        self.button_gestures(pressed, released, now, active)
+
+    def typing_frame(self):
+        held = {name for name, code in self.config['chord_faces'].items() if code in self.raw_keys}
+        horizontal, vertical = self.config['chord_axes']
+        for axis, negative, positive in ((horizontal, 'LEFT', 'RIGHT'), (vertical, 'UP', 'DOWN')):
+            value = self.raw_axes.get(axis, 0)
+            if value:
+                held.add(negative if value < 0 else positive)
+        gesture = self.text_gesture.update(held)
+        if gesture is None:
+            return
+        if len(gesture) == 1:
+            name = next(iter(gesture))
+            if name in FACE_NAMES:
+                key = self.config['buttons'][self.config['chord_faces'][name]]
+            else:
+                axis = horizontal if name in ('LEFT', 'RIGHT') else vertical
+                key = self.config['dpad'][axis][name in ('RIGHT', 'DOWN')]
+        else:
+            key = self.config['chords'].get(gesture)
+        if key is not None:
+            held_keys = set(self.keys)
+            self.write_keys(held_keys | {key})
+            self.write_keys(held_keys)
+
+    def tick(self, now, active):
+        if not self.device:
+            return
+        if not self.permitted(active):
+            self.button_gestures(set(), set(), now, active)
+            if self.grabbed or self.keys:
+                self.ungrab()
+            return
+        if not self.grabbed:
+            try:
+                self.device.grab()
+                self.grabbed = True
+                self.resync()
+            except OSError:
+                return
+        if not self.ready:
+            self.ready = self.neutral()
+            return
+        self.frame(set(), set(), now, active)
+        for index, name in enumerate(('left_stick', 'right_stick')):
+            x, y = (self.axis(code) for code in self.config[name])
+            magnitude = max(abs(x), abs(y))
+            if magnitude <= self.config['stick_release']:
+                self.sticks[index] = None
+                continue
+            direction = ('left' if x < 0 else 'right') if abs(x) >= abs(y) else ('up' if y < 0 else 'down')
+            fresh = direction != self.sticks[index] and magnitude >= self.config['stick_press']
+            if not fresh and (self.sticks[index] is None or now < self.next_repeat[index]):
+                continue
+            if not fresh:
+                direction = self.sticks[index]
+            self.sticks[index] = direction
+            self.next_repeat[index] = now + self.config['repeat_delay' if fresh else 'repeat_interval']
+            if index == 0:
+                self.command(('move' if self.triggers[0] else 'focus') + ' ' + direction)
+            else:
+                action = 'grow' if direction in ('right', 'down') else 'shrink'
+                dimension = 'width' if direction in ('left', 'right') else 'height'
+                self.command(f"resize {action} {dimension} {self.config['resize_step']} ppt")
+
+    def status(self, active):
+        return {'mode': self.mode, 'session_active': active, 'paused': (self.directory / 'paused').exists(),
+                'device': self.device.path if self.device else None,
+                'device_name': self.device.name if self.device else None,
+                'grabbed': self.grabbed, 'ready': self.ready, 'keys': sorted(self.keys),
+                'axis_ranges': self.ranges, 'actions': list(self.actions), 'reason': self.reason,
+                'unavailable_actions': self.unavailable_actions}
+
+
+def discover(config, evdev):
+    matches = []
+    required_axes = set(config['left_stick'] + config['right_stick'] + list(config['dpad']) +
+                        [config['shift_trigger'], config['ctrl_trigger']])
+    required_keys = set(config['buttons']) | {config['previous_bumper'], config['next_bumper']} | set(config['toggle_buttons'])
+    for path in evdev.list_devices():
+        device = None
+        try:
+            device = evdev.InputDevice(path)
+            capabilities = device.capabilities(absinfo=False)
+            selector = config['device']
+            selected = all((device.name if key == 'name' else getattr(device.info, key)) == value
+                           for key, value in selector.items())
+            if (selected and required_axes <= set(capabilities.get(evdev.ecodes.EV_ABS, []))
+                    and required_keys <= set(capabilities.get(evdev.ecodes.EV_KEY, []))
+                    and all(device.absinfo(code).max > device.absinfo(code).min for code in required_axes)):
+                matches.append(device)
+                device = None
+        except (OSError, ValueError):
+            pass
+        finally:
+            if device:
+                device.close()
+    if len(matches) == 1:
+        return matches[0], 'Controller selected'
+    for device in matches:
+        device.close()
+    return None, 'Several controllers match; set device in your profile' if matches else 'Waiting for a compatible, accessible controller'
+
+
+def client(directory, command):
+    if command in ('pause', 'resume'):
+        marker = directory / 'paused'
+        marker.touch() if command == 'pause' else marker.unlink(missing_ok=True)
+    try:
+        with socket.socket(socket.AF_UNIX) as sock:
+            sock.settimeout(2)
+            sock.connect(str(directory / 'control.sock'))
+            sock.sendall((json.dumps({'command': command}) + '\n').encode())
+            print(sock.makefile().readline().strip())
+    except (FileNotFoundError, ConnectionRefusedError):
+        if command not in ('pause', 'resume'):
+            raise SystemExit('Gamepad mapper is not running in this session')
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    commands = parser.add_mutually_exclusive_group()
+    for name in ('toggle', 'status', 'pause', 'resume'):
+        commands.add_argument('--' + name, action='store_true')
+    parser.add_argument('--config', type=Path, help='Personal profile overrides')
+    args = parser.parse_args()
+    logging.basicConfig(level=logging.INFO, format='%(message)s')
+    if os.geteuid() == 0:
+        raise SystemExit('Run this mapper as your normal graphical session user')
+    directory = runtime()
+    command = next((name for name in ('toggle', 'status', 'pause', 'resume') if getattr(args, name)), None)
+    if command:
+        client(directory, command)
+        return
+    if not os.environ.get('SWAYSOCK'):
+        raise SystemExit('Start the mapper inside Sway')
+    import evdev
+    config = configuration(args.config, evdev.ecodes)
+    session = Session()
+    with (directory / 'mapper.lock').open('w') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise SystemExit('A mapper is already running')
+        output_keys = set(config['buttons'].values()) | {key for values in config['dpad'].values() for key in values}
+        output_keys |= {evdev.ecodes.KEY_LEFTSHIFT, evdev.ecodes.KEY_LEFTCTRL}
+        output_keys |= set(config['chords'].values())
+        with evdev.UInput({evdev.ecodes.EV_KEY: sorted(output_keys), evdev.ecodes.EV_REP: []},
+                          name='Mini OS gamepad keyboard', phys='mini-os/gamepad-keyboard', vendor=0x1209, product=2) as keyboard:
+            mapper = Mapper(config, keyboard, evdev.ecodes, directory)
+            server = socket.socket(socket.AF_UNIX)
+            path = directory / 'control.sock'
+            path.unlink(missing_ok=True)
+            server.bind(str(path))
+            path.chmod(0o600)
+            server.listen(4)
+            signal.signal(signal.SIGTERM, lambda *_: setattr(mapper, 'running', False))
+            signal.signal(signal.SIGINT, lambda *_: setattr(mapper, 'running', False))
+            next_scan, previous_reason = 0, None
+            dropped = False
+            pressed = set()
+            released = set()
+            try:
+                while mapper.running:
+                    now, active = time.monotonic(), session.active()
+                    if not mapper.device and active and now >= next_scan:
+                        device, mapper.reason = discover(config, evdev)
+                        next_scan = now + .5
+                        if mapper.reason != previous_reason:
+                            log.info(mapper.reason)
+                            previous_reason = mapper.reason
+                        if device:
+                            mapper.attach(device)
+                    readable, _, _ = select.select([server] + ([mapper.device] if mapper.device else []), [], [], .03)
+                    if server in readable:
+                        connection, _ = server.accept()
+                        with connection:
+                            connection.settimeout(1)
+                            try:
+                                with connection.makefile('rwb') as stream:
+                                    request = json.loads(stream.readline(1024))
+                                    if request['command'] == 'toggle':
+                                        mapper.toggle()
+                                    elif request['command'] in ('pause', 'resume'):
+                                        marker = directory / 'paused'
+                                        marker.touch() if request['command'] == 'pause' else marker.unlink(missing_ok=True)
+                                        mapper.ungrab()
+                                    elif request['command'] != 'status':
+                                        raise ValueError('Unknown command')
+                                    stream.write((json.dumps(mapper.status(active)) + '\n').encode())
+                                    stream.flush()
+                            except (OSError, ValueError, KeyError) as error:
+                                log.warning('Control request failed: %s', error)
+                    if mapper.device in readable:
+                        try:
+                            for event in mapper.device.read():
+                                if event.type == evdev.ecodes.EV_SYN and event.code == evdev.ecodes.SYN_DROPPED:
+                                    mapper.reset()
+                                    dropped = True
+                                elif event.type == evdev.ecodes.EV_SYN and event.code == evdev.ecodes.SYN_REPORT:
+                                    if dropped:
+                                        mapper.resync()
+                                        dropped = False
+                                    else:
+                                        mapper.frame(pressed, released, now, active)
+                                    pressed.clear()
+                                    released.clear()
+                                elif not dropped and event.type == evdev.ecodes.EV_KEY:
+                                    if event.value:
+                                        mapper.raw_keys.add(event.code)
+                                        if event.value == 1:
+                                            pressed.add(event.code)
+                                    else:
+                                        mapper.raw_keys.discard(event.code)
+                                        released.add(event.code)
+                                elif not dropped and event.type == evdev.ecodes.EV_ABS:
+                                    mapper.raw_axes[event.code] = event.value
+                        except OSError:
+                            mapper.detach()
+                            pressed.clear()
+                            released.clear()
+                            dropped = False
+                    mapper.tick(time.monotonic(), active)
+            finally:
+                mapper.detach()
+                server.close()
+                path.unlink(missing_ok=True)
+
+
+if __name__ == '__main__':
+    main()

@@ -1,0 +1,10 @@
+[Unit]
+Description=Mini OS authenticated screen lock
+PartOf=mini-os-session.target
+After=graphical-session.target
+
+[Service]
+Type=forking
+ExecStartPre=/usr/local/bin/mini-os-gamepad --pause
+ExecStart=/usr/bin/swaylock --daemonize --color 151820
+ExecStopPost=/usr/local/bin/mini-os-gamepad --resume

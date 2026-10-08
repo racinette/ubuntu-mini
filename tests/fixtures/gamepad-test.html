@@ -1,0 +1,25 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Mini OS gamepad test</title>
+<style>body{font:20px sans-serif;margin:2em;background:#151820;color:#eee}pre{white-space:pre-wrap;font:16px monospace}button{font:20px sans-serif;padding:1em}</style>
+<h1>Virtual gamepad test</h1>
+<p>Press a controller button while this page is focused.</p>
+<button id="click">Mouse fixture clicks: <span id="clicks">0</span></button>
+<pre id="output"></pre>
+<script>
+let clicks=0, connections=0, disconnections=0, last="";
+document.querySelector("#click").onclick=()=>{document.querySelector("#clicks").textContent=++clicks};
+addEventListener("gamepadconnected",()=>connections++);
+addEventListener("gamepaddisconnected",()=>disconnections++);
+setInterval(()=>{
+  const pads=Array.from(navigator.getGamepads?.()||[]).filter(Boolean).map(p=>({
+    id:p.id,index:p.index,mapping:p.mapping,connected:p.connected,
+    axes:Array.from(p.axes),buttons:p.buttons.map(b=>({pressed:b.pressed,value:b.value}))
+  }));
+  const state={secureContext:isSecureContext,visible:document.visibilityState,focused:document.hasFocus(),
+    api:typeof navigator.getGamepads,pads,clicks,connections,disconnections};
+  const text=JSON.stringify(state,null,2);
+  document.querySelector("#output").textContent=text;
+  if(text!==last){last=text;fetch("/state",{method:"POST",body:JSON.stringify(state)})}
+},50);
+</script>

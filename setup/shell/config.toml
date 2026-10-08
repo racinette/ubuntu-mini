@@ -1,0 +1,10 @@
+# Local history only; upstream updates are applied through reviewed provisioning.
+auto_sync = false
+update_check = false
+search_mode = "fuzzy"
+filter_mode = "global"
+style = "compact"
+inline_height = 12
+[daemon]
+enabled = false
+autostart = false

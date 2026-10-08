@@ -1,0 +1,58 @@
+[
+  {
+    "name": "snapd",
+    "revision": "28254",
+    "snap": "snapd_28254.snap",
+    "snap_sha256": "9447bfe215ac0d2c426994779aab54e1ca66759b1da591bbabf18b995526b438",
+    "assert": "snapd_28254.assert",
+    "assert_sha256": "7ab6af80b16996eb4e25181b2fb659ef2fa359b949fe80db84d538ab66c804a1"
+  },
+  {
+    "name": "core24",
+    "revision": "2124",
+    "snap": "core24_2124.snap",
+    "snap_sha256": "e950f61a36652f18817294875bcafb08d273ccc3c44b3f5fbf01296100078efb",
+    "assert": "core24_2124.assert",
+    "assert_sha256": "50cb01e1e154e124bcfb36fe364b80c52e0bc6acaefca2f03054cc16ae001f53"
+  },
+  {
+    "name": "bare",
+    "revision": "5",
+    "snap": "bare_5.snap",
+    "snap_sha256": "03d0a2eb62e1b8861e557f7875f2d74f59f56c89ac0b4775fbe6d00c465fc84b",
+    "assert": "bare_5.assert",
+    "assert_sha256": "ed8a82fbba8d8bb5e3d14069f83d973e630e506adfa31ea6fe43a24389a75186"
+  },
+  {
+    "name": "gtk-common-themes",
+    "revision": "1535",
+    "snap": "gtk-common-themes_1535.snap",
+    "snap_sha256": "e64ec1ad03ac012ba3539a9e61cfe2007f102140dbb03a009e82a53fccf7f6a5",
+    "assert": "gtk-common-themes_1535.assert",
+    "assert_sha256": "bcf9e2b5d251f15c274a577e6e7845765b8114c8e8e0ffe782499399519e3c15"
+  },
+  {
+    "name": "mesa-2404",
+    "revision": "1839",
+    "snap": "mesa-2404_1839.snap",
+    "snap_sha256": "8962b397993d74a452accdab3dc07696703d814ac480aa4fbeef5bde1a1dd236",
+    "assert": "mesa-2404_1839.assert",
+    "assert_sha256": "f8fface78dab4febeb50c1ef95a76efa107861dcd7266c27b4bb645a9651774f"
+  },
+  {
+    "name": "gnome-46-2404",
+    "revision": "168",
+    "snap": "gnome-46-2404_168.snap",
+    "snap_sha256": "fd0da3e90af3ae0708c0ed8b5cd0a78e83d4763140785041b91a0770e75c7156",
+    "assert": "gnome-46-2404_168.assert",
+    "assert_sha256": "c63ed545d964e828b628557a28c6b68877d3de062002ab6171e0a3afb3c3ed6b"
+  },
+  {
+    "name": "firefox",
+    "revision": "8995",
+    "snap": "firefox_8995.snap",
+    "snap_sha256": "08c29ab048cc3839da037c733dee6a48283c961236731112947b143be0e0010f",
+    "assert": "firefox_8995.assert",
+    "assert_sha256": "1803a7b7bde27b18ebb1c84d239da30141dae295612fc44b346511b4c9ece751"
+  }
+]

@@ -5,7 +5,7 @@ from pathlib import Path
 import tkinter as tk
 
 root = tk.Tk(className='MiniOSXwayland')
-root.title('Mini OS Xwayland test')
+root.title('ubuntu-mini Xwayland test')
 tk.Label(root, text='X11 entry: type, paste, then Ctrl+S to save').pack()
 entry = tk.Entry(root, font=('DejaVu Sans', 20), width=40)
 entry.pack()

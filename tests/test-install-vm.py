@@ -41,7 +41,7 @@ def prepare():
     command('/usr/bin/qemu-img', 'create', '-f', 'qcow2', directory / 'disk.qcow2', '48G')
     vm.initialize_firmware(directory, True)
     command('ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-f', directory / 'ssh-key')
-    credentials = dict(username='vmuser', hostname='mini-os-vm',
+    credentials = dict(username='vmuser', hostname='ubuntu-mini-vm',
                        login_password=secrets.token_hex(12), luks_passphrase=secrets.token_hex(16),
                        ssh_authorized_keys=[(directory / 'ssh-key.pub').read_text().strip()])
     (directory / 'credentials.json').write_text(json.dumps(credentials, indent=2) + '\n')
@@ -158,7 +158,8 @@ assert all(n['type'] in ('disk','part') and not any(n.get('mountpoints') or []) 
 for p in baseline['table']['partitions']:
  assert p in table['partitions']
  assert run('sha256sum',p['node']).split()[0]==baseline['hashes'][p['node']]
-assert [p['name'] for p in table['partitions'][4:]]==['mini-os-efi','mini-os-boot','mini-os-root']
+assert [p['name'] for p in table['partitions'][4:]] in ([
+ 'mini-os-efi','mini-os-boot','mini-os-root'], ['ubuntu-mini-efi','ubuntu-mini-boot','ubuntu-mini-root'])
 run('sfdisk','--delete','/dev/vda','5','6','7')
 run('udevadm','settle')
 assert json.loads(run('sfdisk','--json','/dev/vda'))['partitiontable']==baseline['table']
@@ -169,6 +170,7 @@ print('Explicit fixture cleanup removed only the three Ubuntu partitions; origin
 
 
 def install(directory, size):
+    (directory / 'interactive.json').unlink(missing_ok=True)
     stage(directory)
     mirror = json.loads((vm.PROJECT / '.local/mirror/server.json').read_text())['guest_url']
     check = ssh(directory, 'sudo /tmp/install.sh --disk /dev/vda --check' +
@@ -177,7 +179,7 @@ def install(directory, size):
     oversized = ssh(directory, 'sudo /tmp/install.sh --disk /dev/vda --size 250G --check', check=False)
     if oversized.returncode == 0:
         raise AssertionError('Oversized allocation was accepted')
-    cmd = 'sudo /tmp/install.sh --disk /dev/vda --yes --credentials-file /tmp/install-credentials.json'
+    cmd = 'sudo /tmp/install.sh --disk /dev/vda --no-follow --yes --credentials-file /tmp/install-credentials.json'
     cmd += ' --mirror ' + shlex.quote(mirror + '/ubuntu')
     cmd += ' --security-mirror ' + shlex.quote(mirror + '/ubuntu-security')
     if size:
@@ -190,8 +192,9 @@ def install(directory, size):
 
 
 def status(directory):
-    result = ssh(directory, 'sudo cat /run/subiquity/server-state; '
-                 'sudo journalctl -u mini-os-install --no-pager -n 6; '
+    result = ssh(directory, 'sudo sh /tmp/install.sh --status; '
+                 'sudo cat /run/subiquity/server-state; '
+                 'sudo journalctl -u ubuntu-mini-install --no-pager -n 6; '
                  'sudo tail -n 12 /var/log/installer/curtin-install.log; '
                  'if test "$(sudo cat /run/subiquity/server-state)" = ERROR; then '
                  'sudo journalctl --no-pager --grep="Installation refused/failed|FileNotFoundError|KeyError" -n 10; fi; '
@@ -204,10 +207,10 @@ def reset_preflight(directory):
     result = ssh(directory, 'sudo sfdisk --json /dev/vda')
     table = result.stdout
     assert len(json.loads(table)['partitiontable']['partitions']) == 4
-    ssh(directory, 'sudo systemctl stop mini-os-install.service', check=False)
-    ssh(directory, 'if ! test -d /run/subiquity; then sudo mv /run/mini-os-install/previous-session /run/subiquity; fi')
-    ssh(directory, 'sudo rm -rf /run/mini-os-install; sudo rm -f /autoinstall.yaml')
-    ssh(directory, 'sudo systemctl reset-failed mini-os-install.service; '
+    ssh(directory, 'sudo systemctl stop ubuntu-mini-install.service', check=False)
+    ssh(directory, 'if ! test -d /run/subiquity; then sudo mv /run/ubuntu-mini-install/previous-session /run/subiquity; fi')
+    ssh(directory, 'sudo rm -rf /run/ubuntu-mini-install; sudo rm -f /autoinstall.yaml')
+    ssh(directory, 'sudo systemctl reset-failed ubuntu-mini-install.service; '
         'sudo systemctl start snap.subiquity.subiquity-server.service snap.subiquity.subiquity-service.service', check=False)
     print('Removed failed preflight configuration in the disposable VM; no partitions were created')
 
@@ -219,7 +222,7 @@ def finish(directory):
         'PY3OR2_PYTHON=/snap/subiquity/current/usr/bin/python3.10 '
         'PYTHONPATH=/snap/subiquity/current/lib/python3.10/site-packages '
         'PATH=/snap/subiquity/current/bin:/usr/sbin:/usr/bin:/sbin:/bin '
-        'sh /tmp/install.sh --finish-plan /run/mini-os-install/plan.json', check=False)
+        'sh /tmp/install.sh --finish-plan /run/ubuntu-mini-install/plan.json', check=False)
     print(result.stdout)
     if result.returncode:
         print(result.stderr)
@@ -327,7 +330,7 @@ def interactive(directory, cancel_only=False):
     state = json.loads((directory / 'state.json').read_text())
     creds = json.loads((directory / 'credentials.json').read_text())
     mirror = json.loads((vm.PROJECT / '.local/mirror/server.json').read_text())['guest_url']
-    cmd = 'sudo sh /tmp/install.sh --disk /dev/vda --mirror ' + shlex.quote(mirror + '/ubuntu')
+    cmd = 'sudo sh /tmp/install.sh --disk /dev/vda --no-follow --mirror ' + shlex.quote(mirror + '/ubuntu')
     cmd += ' --security-mirror ' + shlex.quote(mirror + '/ubuntu-security')
     child = pexpect.spawn('ssh', ['-tt','-i',str(directory/'ssh-key'),'-p',str(state['ssh_port']),
         '-o','StrictHostKeyChecking=accept-new','-o',f'UserKnownHostsFile={directory}/known_hosts',
@@ -342,17 +345,86 @@ def interactive(directory, cancel_only=False):
             child.sendline(answer)
         child.expect_exact('? Type INSTALL: ')
         child.sendline('CANCEL' if cancel_only else 'INSTALL')
-        child.expect_exact('Installation cancelled; no disk changes made' if cancel_only else 'Ubuntu installer launched.')
+        child.expect_exact('Installation cancelled; no disk changes made' if cancel_only else 'Ubuntu installer launched in an independent service.')
         child.expect(pexpect.EOF)
     finally:
         child.close()
     if cancel_only:
         assert ssh(directory, 'sudo sfdisk --json /dev/vda').stdout == before
-        assert ssh(directory, 'test ! -e /run/mini-os-install && test ! -e /autoinstall.yaml', check=False).returncode == 0
+        assert ssh(directory, 'test ! -e /run/ubuntu-mini-install && test ! -e /autoinstall.yaml', check=False).returncode == 0
         print('Real terminal prompts reached confirmation; cancellation left disk and installation state untouched')
     else:
         (directory/'interactive.json').write_text(json.dumps(dict(started=True,confirmation='INSTALL'))+'\n')
         print('Interactive credentials and INSTALL confirmation launched the official installer')
+
+
+def console_install(directory, size):
+    """Launch through tty2/QMP, rather than an SSH session's cgroup."""
+    started_at = time.time()
+    (directory / 'interactive.json').unlink(missing_ok=True)
+    stage(directory)
+    mirror = json.loads((vm.PROJECT / '.local/mirror/server.json').read_text())['guest_url']
+    cmd = 'sudo sh /tmp/install.sh --disk /dev/vda --yes --credentials-file /tmp/install-credentials.json'
+    cmd += ' --mirror ' + shlex.quote(mirror + '/ubuntu')
+    cmd += ' --security-mirror ' + shlex.quote(mirror + '/ubuntu-security')
+    if size:
+        cmd += ' --size ' + shlex.quote(size)
+    client = Monitor(directory / 'qmp.sock')
+    try:
+        key(client, ['ctrl', 'alt', 'f2'])
+        time.sleep(1)
+        type_text(client, 'cat /proc/self/cgroup > /tmp/console-cgroup.txt\n')
+        type_text(client, cmd + '\n')
+    finally:
+        client.close()
+    for _ in range(45):
+        result = ssh(directory, 'sudo cat /run/ubuntu-mini-install/status.json', check=False)
+        if result.returncode == 0:
+            record = json.loads(result.stdout)
+            if record['stage'] == 'failed':
+                raise RuntimeError(record['message'])
+            if record['stage'] in ('starting', 'installing', 'verified', 'complete'):
+                print('Installer launched from the actual live console; progress is on tty3')
+                report = dict(started_at=started_at, helper_sha256=vm.digest(vm.PROJECT/'install.sh'),
+                    console_cgroup=ssh(directory, 'cat /tmp/console-cgroup.txt').stdout.strip(),
+                    worker_cgroup=ssh(directory, 'sudo systemctl show ubuntu-mini-install -p ControlGroup --value').stdout.strip(),
+                    progress_console=json.loads(ssh(directory,
+                        'sudo cat /run/ubuntu-mini-install/plan.json').stdout)['progress_console'], status=record)
+                assert report['worker_cgroup'] and report['worker_cgroup'] not in report['console_cgroup']
+                assert report['progress_console'] == 3
+                (directory / 'console-launch-report.json').write_text(json.dumps(report, indent=2)+'\n')
+                capture(directory)
+                return
+        time.sleep(2)
+    raise TimeoutError('Local-console launch did not reach the independent installer; inspect the framebuffer')
+
+
+def check_viewer(directory):
+    assert ssh(directory, 'cat /sys/class/tty/tty0/active').stdout.strip() == 'tty3'
+    assert ssh(directory, 'systemctl is-active ubuntu-mini-install-console').stdout.strip() == 'active'
+    client = Monitor(directory / 'qmp.sock')
+    try:
+        client.execute('screendump', {'filename': str(directory/'progress-before-close.ppm')})
+        key(client, ['ctrl', 'c'])
+        time.sleep(1)
+        assert ssh(directory, 'systemctl is-active ubuntu-mini-install').stdout.strip() == 'active'
+        assert ssh(directory, 'systemctl is-active ubuntu-mini-install-console', check=False).stdout.strip() == 'inactive'
+        client.execute('screendump', {'filename': str(directory/'progress-closed.ppm')})
+        key(client, ['ctrl', 'alt', 'f2'])
+        time.sleep(1)
+        key(client, ['ctrl', 'c'])
+        time.sleep(1)
+        type_text(client, 'sudo sh /tmp/install.sh --follow\n')
+        time.sleep(2)
+        assert ssh(directory, 'systemctl is-active ubuntu-mini-install').stdout.strip() == 'active'
+        client.execute('screendump', {'filename': str(directory/'progress-reconnected.ppm')})
+    finally:
+        client.close()
+    for name in ('progress-before-close','progress-closed','progress-reconnected'):
+        Image.open(directory/(name+'.ppm')).save(directory/(name+'.png'))
+    (directory/'viewer-check.json').write_text(json.dumps(dict(
+        passed=True,ctrl_c_leaves_installer_running=True,follow_reconnected=True))+'\n')
+    print('Ctrl+C closed both viewers without stopping installation; --follow reconnected from the live console')
 
 
 def verify(directory):
@@ -380,7 +452,7 @@ for directory in ('/var/log/installer','/etc/cloud'):
 efi=run('efibootmgr','-v')
 assert ('HD(5,GPT,'+table['partitions'][4]['uuid']).lower() in efi.lower()
 assert re.search(r'^BootCurrent: (\\w+)',efi,re.M).group(1)==re.search(r'^BootOrder: (\\w+)',efi,re.M).group(1)
-plan=json.loads(Path('/var/log/installer/mini-os-storage-plan.json').read_text())
+plan=json.loads(Path('/var/log/installer/ubuntu-mini-storage-plan.json').read_text())
 print(json.dumps(dict(passed=True,whole_existing_partition_hashes_unchanged=True,
  original_gpt_entries_preserved=True,secure_boot=True,kernel_lockdown=lockdown,
  plaintext_secrets_absent_from_installed_logs=True,
@@ -396,7 +468,7 @@ print(json.dumps(dict(passed=True,whole_existing_partition_hashes_unchanged=True
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['prepare', 'launch', 'fresh-usb', 'wait', 'fixture', 'reclaim', 'install', 'interactive-install', 'status', 'reset-preflight', 'finish', 'capture', 'console', 'enter', 'cancel', 'boot', 'unlock', 'unlock-correct', 'verify', 'shutdown', 'next-usb'])
+    parser.add_argument('action', choices=['prepare', 'launch', 'fresh-usb', 'wait', 'fixture', 'reclaim', 'install', 'interactive-install', 'console-install', 'check-viewer', 'status', 'reset-preflight', 'finish', 'capture', 'console', 'enter', 'cancel', 'boot', 'unlock', 'unlock-correct', 'verify', 'shutdown', 'next-usb'])
     parser.add_argument('directory', nargs='?')
     parser.add_argument('--size')
     args = parser.parse_args()
@@ -410,6 +482,8 @@ def main():
         launch(directory, boot=args.action == 'boot')
     elif args.action == 'install':
         install(directory, args.size)
+    elif args.action == 'console-install':
+        console_install(directory, args.size)
     elif args.action == 'unlock-correct':
         unlock(directory, correct_only=True)
     elif args.action == 'cancel':
@@ -419,7 +493,7 @@ def main():
     else:
         {'fresh-usb': fresh_usb, 'wait': wait_live, 'fixture': fixture, 'reclaim': reclaim, 'status': status,
          'reset-preflight': reset_preflight, 'finish': finish, 'capture': capture, 'console': console, 'enter': enter,
-         'unlock': unlock, 'verify': verify, 'shutdown': shutdown, 'next-usb': next_usb}[args.action](directory)
+         'check-viewer': check_viewer, 'unlock': unlock, 'verify': verify, 'shutdown': shutdown, 'next-usb': next_usb}[args.action](directory)
 
 
 if __name__ == '__main__':

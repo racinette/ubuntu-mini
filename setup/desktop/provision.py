@@ -85,7 +85,7 @@ org.freedesktop.impl.portal.ScreenCast=wlr
 org.freedesktop.impl.portal.Screenshot=wlr
 ''')
 write('/etc/systemd/user/mini-os-session.target', '''[Unit]
-Description=Mini OS graphical session services
+Description=ubuntu-mini graphical session services
 BindsTo=graphical-session.target
 After=graphical-session.target
 Wants=mako.service mini-os-polkit.service mini-os-idle.service mini-os-network-applet.service mini-os-bluetooth-applet.service mini-os-gamepad.service
@@ -109,7 +109,7 @@ services = {
 }
 for name, command in services.items():
     write('/etc/systemd/user/mini-os-' + name + '.service', f'''[Unit]
-Description=Mini OS {name}
+Description=ubuntu-mini {name}
 PartOf=mini-os-session.target
 After=graphical-session.target
 [Service]

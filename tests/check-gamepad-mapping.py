@@ -105,7 +105,7 @@ print(urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8765/comma
 import evdev,json
 for path in evdev.list_devices():
  d=evdev.InputDevice(path)
- if d.name=='Mini OS gamepad keyboard':
+ if d.name=='ubuntu-mini gamepad keyboard':
   print(json.dumps(d.active_keys()));break
 else:raise ValueError('Mapped keyboard is missing')
 ''')))

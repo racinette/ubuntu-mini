@@ -25,7 +25,8 @@ GIB = 1024**3
 ESP = 'C12A7328-F81F-11D2-BA4B-00A0C93EC93B'
 LINUX = '0FC63DAF-8483-4772-8E79-3D69D8477DE4'
 MINIMUM = 16 * GIB
-WORK = Path('/run/mini-os-install')
+WORK = Path('/run/ubuntu-mini-install')
+UNIT = 'ubuntu-mini-install'
 SUPPORTED = '24.04.5'
 
 
@@ -106,7 +107,7 @@ def make_plan(table, requested=None):
         raise ValueError('Not enough unused GPT partition slots')
     new = []
     for number, name, length, ptype in zip(numbers,
-            ('mini-os-efi', 'mini-os-boot', 'mini-os-root'),
+            ('ubuntu-mini-efi', 'ubuntu-mini-boot', 'ubuntu-mini-root'),
             (GIB, 2 * GIB, allocation - 3 * GIB), (ESP, LINUX, LINUX)):
         new.append(dict(number=number, name=name, offset=start, size=length, type=ptype))
         start += length
@@ -278,6 +279,177 @@ def private_write(path, value, mode=0o600):
         file.write(value)
 
 
+def progress(stage, message):
+    """A small non-secret status record survives the calling terminal."""
+    value = dict(stage=stage, message=message, updated=time.time())
+    temporary = WORK / f'status.{os.getpid()}.tmp'
+    temporary.write_text(json.dumps(value) + '\n')
+    temporary.chmod(0o600)
+    temporary.replace(WORK / 'status.json')
+    print(f'ubuntu-mini: {stage}: {message}', flush=True)
+
+
+def status_record():
+    try:
+        return json.loads((WORK / 'status.json').read_text())
+    except (OSError, ValueError):
+        return dict(stage='not-started', message='No ubuntu-mini installation status is available.')
+
+
+def service_properties():
+    result = run('systemctl', 'show', UNIT, '--no-pager',
+                 '-p', 'LoadState', '-p', 'ActiveState', '-p', 'SubState',
+                 '-p', 'Result', '-p', 'ExecMainStatus', check=False)
+    return dict(line.split('=', 1) for line in result.stdout.splitlines() if '=' in line)
+
+
+def show_status():
+    record = status_record()
+    print(f'ubuntu-mini: {record["stage"]}: {record["message"]}', flush=True)
+    for key, value in service_properties().items():
+        print(f'{key}={value}', flush=True)
+    state = Path('/run/subiquity/server-state')
+    if state.exists():
+        print('Installer state: ' + state.read_text().strip(), flush=True)
+    print('Details: /var/log/installer/curtin-install.log\n'
+          f'Service log: sudo journalctl -b -u {UNIT} --no-pager -n 30', flush=True)
+
+
+def follow_progress():
+    print('ubuntu-mini installation progress\n'
+          'Ctrl+C leaves this viewer; installation continues.\n'
+          'From another console: sudo sh ./install.sh --status or --follow\n'
+          'Keep the USB inserted until the automatic reboot.\n', flush=True)
+    started = last_output = time.monotonic()
+    previous = None
+    offset = None
+    log = Path('/var/log/installer/curtin-install.log')
+    try:
+        while True:
+            record = status_record()
+            current = (record['stage'], record['message'])
+            if current != previous:
+                print(f'[{int(time.monotonic()-started)}s] {current[0]}: {current[1]}', flush=True)
+                previous = current
+                last_output = time.monotonic()
+            if log.exists():
+                with log.open(errors='replace') as stream:
+                    size = log.stat().st_size
+                    if offset is None or size < offset:
+                        stream.seek(max(0, size - 4096))
+                        lines = stream.read().splitlines()[-8:]
+                    else:
+                        stream.seek(offset)
+                        lines = stream.read().splitlines()
+                    offset = stream.tell()
+                if lines:
+                    for line in lines[-20:]:
+                        print(line, flush=True)
+                    last_output = time.monotonic()
+            if record['stage'] in ('failed', 'complete'):
+                show_status()
+                return 1 if record['stage'] == 'failed' else 0
+            properties = service_properties()
+            if properties.get('ActiveState') in ('failed', 'inactive') and (
+                    record['stage'] not in ('prepared', 'not-started') or time.monotonic()-started > 30):
+                print('Installation service is not running. Inspect the service log shown below.', flush=True)
+                show_status()
+                return 1
+            if time.monotonic() - last_output >= 15:
+                print(f'[{int(time.monotonic()-started)}s] Still watching: {record["stage"]}; '
+                      f'service {properties.get("ActiveState", "unknown")}. '
+                      'No new installer log lines in the last 15 seconds.', flush=True)
+                last_output = time.monotonic()
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print('\nViewer closed. Installation continues; use --follow to reconnect.', flush=True)
+        return 0
+
+
+def launch_worker():
+    """The service owns the handoff, outside the original installer's cgroup."""
+    child = None
+    try:
+        plan = json.loads((WORK / 'plan.json').read_text())
+        snap = live_environment()
+        current = inventory(plan['disk'], plan['allocation'])
+        if current['identity'] != plan['identity']:
+            raise ValueError('Disk identity changed before installer handoff')
+        verify_original(plan)
+        console = plan.get('progress_console')
+        if console:
+            run('chvt', str(console))
+        progress('handoff', 'Stopping the original installer from an independent service.')
+        run('systemctl', 'stop', 'snap.subiquity.subiquity-service.service',
+            'snap.subiquity.subiquity-server.service')
+        state_dir = Path('/run/subiquity')
+        if state_dir.exists():
+            state_dir.rename(WORK / 'previous-session')
+        progress('starting', 'Launching the official Ubuntu installer. Waiting for its state file.')
+        child = subprocess.Popen(['/bin/sh', str(WORK / 'launch.sh')])
+        previous = None
+        started = time.monotonic()
+        heartbeat = time.monotonic()
+        while child.poll() is None:
+            state = Path('/run/subiquity/server-state')
+            value = state.read_text().strip() if state.exists() else 'STARTING'
+            if value == 'STARTING' and time.monotonic() - started > 180:
+                raise ValueError('Installer produced no state file within three minutes; inspect the service log')
+            if value != previous:
+                previous = value
+                if value == 'DONE' and (WORK / 'verification.json').exists():
+                    progress('complete', 'Installation verified. Automatic reboot is next; remove the USB at reboot.')
+                else:
+                    description = {
+                        'STARTING': 'Starting the official installer.',
+                        'RUNNING': 'Installing Ubuntu: preparing storage, copying the system and configuring packages.',
+                        'UU_RUNNING': 'Installing security updates.',
+                        'LATE_COMMANDS_RUNNING': 'Verifying encrypted boot and preservation of existing partitions.',
+                    }.get(value, 'Ubuntu installer state: ' + value)
+                    progress('installing', description)
+            if value == 'ERROR':
+                raise ValueError('Ubuntu installer reported ERROR; inspect /var/log/installer/ and the service log')
+            if time.monotonic() - heartbeat >= 15:
+                print('ubuntu-mini: installer process is running; state: ' + value, flush=True)
+                heartbeat = time.monotonic()
+            time.sleep(1)
+        if child.returncode or not (WORK / 'verification.json').exists():
+            raise ValueError(f'Installer exited with status {child.returncode} without a verified completion')
+        progress('complete', 'Installation verified. Automatic reboot is next; remove the USB at reboot.')
+    except Exception as error:
+        progress('failed', str(error))
+        if isinstance(error, subprocess.CalledProcessError) and error.stderr:
+            print(error.stderr[-4000:], file=sys.stderr, flush=True)
+        (WORK / 'luks.key').unlink(missing_ok=True)
+        if child is not None and child.poll() is None:
+            child.terminate()
+        raise
+
+
+def progress_console(no_follow):
+    if no_follow:
+        return None
+    terminal = os.environ.get('SUDO_TTY', '').removeprefix('/dev/')
+    if re.fullmatch(r'tty[1-9][0-9]*', terminal):
+        return 4 if terminal == 'tty3' else 3
+    # sudo can nest pseudo-terminals; walk back to the live console's login
+    # process. SSH sessions have no local VT and keep their current viewer.
+    pid = os.getpid()
+    for _ in range(32):
+        row = run('ps', '-o', 'ppid=,tty=,comm=', '-p', str(pid), check=False).stdout.split(maxsplit=2)
+        if len(row) != 3:
+            break
+        parent, terminal, name = row
+        if name.startswith('sshd'):
+            break
+        if re.fullmatch(r'tty[1-9][0-9]*', terminal):
+            return 4 if terminal == 'tty3' else 3
+        pid = int(parent)
+        if pid <= 1:
+            break
+    return None
+
+
 def post_install(plan):
     verify_original(plan, after=True)
     mounts = json.loads(run('findmnt', '--json', '--output', 'TARGET,SOURCE').stdout)['filesystems']
@@ -326,17 +498,18 @@ def post_install(plan):
     (WORK / 'verification.json').write_text(verification)
     logs = Path('/target/var/log/installer')
     logs.mkdir(parents=True, exist_ok=True)
-    private_write(logs / 'mini-os-verification.json', verification)
-    private_write(logs / 'mini-os-storage-plan.json', json.dumps(plan, indent=2) + '\n')
+    private_write(logs / 'ubuntu-mini-verification.json', verification)
+    private_write(logs / 'ubuntu-mini-storage-plan.json', json.dumps(plan, indent=2) + '\n')
     # No passphrase/keyfile is copied into the target. The YAML carries only
     # the path to this temporary file, never its contents.
     (WORK / 'luks.key').unlink(missing_ok=True)
+    progress('verified', 'Encrypted root, signed boot loader and preserved partition metadata verified.')
     print('Installation verified. Reboot, remove the USB, then run setup.sh.', flush=True)
 
 
 def start_install(args, plan, snap, data):
     import yaml
-    if WORK.exists() or Path('/autoinstall.yaml').exists():
+    if WORK.exists() or Path('/run/mini-os-install').exists() or Path('/autoinstall.yaml').exists():
         raise ValueError('An installation configuration already exists; boot a fresh live session')
     password_hash = run('openssl', 'passwd', '-6', '-stdin', input=data['login_password']).stdout.strip()
     plan['installer_version'] = SUPPORTED
@@ -357,7 +530,7 @@ def start_install(args, plan, snap, data):
         'packages': ['cryptsetup-initramfs', 'efibootmgr', 'mokutil'],
         'early-commands': [['sh', helper, '--verify-plan', str(WORK / 'plan.json')]],
         'late-commands': [['sh', helper, '--finish-plan', str(WORK / 'plan.json')]],
-        'error-commands': [['sh', '-c', 'rm -f /run/mini-os-install/luks.key']],
+        'error-commands': [['sh', '-c', 'rm -f /run/ubuntu-mini-install/luks.key']],
         'shutdown': 'reboot',
     })
     config['ssh'] = {'install-server': True, 'authorized-keys': data.get('ssh_authorized_keys', []),
@@ -386,11 +559,6 @@ asyncio.run(check())
     verify_original(plan)
     if installer_state() not in ('WAITING', 'NEEDS_CONFIRMATION'):
         raise ValueError('Installer state changed; refusing to launch')
-    run('systemctl', 'stop', 'snap.subiquity.subiquity-service.service',
-        'snap.subiquity.subiquity-server.service')
-    state_dir = Path('/run/subiquity')
-    if state_dir.exists():
-        state_dir.rename(WORK / 'previous-session')
     cmdline = Path('/proc/cmdline').read_text().strip() + ' autoinstall subiquity-storage-version=2'
     command = [python, '-m', 'subiquity.cmd.server', '--storage-version', '2',
                '--autoinstall', '/autoinstall.yaml', '--kernel-cmdline', cmdline]
@@ -399,25 +567,59 @@ asyncio.run(check())
         launch += 'export ' + key + '=' + shlex.quote(env[key]) + '\n'
     launch += 'exec ' + shlex.join(command) + '\n'
     private_write(WORK / 'launch.sh', launch, 0o700)
-    run('systemd-run', '--unit=mini-os-install', '--property=Type=exec', '/bin/sh', str(WORK / 'launch.sh'))
-    print('Ubuntu installer launched. Progress: sudo journalctl -fu mini-os-install\n'
-          'Detailed logs: /var/log/installer/\nThe installer will reboot when finished.', flush=True)
+    # Everything needed by the worker is staged before it can stop the
+    # original installer. Its service is independent of our shell/cgroup.
+    console = progress_console(args.no_follow)
+    plan['progress_console'] = console
+    (WORK / 'plan.json').write_text(json.dumps(plan, indent=2) + '\n')
+    progress('prepared', 'Configuration validated. Preparing the independent installer service.')
+    if console:
+        run('systemctl', 'stop', f'getty@tty{console}.service')
+        run('systemd-run', '--unit=' + UNIT + '-console', '--property=Type=exec',
+            '--property=StandardInput=tty', '--property=StandardOutput=tty',
+            '--property=StandardError=tty', f'--property=TTYPath=/dev/tty{console}',
+            '--property=TTYReset=yes', '/bin/sh', helper, '--follow')
+        print(f'Progress will appear on Ctrl+Alt+F{console}.', flush=True)
+    run('systemd-run', '--unit=' + UNIT, '--property=Type=exec',
+        '--property=StandardOutput=journal', '--property=StandardError=journal',
+        '/bin/sh', helper, '--launch')
+    print('Ubuntu installer launched in an independent service.\n'
+          'Progress: sudo sh ./install.sh --follow\n'
+          'Status: sudo sh ./install.sh --status\n'
+          f'Service log: sudo journalctl -fu {UNIT}\n'
+          'The installer will reboot when finished.', flush=True)
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Install encrypted Ubuntu Server into unallocated GPT space.')
+    parser = argparse.ArgumentParser(prog='install.sh', description='ubuntu-mini: install encrypted Ubuntu Server into unallocated GPT space.')
     parser.add_argument('--disk', help='Target disk; required if automatic selection is ambiguous')
     parser.add_argument('--size', type=size_bytes, help='Total allocation: 250G is GiB, 250GB is decimal; default largest free region')
     parser.add_argument('--check', action='store_true', help='Print a read-only storage plan; do not launch installation')
+    parser.add_argument('--status', action='store_true', help='Show the current installation stage and service status; do not install')
+    parser.add_argument('--follow', action='store_true', help='Reconnect to live progress; Ctrl+C leaves installation running')
+    parser.add_argument('--no-follow', action='store_true', help='Launch in the background without a progress console (automation)')
     parser.add_argument('--credentials-file', help='Root-owned mode-600 local JSON; otherwise prompt on the terminal')
     parser.add_argument('--yes', action='store_true', help='Accept the printed installation plan without prompting')
     parser.add_argument('--mirror', help='Optional Ubuntu package mirror URL')
     parser.add_argument('--security-mirror', help='Optional security mirror URL (defaults to --mirror)')
     parser.add_argument('--verify-plan', help=argparse.SUPPRESS)
     parser.add_argument('--finish-plan', help=argparse.SUPPRESS)
+    parser.add_argument('--launch', action='store_true', help=argparse.SUPPRESS)
     args = parser.parse_args(sys.argv[2:])
     if args.security_mirror and not args.mirror:
         raise ValueError('--security-mirror requires --mirror')
+    if sum((args.check, args.status, args.follow, args.launch)) > 1:
+        raise ValueError('Use only one of --check, --status or --follow')
+    if os.geteuid() != 0:
+        raise ValueError('Run with sudo to inspect installation or disk status')
+    if args.status:
+        show_status()
+        return
+    if args.follow:
+        sys.exit(follow_progress())
+    if args.launch:
+        launch_worker()
+        return
     if args.verify_plan or args.finish_plan:
         if os.geteuid() != 0:
             raise ValueError('Installer hooks require root')
@@ -430,9 +632,14 @@ def main():
                 raise ValueError('Disk identity changed')
             verify_original(plan)
         return
-    if os.geteuid() != 0:
-        raise ValueError('Run with sudo to inspect the partition table')
+    if not args.check and (WORK.exists() or Path('/run/mini-os-install').exists()
+                           or Path('/autoinstall.yaml').exists()):
+        raise ValueError('A previous installation configuration exists. Boot a fresh live USB session; '
+                         'then use --check to inspect available space before retrying.')
+    if not args.check:
+        print('ubuntu-mini: checking the live environment and installer state...', flush=True)
     snap = None if args.check else live_environment()
+    print('ubuntu-mini: inspecting the disk and planning free-space allocation...', flush=True)
     plan = inventory(args.disk, args.size)
     print(json.dumps(plan, indent=2), flush=True)
     if args.check:
@@ -442,21 +649,20 @@ def main():
         answer = tty_input(f'Create {plan["allocation"]/GIB:.2f} GiB of encrypted Ubuntu on {plan["disk"]}? Type INSTALL: ')
         if answer != 'INSTALL':
             raise ValueError('Installation cancelled; no disk changes made')
-    if WORK.exists() or Path('/autoinstall.yaml').exists():
+    if WORK.exists() or Path('/run/mini-os-install').exists() or Path('/autoinstall.yaml').exists():
         raise ValueError('An installation configuration already exists; boot a fresh live session')
     try:
+        print('ubuntu-mini: validating configuration before starting installation...', flush=True)
         start_install(args, plan, snap, data)
     except Exception:
         # Leave the non-secret plan/logs available for diagnosis.
         (WORK / 'luks.key').unlink(missing_ok=True)
         Path('/autoinstall.yaml').unlink(missing_ok=True)
-        # If the service could not even launch, restore the stopped UI. Once
-        # launched, the installer owns failure handling and its diagnostics.
-        if (WORK / 'previous-session').exists() and not Path('/run/subiquity').exists():
-            (WORK / 'previous-session').rename('/run/subiquity')
-            run('systemctl', 'start', 'snap.subiquity.subiquity-server.service',
-                'snap.subiquity.subiquity-service.service', check=False)
+        if WORK.exists():
+            progress('failed', 'Configuration or service launch failed; inspect the error above.')
         raise
+    if not args.no_follow:
+        sys.exit(follow_progress())
 
 
 if __name__ == '__main__':

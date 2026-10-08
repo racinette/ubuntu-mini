@@ -286,7 +286,7 @@ class Mapper:
         (self.directory / 'mode').write_text(self.mode + '\n')
         log.info('Gamepad mode: %s', self.mode)
         label = 'Desktop navigation enabled' if self.mode == 'desktop' else 'Normal gamepad input enabled'
-        subprocess.run(['notify-send', '-a', 'Mini OS', 'Gamepad controls', label], check=False)
+        subprocess.run(['notify-send', '-a', 'ubuntu-mini', 'Gamepad controls', label], check=False)
 
     def command(self, command):
         try:
@@ -521,7 +521,7 @@ def main():
         output_keys |= {evdev.ecodes.KEY_LEFTSHIFT, evdev.ecodes.KEY_LEFTCTRL}
         output_keys |= set(config['chords'].values())
         with evdev.UInput({evdev.ecodes.EV_KEY: sorted(output_keys), evdev.ecodes.EV_REP: []},
-                          name='Mini OS gamepad keyboard', phys='mini-os/gamepad-keyboard', vendor=0x1209, product=2) as keyboard:
+                          name='ubuntu-mini gamepad keyboard', phys='mini-os/gamepad-keyboard', vendor=0x1209, product=2) as keyboard:
             mapper = Mapper(config, keyboard, evdev.ecodes, directory)
             server = socket.socket(socket.AF_UNIX)
             path = directory / 'control.sock'

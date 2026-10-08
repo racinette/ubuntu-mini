@@ -73,7 +73,7 @@ def prepare(secure_boot=False):
     run('ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-f', directory / 'ssh-key')
     (directory / 'fixture.json').write_text(json.dumps({
         'kind': 'manual-ubuntu-server', 'iso_sha256': ISO_SHA256,
-        'hostname': 'mini-os-vm', 'username': 'vmuser'}, indent=2) + '\n')
+        'hostname': 'ubuntu-mini-vm', 'username': 'vmuser'}, indent=2) + '\n')
     print(directory)
 
 
@@ -155,7 +155,7 @@ def launch(directory, stage, audio=False, window=False, setup_assets=False):
     if secure_boot:
         command.extend(['-global', 'driver=cfi.pflash01,property=secure,value=on'])
     if window:
-        command.extend(['-name', 'Mini OS preview'])
+        command.extend(['-name', 'ubuntu-mini preview'])
     if audio:
         command.extend(['-audiodev', f'wav,id=audio,path={directory / "audio.wav"}',
                         '-device', 'ich9-intel-hda', '-device', 'hda-duplex,audiodev=audio'])

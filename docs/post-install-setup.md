@@ -1,24 +1,24 @@
 # Ubuntu post install setup
 
-Manually install Ubuntu 24.04 Server amd64, create your normal user, and boot into that installed system. Then run the standalone setup to add Sway, greetd, Foot, Firefox, desktop services, Bash with ble.sh and local Atuin history. It also installs Ubuntu's supported HWE kernel, firmware, AMD microcode, Mesa graphics/video packages and ALSA device profiles. The setup uses your existing account and password and activates the configured environment on your next reboot.
+Install Ubuntu 24.04 Server amd64 manually or with the [installation helper](install.md), create your normal user, and boot into that installed system. Then run the standalone setup to add Sway, greetd, Foot, Firefox, desktop services, Bash with ble.sh and local Atuin history. It also installs Ubuntu's supported HWE kernel, firmware, AMD microcode, Mesa graphics/video packages and ALSA device profiles. The setup uses your existing account and password and activates the configured environment on your next reboot.
 
-Partition selection and LUKS encryption belong to your manual Ubuntu installation. Choose the intended Linux space, preserve Windows and Recovery, and reuse the existing EFI partition without formatting. The setup does not create encryption or partition disks. Physical screen orientation, touch mapping and hardware behavior still need validation on the WIN Mini.
+Partition selection and LUKS encryption happen during Ubuntu installation. The optional helper creates a separate Ubuntu ESP in free space; when installing manually, choose the intended Linux space and preserve Windows, Recovery and their existing EFI files. The setup does not create encryption or partition disks. Physical screen orientation, touch mapping and hardware behavior still need validation on the WIN Mini.
 
 ## Clone and run
 
-Publish the project sources to your GitHub repository. On the installed Ubuntu system, run from your normal account:
+On the installed Ubuntu system, run from your normal account:
 
 ```bash
 sudo apt-get update
 sudo apt-get install -y git
-git clone https://github.com/YOUR_ACCOUNT/YOUR_REPOSITORY.git mini-os
-cd mini-os
+git clone https://github.com/racinette/ubuntu-mini.git ubuntu-mini
+cd ubuntu-mini
 sudo ./setup.sh --check
 sudo ./setup.sh
 sudo reboot
 ```
 
-Replace the URL with your repository. The repository contains scripts, configuration and small version/checksum manifests. Application archives, binaries, ISO images, VM disks and private test state stay outside Git; `.gitignore` excludes them. Keep the root `setup.sh` and the complete `setup/` directory together, because the entry point reads its configuration relative to its own location. The `tests/` and `docs/` components are not read or installed by setup.
+The repository contains scripts, configuration and small version/checksum manifests. Application archives, binaries, ISO images, VM disks and private test state stay outside Git; `.gitignore` excludes them. Keep the root `setup.sh` and the complete `setup/` directory together, because the entry point reads its configuration relative to its own location. The `tests/` and `docs/` components are not read or installed by setup.
 
 `sudo` supplies your existing username. When invoking from a root shell instead, pass `--user YOUR_USERNAME`. `--check` checks the target prerequisites without installing packages, downloading applications or writing configuration. It verifies a cache only when one is explicitly selected; an online check does not prove package or upstream connectivity.
 

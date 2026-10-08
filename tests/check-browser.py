@@ -40,7 +40,7 @@ try:
         type_text(monitor, mirror + '/assets/desktop-test.html\n')
         time.sleep(3)
         tree = json.loads(graphical(directory, 'swaymsg -t get_tree'))
-        if any(n['id'] == browser_id and 'Mini OS desktop test' in (n.get('name') or '') for n in windows(tree)):
+        if any(n['id'] == browser_id and 'ubuntu-mini desktop test' in (n.get('name') or '') for n in windows(tree)):
             break
     else:
         raise ValueError('Firefox startup did not reach the local fixture page')

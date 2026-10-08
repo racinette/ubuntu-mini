@@ -31,7 +31,7 @@ class Device:
                 fcntl.ioctl(self.fd, 0x40045564, 2)  # EV_REL
                 for code in (0, 1, 8):
                     fcntl.ioctl(self.fd, 0x40045566, code)
-            name = ('Mini OS virtual ' + kind + ' fixture').encode()
+            name = ('ubuntu-mini virtual ' + kind + ' fixture').encode()
             # BUS_VIRTUAL, synthetic VID/PID; this does not emulate a USB controller protocol.
             fcntl.ioctl(self.fd, 0x405c5503, struct.pack('@HHHH80sI', 6, 0x1209, 1, 1, name, 0))
             fcntl.ioctl(self.fd, 0x5501)  # UI_DEV_CREATE

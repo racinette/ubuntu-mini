@@ -1,18 +1,20 @@
-# GPD WIN Mini Ubuntu setup
+# ubuntu-mini
+
+Ubuntu installation and desktop setup for the GPD WIN Mini.
 
 Install Ubuntu 24.04 Server amd64, then run `setup.sh` to configure Sway, Firefox, networking, desktop services and Bash with ble.sh and local Atuin history. The optional standalone [installation helper](docs/install.md) runs from the Server USB shell and instructs the official installer to use only unallocated GPT space. Hardware behavior still needs validation on the WIN Mini.
 
 ```bash
 sudo apt-get update
 sudo apt-get install -y git
-git clone https://github.com/YOUR_ACCOUNT/YOUR_REPOSITORY.git mini-os
-cd mini-os
+git clone https://github.com/racinette/ubuntu-mini.git ubuntu-mini
+cd ubuntu-mini
 sudo ./setup.sh --check
 sudo ./setup.sh
 sudo reboot
 ```
 
-Replace the repository URL with yours. Clone as your normal user and run setup through `sudo`. The repository contains source and configuration; Ubuntu packages and applications download during setup. See the [installation instructions](docs/post-install-setup.md) for prerequisites, logs, reruns and optional caching.
+Clone as your normal user and run setup through `sudo`. The repository contains source and configuration; Ubuntu packages and applications download during setup. See the [installation instructions](docs/post-install-setup.md) for prerequisites, logs, reruns and optional caching.
 
 ## Repository components
 
@@ -26,6 +28,8 @@ Replace the repository URL with yours. Clone as your normal user and run setup t
 | `tests/` | Host checks, disposable VM control, local mirror and acceptance tests |
 | `tests/fixtures/` | Synthetic controller, browser pages and shell/input fixtures |
 | `docs/` | Setup, controls, test instructions and remaining acceptance checks |
+
+Installed desktop commands and configuration directories retain their `mini-os` names so setup reruns continue to use existing personal settings.
 
 Only `setup.sh` and `setup/` are needed for post-install device setup. `install.sh` is a standalone file used earlier in the live USB environment. Tests run separately and are not installed by setup. `tests/vm.py` supports manual VM installation; `tests/test-install-vm.py` tests the optional installer helper on disposable virtual disks.
 

@@ -1,5 +1,5 @@
 [Unit]
-Description=Mini OS authenticated screen lock
+Description=ubuntu-mini authenticated screen lock
 PartOf=mini-os-session.target
 After=graphical-session.target
 

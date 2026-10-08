@@ -11,6 +11,7 @@ python3 tests/check-setup-layout.py
 python3 tests/check-browser-download-mode.py
 python3 tests/check-chord-recognizer.py
 python3 tests/check-install-plan.py
+python3 tests/check-install-launch.py
 ```
 
 The setup check verifies the root entry point, source staging and coordinator paths without installing packages. The browser check isolates Snap command selection and existing-browser retention. The chord check exercises all 960 press/release orders and all 48 late Shift/Ctrl combinations, plus invalid/reserved/rolling gestures and reset. It creates no host input device and reads Linux key codes from `/usr/include/linux/input-event-codes.h`.
@@ -34,7 +35,7 @@ Place `ubuntu-24.04.5-live-server-amd64.iso` in the repository root. The launche
 
 ## Test the live USB installation helper
 
-The [standalone installer](install.md) has a separate disposable test harness. It boots the ordinary signed ISO with Secure Boot enabled. Once the language screen appears, `console` switches to the live shell and adds only a public fixture SSH key. The actual installation starts later by running `install.sh` over SSH in that live environment.
+The [standalone installer](install.md) has a separate disposable test harness. It boots the ordinary signed ISO with Secure Boot enabled. Once the language screen appears, `console` switches to the live shell and adds only a public fixture SSH key. The actual installation starts later by running `install.sh` in that live environment. `install` and `interactive-install` use SSH with `--no-follow`; `console-install` launches through the actual Ctrl+Alt+F2 console and checks the independent service and dedicated progress console.
 
 ```bash
 python3 tests/test-install-vm.py prepare
@@ -43,14 +44,16 @@ python3 tests/test-install-vm.py launch "$VM_DIR"
 python3 tests/test-install-vm.py console "$VM_DIR"
 python3 tests/test-install-vm.py wait "$VM_DIR"
 python3 tests/test-install-vm.py fixture "$VM_DIR"
-python3 tests/test-install-vm.py install "$VM_DIR" --size 20G
+python3 tests/test-install-vm.py console-install "$VM_DIR" --size 20G
 ```
 
 Omit `--size` to test taking the largest free region. The 48 GiB fixture contains a preserved 100 MiB ESP, a reserved partition, a 4 GiB data partition and a 1 GiB recovery partition physically at the end. Whole-partition hashes are recorded before installation. These are synthetic contents, not a Windows installation.
 
 To test the normal terminal prompts instead of supplying a private credentials file, replace the `install` step with `cancel` followed by `interactive-install`. The harness answers the actual hostname, username, password and encryption prompts through a terminal, verifies cancellation leaves the GPT and installer configuration untouched, then confirms a maximum-space installation with `INSTALL`. Installed-system verification uses password authentication for this path.
 
-Installation uses the local mirror's current URL, including its separate security endpoint. Oversized allocation is rejected before installation. Inspect `status` for progress; the installer automatically reboots, and QEMU exits because the harness uses `-no-reboot`. After it exits:
+`check-viewer` can run immediately after `console-install`: it closes the dedicated viewer and original console viewer with Ctrl+C, checks the worker remains active, then reconnects with `--follow`. Saved screenshots must show the closed and reopened viewers.
+
+Installation uses the local mirror's current URL, including its separate security endpoint. Oversized allocation is rejected before installation. Inspect `status` for progress and `capture` for the actual progress console; the installer automatically reboots, and QEMU exits because the harness uses `-no-reboot`. After it exits:
 
 ```bash
 python3 tests/test-install-vm.py boot "$VM_DIR"
@@ -61,9 +64,9 @@ python3 tests/test-install-vm.py verify "$VM_DIR"
 python3 tests/test-install-vm.py shutdown "$VM_DIR"
 ```
 
-`unlock` enters a wrong fixture passphrase before the correct one. The saved `luks-wrong.png` must show rejection; QMP typing requires the VM to be at the prompt. `verify` checks Secure Boot and kernel lockdown, encrypted root, the new ESP and default firmware entry, account-password sudo, original GPT entries and full hashes, and absence of plaintext credentials in installed logs/cloud configuration. It records the installation helper's SHA-256 from the installed storage plan. Reports and screenshots are private files under the fixture directory.
+`unlock` enters a wrong fixture passphrase before the correct one. The saved `luks-wrong.png` must show rejection; QMP typing requires the VM to be at the prompt; Ctrl+Alt+F1 can reveal the text prompt if the framebuffer is blank. `verify` checks Secure Boot and kernel lockdown, encrypted root, the new ESP and default firmware entry, account-password sudo, original GPT entries and full hashes, and absence of plaintext credentials in installed logs/cloud configuration. It records the installation helper's SHA-256 from the installed storage plan. Reports and screenshots are private files under the fixture directory.
 
-For a reinstall test, boot a fresh USB session on the same stopped fixture. `fresh-usb` backs up and resets only the VM's private firmware variables so the USB boots reliably; it does not change the virtual disk. After `console` and `wait`, `reclaim` first proves a 42 GiB request is refused while the previous Ubuntu allocation occupies space, verifies preserved hashes, then explicitly deletes only fixture partitions 5–7. It verifies that the original table is restored. Run `cancel`, then `install ... --size 20G` or `interactive-install` and repeat cold-boot verification. This cleanup exists only in the guarded VM harness; the device installer contains no deletion operation.
+For a reinstall test, boot a fresh USB session on the same stopped fixture. `fresh-usb` backs up and resets only the VM's private firmware variables so the USB boots reliably; it does not change the virtual disk. After `console` and `wait`, `reclaim` first proves a 42 GiB request is refused while the previous Ubuntu allocation occupies space, verifies preserved hashes, then explicitly deletes only fixture partitions 5–7. It verifies that the original table is restored. Run `cancel`, then `console-install ... --size 20G`, `install ... --size 20G` or `interactive-install` and repeat cold-boot verification. This cleanup exists only in the guarded VM harness; the device installer contains no deletion operation.
 
 `reset-preflight` and `finish` are diagnostic harness operations for failed test runs. A successful acceptance run must complete automatically without either operation.
 
@@ -80,7 +83,7 @@ VM_DIR=.local/vm/storage-server-EXAMPLE
 python3 tests/vm.py launch "$VM_DIR" install --window
 ```
 
-Preparation creates a blank 80 GiB virtual disk, private firmware variables, an SSH key and `credentials.json`. Read that private file locally and use its account password and disk passphrase during manual Ubuntu installation. Set the hostname to `mini-os-vm`, the account to `vmuser`, choose encryption, and install OpenSSH. Use the local archive mirror URL from [mirror instructions](local-mirror.md). The launcher supplies no Autoinstall configuration and does not choose partitions.
+Preparation creates a blank 80 GiB virtual disk, private firmware variables, an SSH key and `credentials.json`. Read that private file locally and use its account password and disk passphrase during manual Ubuntu installation. Set the hostname to `ubuntu-mini-vm`, the account to `vmuser`, choose encryption, and install OpenSSH. Use the local archive mirror URL from [mirror instructions](local-mirror.md). The launcher supplies no Autoinstall configuration and does not choose partitions.
 
 After installation, boot without the ISO using `launch ... boot --window`. In the guest, add the host fixture's `ssh-key.pub` contents to `/home/vmuser/.ssh/authorized_keys`; set the directory to mode 700 and the file to 600. Use `tests/vm.py ssh "$VM_DIR" vmuser 'true'` to verify access. Guest SSH uses a loopback port recorded in `state.json`.
 
@@ -88,7 +91,7 @@ Cold-boot tests require disk unlock and login prompts on the serial console. Ins
 
 ```bash
 sudo mkdir -p /etc/default/grub.d
-sudo tee /etc/default/grub.d/99-mini-os-vm.cfg >/dev/null <<'CONFIG'
+sudo tee /etc/default/grub.d/99-ubuntu-mini-vm.cfg >/dev/null <<'CONFIG'
 GRUB_CMDLINE_LINUX="$GRUB_CMDLINE_LINUX console=tty0 console=ttyS0,115200n8"
 CONFIG
 sudo update-grub
@@ -173,9 +176,13 @@ The synthetic controller is created inside the guest. Mapping tests exercise rea
 
 ## Recorded results and current limits
 
+On 2026-10-09, the observable helper passed a complete 20 GiB installation launched through the actual live Ctrl+Alt+F2 console. It automatically switched to the dedicated F3 progress viewer, ran the handoff in an independent service, and installed helper SHA-256 `4d7933e44515b6efd49fcf0da07a391850231bffc85abcda56b0fd0040a3afac`. Ctrl+C closed both the dedicated viewer and original console viewer without stopping installation; `--follow` reopened progress. Cancellation still left disk and configuration unchanged. The run required no installer diagnostic intervention and rebooted automatically.
+
+Cold boot without the ISO passed wrong-passphrase rejection, correct unlock, Secure Boot and integrity lockdown, account access, the new ESP/default firmware entry, unchanged original GPT entries and whole-partition hashes, and absence of plaintext credentials in installed logs. Ctrl+Alt+F1 was needed to reveal the text unlock prompt in this VM. The final run served 155 requests and approximately 291 MB from the package cache, with zero upstream mirror downloads. [Observable installation summary](../.local/vm/observable-install-summary.json), [current console installation](../.local/vm/storage-install-nkpl8nsn/install-report.json).
+
 On 2026-10-08, the live-USB helper passed complete automatic installations with a 20 GiB explicit allocation and a 42.89 GiB maximum-space allocation. A reinstall passed after explicitly reclaiming only the previous Ubuntu partitions. The final maximum-space run used real terminal credential prompts and `INSTALL` confirmation, with cancellation tested first. It required no diagnostic intervention and installed helper SHA-256 `15b9053725debbd04fe53d4f31208d3e68d16713b665854c89eb850199432117`. The explicit-size run used the preceding revision; the subsequent helper change corrected terminal input handling.
 
-Both installed systems passed cold boot without the ISO, wrong-passphrase rejection, successful unlock, Secure Boot, account access, Ubuntu's new ESP/default firmware entry, unchanged original GPT entries and whole-partition hashes, and absence of plaintext credentials in installer logs/cloud configuration. The final interactive run also confirmed kernel lockdown in integrity mode. Package downloads used the local mirror; the final run served its requests from cache. The fixtures contain synthetic partitions, so Windows boot and BitLocker recovery remain physical-device checks. [Installation summary](../.local/vm/install-summary.json), [20 GiB reinstall](../.local/vm/storage-install-dtuowdxy/install-report.json), [current interactive installation](../.local/vm/storage-install-nkpl8nsn/install-report.json).
+Both installed systems passed cold boot without the ISO, wrong-passphrase rejection, successful unlock, Secure Boot, account access, Ubuntu's new ESP/default firmware entry, unchanged original GPT entries and whole-partition hashes, and absence of plaintext credentials in installer logs/cloud configuration. The final interactive run also confirmed kernel lockdown in integrity mode. Package downloads used the local mirror; the final run served its requests from cache. The fixtures contain synthetic partitions, so Windows boot and BitLocker recovery remain physical-device checks. [Installation summary](../.local/vm/install-summary.json), [20 GiB reinstall](../.local/vm/storage-install-dtuowdxy/install-report.json), [2026-10-08 interactive installation](../.local/vm/storage-install-nkpl8nsn/2026-10-08-interactive-report.json).
 
 Previous standalone setup runs passed clean Server provisioning, reruns, personal-setting preservation, configuration backups, unchanged GPT geometry, cold boot, graphical login, desktop services, shell editing/local history and real signed Firefox installation through the cache. The source-clone rerun passed real upstream shell downloads while retaining an existing browser. [Standalone summary](../.local/vm/post-install-setup-summary.json), [source-clone report](../.local/vm/storage-desktop-69unztc4/source-setup-report.json).
 

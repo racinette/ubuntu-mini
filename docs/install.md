@@ -11,12 +11,12 @@ On the disk recorded in your dual-boot handoff, p5–p7 already occupy the inten
 Boot the Ubuntu Server USB, open another console with Ctrl+Alt+F2, and establish networking. Run the helper before confirming storage changes in the interactive installer. Download the standalone file or clone the repository:
 
 ```bash
-curl -fL https://raw.githubusercontent.com/YOUR_ACCOUNT/YOUR_REPOSITORY/main/install.sh -o install.sh
+curl -fL https://raw.githubusercontent.com/racinette/ubuntu-mini/main/install.sh -o install.sh
 sudo sh ./install.sh --check
 sudo sh ./install.sh
 ```
 
-Replace the URL with your published repository URL. The file contains its own Python implementation; it needs no other repository files. The live Server environment supplies Python, YAML support and installer tools.
+The file contains its own Python implementation; it needs no other repository files. The live Server environment supplies Python, YAML support and installer tools.
 
 Without `--size`, it uses the largest suitable contiguous free region. With a size, it reserves exactly that total allocation, rounded down to a MiB, and leaves the rest free:
 
@@ -35,18 +35,25 @@ OpenSSH is installed with account-password login enabled. Supplying public keys 
 
 ## Installer execution and logs
 
-The helper validates its generated configuration with the bundled Subiquity schema, stops the idle interactive installer, saves its session under `/run/mini-os-install/previous-session`, and launches a fresh server with Curtin storage version 2 explicitly selected. Curtin creates partitions and installs the standard Ubuntu Server system from the USB. Existing partition entries are included as preserved objects, including entries physically after the new partitions.
+The helper validates its generated configuration with the bundled Subiquity schema and stages the complete launcher before handing control to an independent `ubuntu-mini-install` service. That service stops the idle interactive installer, saves its session under `/run/ubuntu-mini-install/previous-session`, and launches a fresh server with Curtin storage version 2 explicitly selected. The handoff continues even if the original shell closes. Curtin creates partitions and installs the standard Ubuntu Server system from the USB. Existing partition entries are included as preserved objects, including entries physically after the new partitions.
 
 Version 24.04.5 of Subiquity is required. Installer refresh is disabled to keep execution consistent with the tested version. The preflight refuses an installer that has already begun installation. Do not use the interactive storage screen while the helper is running.
 
+After confirmation, a local-console invocation opens a dedicated progress viewer on Ctrl+Alt+F3 (F4 when started from F3) and switches there automatically. SSH invocations show the viewer in the current terminal. The viewer prints stage changes, recent Curtin output and a heartbeat every 15 seconds during quiet steps. It reports a failed or unexpectedly stopped service explicitly. `--no-follow` is available for background automation.
+
+Reconnect to progress or inspect status from another shell:
+
 ```bash
-sudo journalctl -fu mini-os-install
-sudo tail -f /var/log/installer/curtin-install.log
+sudo sh ./install.sh --follow
+sudo sh ./install.sh --status
+sudo journalctl -b -u ubuntu-mini-install --no-pager -n 30
 ```
+
+Ctrl+C leaves the viewer without stopping installation. The journal contains launch and service events; the viewer also reads `/var/log/installer/curtin-install.log`, because not all installer progress appears in the journal.
 
 The installer configures `crypttab`, filesystem mounts, initramfs and signed Ubuntu EFI boot files on the new ESP. It registers Ubuntu's boot entry and leaves other operating systems available through the firmware boot menu. It does not mount other ESPs or generate operating-system-specific GRUB menu entries.
 
-Successful installation triggers a reboot; remove the USB and unlock Ubuntu with the encryption passphrase. Installation verification and the storage plan are retained under `/var/log/installer/mini-os-*` on the installed system. If a step fails, inspect the logs and start a fresh USB session before retrying. A failure after disk writes may leave new partitions occupying the chosen region; explicitly reclaim them before retrying.
+Successful installation triggers a reboot; remove the USB and unlock Ubuntu with the encryption passphrase. If the boot screen is blank, Ctrl+Alt+F1 can reveal the text unlock prompt. Installation verification and the storage plan are retained under `/var/log/installer/ubuntu-mini-*` on the installed system. If a step fails, inspect the logs and start a fresh USB session before retrying. A failure after disk writes may leave new partitions occupying the chosen region; inspect them and explicitly reclaim only the unwanted Ubuntu partitions before retrying. If the launch failed before partitioning, no reclamation is needed. The new version refuses leftover configuration from either the earlier helper or the current one; reboot into a fresh USB session and run `--check` before retrying.
 
 ## Local mirrors and unattended credentials
 
@@ -65,4 +72,4 @@ The encryption passphrase lives in a mode-600 key file inside a mode-700 directo
 
 ## Validation
 
-Run `python3 tests/check-install-plan.py` for planner checks. See [VM testing](testing.md) for the installation harness and current results. A synthetic preservation test cannot establish Windows bootability or BitLocker behavior on physical firmware. Keep a backup and locally available recovery credentials for the operating systems already on the target disk.
+Run `python3 tests/check-install-plan.py` for planner checks and `python3 tests/check-install-launch.py` for independent launch, progress and failure checks. See [VM testing](testing.md) for the installation harness and current results. A synthetic preservation test cannot establish Windows bootability or BitLocker behavior on physical firmware. Keep a backup and locally available recovery credentials for the operating systems already on the target disk.

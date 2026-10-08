@@ -1,5 +1,5 @@
 [Unit]
-Description=Mini OS gamepad desktop navigation
+Description=ubuntu-mini gamepad desktop navigation
 PartOf=mini-os-session.target
 After=graphical-session.target
 

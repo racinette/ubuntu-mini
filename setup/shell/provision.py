@@ -53,7 +53,7 @@ bashrc = home / '.bashrc'
 text = bashrc.read_text() if bashrc.exists() else ''
 line = 'source /usr/local/share/mini-os/bashrc.bash'
 if line not in text.splitlines():
-    bashrc.write_text(text.rstrip() + '\n\n# Mini OS interactive Bash\n' + line + '\n')
+    bashrc.write_text(text.rstrip() + '\n\n# ubuntu-mini interactive Bash\n' + line + '\n')
     os.chown(bashrc, user.pw_uid, user.pw_gid)
     bashrc.chmod(0o644)
 print('Pinned shell integration installed for ' + args.username)

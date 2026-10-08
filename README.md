@@ -1,6 +1,6 @@
 # GPD WIN Mini Ubuntu setup
 
-Manually install Ubuntu 24.04 Server amd64, then run `setup.sh` to configure Sway, Firefox, networking, desktop services and Bash with ble.sh and local Atuin history. Partition selection and encryption belong to the Ubuntu installer. Hardware behavior still needs validation on the WIN Mini.
+Install Ubuntu 24.04 Server amd64, then run `setup.sh` to configure Sway, Firefox, networking, desktop services and Bash with ble.sh and local Atuin history. The optional standalone [installation helper](docs/install.md) runs from the Server USB shell and instructs the official installer to use only unallocated GPT space. Hardware behavior still needs validation on the WIN Mini.
 
 ```bash
 sudo apt-get update
@@ -19,6 +19,7 @@ Replace the repository URL with yours. Clone as your normal user and run setup t
 | Path | Purpose |
 | --- | --- |
 | `setup.sh` | Root entry point for device setup |
+| `install.sh` | Optional live-USB installer for encrypted Ubuntu in free space |
 | `setup/base/` | Setup coordinator and kernel/firmware package list |
 | `setup/desktop/` | Desktop provisioning, services, gamepad mapper and configuration |
 | `setup/shell/` | Shell provisioning, verified download manifest and user defaults |
@@ -26,7 +27,7 @@ Replace the repository URL with yours. Clone as your normal user and run setup t
 | `tests/fixtures/` | Synthetic controller, browser pages and shell/input fixtures |
 | `docs/` | Setup, controls, test instructions and remaining acceptance checks |
 
-Only `setup.sh` and `setup/` are needed on the device. Tests run separately and are not installed by setup. VM installation is manual; the test launcher creates only disposable virtual disks.
+Only `setup.sh` and `setup/` are needed for post-install device setup. `install.sh` is a standalone file used earlier in the live USB environment. Tests run separately and are not installed by setup. `tests/vm.py` supports manual VM installation; `tests/test-install-vm.py` tests the optional installer helper on disposable virtual disks.
 
 - [Gamepad navigation and customization](docs/gamepad-controls.md)
 - [Gamepad chord typing layout](docs/gamepad-chord-layout.md)

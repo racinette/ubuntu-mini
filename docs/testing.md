@@ -10,6 +10,7 @@ Run from the repository root:
 python3 tests/check-setup-layout.py
 python3 tests/check-browser-download-mode.py
 python3 tests/check-chord-recognizer.py
+python3 tests/check-install-plan.py
 ```
 
 The setup check verifies the root entry point, source staging and coordinator paths without installing packages. The browser check isolates Snap command selection and existing-browser retention. The chord check exercises all 960 press/release orders and all 48 late Shift/Ctrl combinations, plus invalid/reserved/rolling gestures and reset. It creates no host input device and reads Linux key codes from `/usr/include/linux/input-event-codes.h`.
@@ -21,7 +22,7 @@ On an Ubuntu host:
 ```bash
 sudo apt-get install --no-install-recommends \
   qemu-system-x86 qemu-system-gui qemu-utils ovmf \
-  cpu-checker openssh-client python3-pil sbsigntool
+  cpu-checker openssh-client python3-pil python3-pexpect sbsigntool
 kvm-ok
 test -r /dev/kvm && test -w /dev/kvm && echo 'KVM accessible'
 python3 tests/probe-host.py
@@ -30,6 +31,41 @@ python3 tests/probe-host.py
 QEMU runs as the ordinary host user. That user needs read/write access to `/dev/kvm`. The probe launches a diskless KVM/UEFI guest and shuts it down after inspecting QMP. An agent running in a sandbox may also need approved host execution for KVM, network sockets and QMP; filesystem access alone is insufficient.
 
 Place `ubuntu-24.04.5-live-server-amd64.iso` in the repository root. The launcher verifies SHA-256 `97f3d7ffb032c3eb3b23d2c8be9cc76e60c2c1f2c0146ba5ba9fe01cafae0fd8`. Installation media is ignored by Git. Start the [local mirror](local-mirror.md) and prepare its caches before repeated setup runs.
+
+## Test the live USB installation helper
+
+The [standalone installer](install.md) has a separate disposable test harness. It boots the ordinary signed ISO with Secure Boot enabled. Once the language screen appears, `console` switches to the live shell and adds only a public fixture SSH key. The actual installation starts later by running `install.sh` over SSH in that live environment.
+
+```bash
+python3 tests/test-install-vm.py prepare
+# Set VM_DIR to the printed directory.
+python3 tests/test-install-vm.py launch "$VM_DIR"
+python3 tests/test-install-vm.py console "$VM_DIR"
+python3 tests/test-install-vm.py wait "$VM_DIR"
+python3 tests/test-install-vm.py fixture "$VM_DIR"
+python3 tests/test-install-vm.py install "$VM_DIR" --size 20G
+```
+
+Omit `--size` to test taking the largest free region. The 48 GiB fixture contains a preserved 100 MiB ESP, a reserved partition, a 4 GiB data partition and a 1 GiB recovery partition physically at the end. Whole-partition hashes are recorded before installation. These are synthetic contents, not a Windows installation.
+
+To test the normal terminal prompts instead of supplying a private credentials file, replace the `install` step with `cancel` followed by `interactive-install`. The harness answers the actual hostname, username, password and encryption prompts through a terminal, verifies cancellation leaves the GPT and installer configuration untouched, then confirms a maximum-space installation with `INSTALL`. Installed-system verification uses password authentication for this path.
+
+Installation uses the local mirror's current URL, including its separate security endpoint. Oversized allocation is rejected before installation. Inspect `status` for progress; the installer automatically reboots, and QEMU exits because the harness uses `-no-reboot`. After it exits:
+
+```bash
+python3 tests/test-install-vm.py boot "$VM_DIR"
+# Wait for the encryption prompt; capture saves screen.png for inspection.
+python3 tests/test-install-vm.py capture "$VM_DIR"
+python3 tests/test-install-vm.py unlock "$VM_DIR"
+python3 tests/test-install-vm.py verify "$VM_DIR"
+python3 tests/test-install-vm.py shutdown "$VM_DIR"
+```
+
+`unlock` enters a wrong fixture passphrase before the correct one. The saved `luks-wrong.png` must show rejection; QMP typing requires the VM to be at the prompt. `verify` checks Secure Boot and kernel lockdown, encrypted root, the new ESP and default firmware entry, account-password sudo, original GPT entries and full hashes, and absence of plaintext credentials in installed logs/cloud configuration. It records the installation helper's SHA-256 from the installed storage plan. Reports and screenshots are private files under the fixture directory.
+
+For a reinstall test, boot a fresh USB session on the same stopped fixture. `fresh-usb` backs up and resets only the VM's private firmware variables so the USB boots reliably; it does not change the virtual disk. After `console` and `wait`, `reclaim` first proves a 42 GiB request is refused while the previous Ubuntu allocation occupies space, verifies preserved hashes, then explicitly deletes only fixture partitions 5–7. It verifies that the original table is restored. Run `cancel`, then `install ... --size 20G` or `interactive-install` and repeat cold-boot verification. This cleanup exists only in the guarded VM harness; the device installer contains no deletion operation.
+
+`reset-preflight` and `finish` are diagnostic harness operations for failed test runs. A successful acceptance run must complete automatically without either operation.
 
 ## Create a manual installation fixture
 
@@ -137,10 +173,14 @@ The synthetic controller is created inside the guest. Mapping tests exercise rea
 
 ## Recorded results and current limits
 
+On 2026-10-08, the live-USB helper passed complete automatic installations with a 20 GiB explicit allocation and a 42.89 GiB maximum-space allocation. A reinstall passed after explicitly reclaiming only the previous Ubuntu partitions. The final maximum-space run used real terminal credential prompts and `INSTALL` confirmation, with cancellation tested first. It required no diagnostic intervention and installed helper SHA-256 `15b9053725debbd04fe53d4f31208d3e68d16713b665854c89eb850199432117`. The explicit-size run used the preceding revision; the subsequent helper change corrected terminal input handling.
+
+Both installed systems passed cold boot without the ISO, wrong-passphrase rejection, successful unlock, Secure Boot, account access, Ubuntu's new ESP/default firmware entry, unchanged original GPT entries and whole-partition hashes, and absence of plaintext credentials in installer logs/cloud configuration. The final interactive run also confirmed kernel lockdown in integrity mode. Package downloads used the local mirror; the final run served its requests from cache. The fixtures contain synthetic partitions, so Windows boot and BitLocker recovery remain physical-device checks. [Installation summary](../.local/vm/install-summary.json), [20 GiB reinstall](../.local/vm/storage-install-dtuowdxy/install-report.json), [current interactive installation](../.local/vm/storage-install-nkpl8nsn/install-report.json).
+
 Previous standalone setup runs passed clean Server provisioning, reruns, personal-setting preservation, configuration backups, unchanged GPT geometry, cold boot, graphical login, desktop services, shell editing/local history and real signed Firefox installation through the cache. The source-clone rerun passed real upstream shell downloads while retaining an existing browser. [Standalone summary](../.local/vm/post-install-setup-summary.json), [source-clone report](../.local/vm/storage-desktop-69unztc4/source-setup-report.json).
 
-Signed boot and kernel lockdown passed before/after maintenance; earlier experiments also observed rejection of unsigned EFI code and a signature-stripped kernel. Maintenance retained the same kernel version. The automated installation/storage experiments have been removed from the source tree; those historical results do not describe a current automated device installer. [Signed boot report](../.local/vm/storage-desktop-zm9c2afx/secure-boot-boot-report.json).
+Signed boot and kernel lockdown passed before/after maintenance; earlier experiments also observed rejection of unsigned EFI code and a signature-stripped kernel. Maintenance retained the same kernel version. Earlier automated installation/storage experiments were removed from the source tree; the current standalone helper was tested separately as described above. [Signed boot report](../.local/vm/storage-desktop-zm9c2afx/secure-boot-boot-report.json).
 
 The retained chord VM passed 25 acceptance groups and 96 character cases covering 95 printable ASCII characters. Its layout predates the current frequency-based assignments. The current layout passed the host frame checker; its revised assignments still need a fresh VM run. [Gamepad acceptance summary](../.local/vm/gamepad-chords-summary.json), [mapping report](../.local/vm/storage-desktop-zm9c2afx/gamepad-mapping-report.json).
 
-These records describe the sources installed at the time of each run. The reorganized source tree and simplified manual-install launcher have host checks; a fresh complete VM installation has not been repeated after restructuring. Fresh Snap Store installation, a different-kernel update, screen sharing and physical hardware acceptance remain in the [validation plan](validation-plan.md).
+These records describe the sources installed at the time of each run. The reorganized setup source tree and simplified manual-install launcher have host checks; a fresh complete desktop setup run has not been repeated after restructuring. Fresh Snap Store installation, a different-kernel update, screen sharing and physical hardware acceptance remain in the [validation plan](validation-plan.md).

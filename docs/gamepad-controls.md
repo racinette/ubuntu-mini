@@ -17,7 +17,7 @@ Post-install setup installs this profile automatically. In the WIN Mini's gamepa
 | Start | Open a terminal, on release |
 | Select | Open the window picker, on release |
 | Menu / Xbox | Open the application launcher, on release |
-| Left stick click, L3 | Arm Super for the next key/chord; tap again to cancel, on release |
+| Left stick click, L3 | Arm commands / Super chords; tap again to cancel, on release |
 | Right stick click, R3 | Toggle fullscreen, on release |
 | L4 / R4 | Unassigned |
 
@@ -31,20 +31,36 @@ The window picker lists open windows across workspaces, with the current window 
 
 The face buttons are keyboard keys, so applications determine their behavior. For example, Shift + D-pad selects text; Ctrl + left/right moves by words; Ctrl + X emits Ctrl+Backspace to delete a word. Shift + Y reverses application focus. In Firefox, Ctrl + Y changes tabs and Ctrl + Shift + Y changes them in reverse.
 
-## One-shot Super
+## L3 commands and one-shot Super
 
-Tap and release **L3**, then enter a single D-pad/face input or typing chord. The mapper presses Super immediately before that key and releases it after the key, so both thumbs are free to enter the gesture. Arming alone emits no keyboard key and does not affect the physical keyboard. A notification confirms arming/cancellation; `mini-os-gamepad --status` reports `super_armed`.
+Tap and release **L3**, then press and release one control from this table. Each command exits the layer. A brief notification shows the legend; arming alone emits no keyboard key and does not affect the physical keyboard. `mini-os-gamepad --status` reports `super_armed` while the layer is waiting.
+
+| After tapping L3 | Command |
+| --- | --- |
+| X | Close the focused window |
+| Y | Toggle tabbed / tiled layout |
+| A | Open a terminal |
+| B | Cancel, without sending Escape |
+| Up | Copy |
+| Down | Paste |
+| Left | Undo in graphical applications |
+| Right | Redo in graphical applications |
+
+Copy/paste use Ctrl+Shift+C/V in Foot, including Foot windows with custom application IDs, and Ctrl+C/V in graphical applications. Undo uses Ctrl+Z; redo uses Ctrl+Shift+Z, whose support depends on the application. Detected terminals receive neither undo nor redo, so this command does not suspend a shell job. Other detected terminal emulators receive no clipboard command either. If the focused client process cannot be identified, clipboard/editing commands are skipped with a notification. Application identifiers and the client executable identify common terminals; terminal sessions embedded inside graphical applications are treated as part of that application.
+
+Commands ignore held Shift/Ctrl triggers for their shortcut, then restore those held modifiers. They fire once, after release. A second L3 tap or L3 followed by B cancels. Direct button actions (Start, Select, Menu, R3 and bumpers) also cancel the layer before doing their usual action. Stick navigation and trigger changes leave it armed.
+
+**Typing chords retain one-shot Super.** Tap L3, then enter any assigned multi-input typing chord. The mapper presses Super immediately before the emitted key and releases it afterward, so both thumbs are free to enter the chord.
 
 | After tapping L3 | Shortcut | Result |
 | --- | --- | --- |
-| A | Super+Enter | Open a terminal |
 | Up+Y (`e`) | Super+E | Open the file manager |
 | Right+Y (`d`) | Super+D | Open the application launcher |
 | Right+A (`f`) | Super+F | Toggle fullscreen |
 
-Super clears after one emitted key. Tap L3 a second time to cancel before typing. Invalid/unassigned gestures leave it armed so you can retry. Shift/Ctrl triggers can still be held while entering the chord: L3, hold L2, then Up+X+Y (`q`) emits Super+Shift+Q to close the focused window. Keep the trigger held until the chord finishes.
+Shift/Ctrl triggers still combine with these typing chords: L3, hold L2, then Up+X+Y (`q`) emits Super+Shift+Q. Keep the trigger held until the chord finishes. Invalid/unassigned gestures leave the layer armed so you can retry. Single controls use the command table instead of emitting Super+arrows or Super+face keys.
 
-Direct button actions (Start, Select, Menu, R3 and bumpers) cancel pending Super before doing their usual action. Stick navigation and trigger changes leave it armed. Locking, switching away from the graphical session, disconnecting, input resynchronization, service restart and switching to normal gamepad input clear it. It is never restored after reconnect/restart. With typing chords disabled in a personal profile, a D-pad arrow retains its existing held/repeating behavior and Super lasts until that arrow is released.
+Locking, switching away from the graphical session, disconnecting, input resynchronization, service restart and switching to normal gamepad input clear the layer. It is never restored after reconnect/restart. With typing chords disabled in a personal profile, ordinary D-pad arrows retain their held/repeating behavior; armed commands still wait for release and consume their constituent input.
 
 ## Switch to normal gamepad input
 
@@ -81,6 +97,6 @@ The mapper automatically chooses one accessible controller with all configured c
 
 Setup loads the packaged `uinput` module and grants its device access to the active local user through a `uaccess` rule, following the pattern used by [AntiMicroX](https://github.com/AntiMicroX/antimicrox/blob/master/other/60-antimicrox-uinput.rules). It does not add the account to the input group. Controller access uses the existing session permissions.
 
-The default face mapping follows Xbox/xpad button labels. Linux's historical aliases put Xbox X at `BTN_NORTH` (`BTN_X`, event code 307) and Y at `BTN_WEST` (`BTN_Y`, event code 308); those directional names do not describe their physical positions on an Xbox-layout controller. Physical WIN Mini QA confirmed that the earlier position-based assumption swapped Backspace/Tab and suppressed the Y+B and X+A chords. The corrected host checker feeds independent Xbox event codes into every chord case.
+The default face mapping follows Xbox/xpad button labels. Linux's historical aliases put Xbox X at `BTN_NORTH` (`BTN_X`, event code 307) and Y at `BTN_WEST` (`BTN_Y`, event code 308); those directional names do not describe their physical positions on an Xbox-layout controller. Physical WIN Mini QA confirmed that the earlier position-based assumption swapped Backspace/Tab and suppressed the Y+B and X+A chords. The corrected host checker feeds independent Xbox event codes into every chord case. It also checks all eight command singles, clipboard/editing shortcuts, terminal detection, trigger restoration and cancellation. These frame tests create no host input device.
 
 The [VM mapping tests](testing.md#gamepad-tests) exercise real application keys, Sway actions and lifecycle behavior with a synthetic Linux controller. The previous recorded VM result used the old X/Y assumption; the corrected VM harness has not yet been rerun. Trigger axes, hardware switch and behavior after suspend still require physical validation. Rear buttons, gyro and rumble have no added mappings.

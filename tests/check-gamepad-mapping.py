@@ -333,6 +333,32 @@ else:raise ValueError('Mapped keyboard is missing')
         wait(keyboard_keys, lambda keys: not keys, 'Browser tab modifiers did not release')
         report['checks']['ctrl_tab_and_reverse_tab'] = True
         report['checks']['trigger_modifiers_and_combinations'] = True
+        browser_set(text='controller clipboard', selection=[0, 20], focus='editor', clear=True)
+        pulse(1, 317)
+        control('emit', [[3, 17, -1]])
+        time.sleep(.3)
+        if browser()['events']:
+            raise ValueError('Copy command acted before release')
+        control('emit', [[3, 17, 0]])
+        wait(lambda: graphical(directory, 'wl-paste --no-newline'),
+             lambda text: text == 'controller clipboard', 'Command layer did not copy browser selection')
+        browser_set(text='', selection=[0, 0], focus='editor', clear=True)
+        pulse(1, 317); pulse(3, 17, 1)
+        wait(browser, lambda s: s['text'] == 'controller clipboard', 'Command layer did not paste browser clipboard')
+        browser_set(text='', selection=[0, 0], focus='editor', clear=True)
+        type_text(monitor, 'undo-redo')
+        wait(browser, lambda s: s['text'] == 'undo-redo', 'Undo fixture text missing')
+        pulse(1, 317); pulse(3, 16, -1)
+        wait(browser, lambda s: s['text'] != 'undo-redo', 'Command layer did not undo browser typing')
+        pulse(1, 317); pulse(3, 16, 1)
+        wait(browser, lambda s: s['text'] == 'undo-redo', 'Command layer did not redo browser typing')
+        browser_set(clear=True)
+        pulse(1, 317); pulse(1, 305)
+        wait(status, lambda s: not s['super_armed'] and not s['keys'], 'B did not cancel command layer')
+        time.sleep(.3)
+        if browser()['events']:
+            raise ValueError('Command cancellation leaked Escape into the application')
+        report['checks']['command_layer_browser_copy_paste_undo_redo_and_cancel'] = True
         print('Application keys passed: 48 typing chords with Shift, release-only arrows, trigger holds and editing combinations.', flush=True)
         capture(monitor, directory, 'mapped-controller-browser')
 
@@ -421,13 +447,26 @@ else:raise ValueError('Mapped keyboard is missing')
         before_super_terminal = {node['id'] for node in tree()}
         pulse(1, 317)
         pulse(1, 304)
-        super_terminal_tree = wait(tree, lambda nodes: any(n['id'] not in before_super_terminal and n['app_id'] == 'foot' for n in nodes), 'L3 then A did not open a terminal through Super+Enter')
+        super_terminal_tree = wait(tree, lambda nodes: any(n['id'] not in before_super_terminal and n['app_id'] == 'foot' for n in nodes), 'L3 then A did not open a terminal')
         super_terminal_id = next(n['id'] for n in super_terminal_tree if n['id'] not in before_super_terminal and n['app_id'] == 'foot')
-        wait(status, lambda s: not s['super_armed'] and not s['super_active'] and not s['keys'], 'Super remained after terminal shortcut')
+        wait(status, lambda s: not s['super_armed'] and not s['super_active'] and not s['keys'], 'Command layer remained after terminal action')
         pulse(1, 304)
         time.sleep(.3)
         if len({n['id'] for n in tree()} - before_super_terminal) != 1:
             raise ValueError('One-shot Super affected the next Enter')
+
+        pulse(1, 317)
+        control('emit', [[1, 307, 1]])
+        time.sleep(.3)
+        if all(n['id'] != super_terminal_id for n in tree()):
+            raise ValueError('L3 then X closed the window before release')
+        control('emit', [[1, 307, 0]])
+        wait(tree, lambda nodes: all(n['id'] != super_terminal_id for n in nodes), 'L3 then X did not close the temporary terminal')
+        before_super_terminal = {node['id'] for node in tree()}
+        pulse(1, 317); pulse(1, 304)
+        super_terminal_tree = wait(tree, lambda nodes: any(n['id'] not in before_super_terminal and n['app_id'] == 'foot' for n in nodes), 'Second command terminal missing')
+        super_terminal_id = next(n['id'] for n in super_terminal_tree if n['id'] not in before_super_terminal and n['app_id'] == 'foot')
+        report['checks']['command_layer_close_on_release'] = True
 
         pulse(1, 317)
         control('emit', [[3, 2, 255]])
@@ -438,6 +477,23 @@ else:raise ValueError('Mapped keyboard is missing')
         control('emit', [[3, 2, 0]])
         wait(keyboard_keys, lambda keys: not keys, 'Shift remained after the close shortcut')
         graphical(directory, f'swaymsg "[con_id={terminal_id}] focus"')
+
+        def focused_layout():
+            value = json.loads(graphical(directory, 'swaymsg -t get_tree'))
+            def walk(node):
+                if any(child.get('id') == terminal_id for child in node.get('nodes', [])):
+                    return node['layout']
+                for child in node.get('nodes', []) + node.get('floating_nodes', []):
+                    result = walk(child)
+                    if result:
+                        return result
+            return walk(value)
+
+        graphical(directory, 'swaymsg \"layout splith\"')
+        for expected in ('tabbed', 'splith'):
+            pulse(1, 317); pulse(1, 308)
+            wait(focused_layout, lambda layout: layout == expected, 'L3 then Y did not toggle layout')
+        report['checks']['command_layer_layout_toggle'] = True
 
         pulse(1, 317)
         control('pulse', [inputs['RIGHT'], inputs['A']], [[3, 16, 0], [1, 304, 0]])
@@ -501,7 +557,7 @@ else:raise ValueError('Mapped keyboard is missing')
         graphical(directory, 'swaymsg "[con_id=' + str(terminal_id) + '] fullscreen disable"')
         report['picker_selected_window_id'] = selected_id
         report['checks']['select_picker_navigation_accept_and_cancel'] = True
-        print('Extra buttons passed: release-only terminal, launcher, window picker, one-shot Super shortcuts and fullscreen.', flush=True)
+        print('Extra buttons passed: command layer, release-only terminal, launcher, window picker, one-shot Super chords and fullscreen.', flush=True)
 
         graphical(directory, 'swaymsg "workspace number 1; [app_id=firefox_firefox] focus"')
         browser_set(text='preserved', selection=[9, 9], focus='editor', clear=True)

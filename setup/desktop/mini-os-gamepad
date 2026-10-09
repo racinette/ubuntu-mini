@@ -213,6 +213,7 @@ class Mapper:
         self.chord_armed = False
         self.pending_buttons = set()
         self.text_gesture = ReleaseGesture()
+        self.command_gesture = False
         self.unavailable_actions = []
         self.actions = deque(maxlen=24)
         self.reason = 'Waiting for a controller'
@@ -237,9 +238,9 @@ class Mapper:
                 desired.add(self.e.KEY_LEFTMETA)
             else:
                 self.super_active = False
-        for key in sorted(self.keys - desired, key=lambda k: k in modifiers):
+        for key in sorted(self.keys - desired, key=lambda k: (k in modifiers, k)):
             self.keyboard.write(self.e.EV_KEY, key, 0)
-        for key in sorted(desired - self.keys, key=lambda k: k not in modifiers):
+        for key in sorted(desired - self.keys, key=lambda k: (k not in modifiers, k)):
             self.keyboard.write(self.e.EV_KEY, key, 1)
         if self.keys != desired:
             self.keyboard.syn()
@@ -254,6 +255,7 @@ class Mapper:
         self.ready = False
         self.pending_buttons.clear()
         self.text_gesture.clear()
+        self.command_gesture = False
         self.chord_since = None
         self.chord_consumed = self.chord_armed = False
 
@@ -266,13 +268,81 @@ class Mapper:
             self.clear_super()
         else:
             self.super_armed = True
-        label = 'Super armed: next key or chord. Tap L3 again to cancel.' if self.super_armed else 'Super cancelled'
+        label = ('X close · Y layout · A terminal · B cancel\n'
+                 '↑ copy · ↓ paste · ← undo · → redo\n'
+                 'Typing chord: Super shortcut. L3: cancel.'
+                 if self.super_armed else 'Commands cancelled')
+        self.notify(label)
+
+    def notify(self, label):
         log.info(label)
         try:
             subprocess.run(['notify-send', '-a', 'ubuntu-mini', '-t', '2500',
-                            'Gamepad Super', label], check=False, timeout=2)
+                            'Gamepad commands', label], check=False, timeout=2)
         except (OSError, subprocess.TimeoutExpired) as error:
-            log.warning('Super notification failed: %s', error)
+            log.warning('Gamepad notification failed: %s', error)
+
+    def focused_application(self):
+        """Check both Wayland/X11 identifiers and the actual compositor client."""
+        def focused(node):
+            children = node.get('nodes', []) + node.get('floating_nodes', [])
+            if node.get('focused') and not children and node.get('pid'):
+                return node
+            for child in children:
+                result = focused(child)
+                if result:
+                    return result
+
+        node = focused(ipc('', 4))
+        if not node:
+            raise ValueError('No focused application')
+        pid = node['pid']
+        if type(pid) is not int or pid <= 0:
+            raise ValueError('Invalid focused application PID')
+        executable = Path(os.readlink(f'/proc/{pid}/exe').removesuffix(' (deleted)')).name.lower()
+        properties = node.get('window_properties') or {}
+        names = {executable, (node.get('app_id') or '').lower(),
+                 (properties.get('class') or '').lower(), (properties.get('instance') or '').lower()}
+        foot = executable in ('foot', 'footclient')
+        terminal = foot or any('term' in name or name in {
+            'kitty', 'alacritty', 'konsole', 'st', 'urxvt', 'rxvt', 'contour',
+            'ghostty', 'rio', 'blackbox', 'guake', 'tilda', 'yakuake',
+            'kgx', 'ptyxis', 'tilix', 'warp', 'hyper', 'tabby',
+        } for name in names)
+        return 'foot' if foot else 'terminal' if terminal else 'gui'
+
+    def shortcut(self, key, modifiers):
+        # Commands have fixed semantics even while a trigger is held. Restore
+        # those held modifiers afterward, without adding them to the shortcut.
+        held = set(self.keys)
+        self.write_keys(modifiers)
+        self.write_keys(set(modifiers) | {key})
+        self.write_keys(modifiers)
+        self.write_keys(held)
+
+    def layer_command(self, name):
+        self.clear_super()
+        if name in ('X', 'Y', 'A'):
+            self.command({'X': 'kill', 'Y': ACTION_COMMANDS['layout'],
+                          'A': ACTION_COMMANDS['terminal']}[name])
+            return
+        if name == 'B':
+            self.notify('Commands cancelled')
+            return
+        try:
+            application = self.focused_application()
+        except (OSError, ValueError, EOFError, KeyError) as error:
+            log.warning('Cannot identify focused application: %s', error)
+            self.notify('Command skipped: cannot identify the focused application')
+            return
+        if application == 'terminal' or application == 'foot' and name in ('LEFT', 'RIGHT'):
+            self.notify('This command is unavailable in terminals')
+            return
+        modifiers = {self.e.KEY_LEFTCTRL}
+        if application == 'foot' or name == 'RIGHT':
+            modifiers.add(self.e.KEY_LEFTSHIFT)
+        self.shortcut({'UP': self.e.KEY_C, 'DOWN': self.e.KEY_V,
+                       'LEFT': self.e.KEY_Z, 'RIGHT': self.e.KEY_Z}[name], modifiers)
 
     def ungrab(self):
         self.reset()
@@ -355,8 +425,9 @@ class Mapper:
         combo = set(self.config['toggle_buttons'])
         desktop = self.permitted(active) and self.grabbed and self.ready
         eligible = pressed if desktop else pressed & combo if self.mode == 'passthrough' else set()
-        if self.config['chords']:
+        if self.config['chords'] or self.super_armed or self.command_gesture:
             eligible = eligible - set(self.config['chord_faces'].values())
+            self.pending_buttons.difference_update(self.config['chord_faces'].values())
         self.pending_buttons.update(eligible)
         held = combo & self.raw_keys
         if held == combo and combo <= self.pending_buttons and not self.chord_consumed:
@@ -404,7 +475,7 @@ class Mapper:
             threshold = self.config['trigger_release' if self.triggers[index] else 'trigger_press']
             self.triggers[index] = value > threshold
         desired = set()
-        if not self.config['chords']:
+        if not self.config['chords'] and not self.super_armed and not self.command_gesture:
             for source, (negative, positive) in self.config['dpad'].items():
                 value = self.raw_axes.get(source, 0)
                 if value:
@@ -415,7 +486,7 @@ class Mapper:
             desired.add(self.e.KEY_LEFTCTRL)
         self.write_keys(desired)
         self.button_gestures(pressed, released, now, active)
-        if self.config['chords'] and self.permitted(active) and self.grabbed and self.ready:
+        if self.permitted(active) and self.grabbed and self.ready:
             self.typing_frame()
 
     def typing_frame(self):
@@ -425,8 +496,18 @@ class Mapper:
             value = self.raw_axes.get(axis, 0)
             if value:
                 held.add(negative if value < 0 else positive)
+        if self.super_armed and held:
+            self.command_gesture = True
+        captured = self.command_gesture
         gesture = self.text_gesture.update(held)
+        if not held:
+            self.command_gesture = False
         if gesture is None:
+            return
+        if self.super_armed and len(gesture) == 1:
+            self.layer_command(next(iter(gesture)))
+            return
+        if (captured and not self.super_armed) or not self.config['chords']:
             return
         if len(gesture) == 1:
             name = next(iter(gesture))
@@ -564,6 +645,7 @@ def main():
             raise SystemExit('A mapper is already running')
         output_keys = set(config['buttons'].values()) | {key for values in config['dpad'].values() for key in values}
         output_keys |= {evdev.ecodes.KEY_LEFTSHIFT, evdev.ecodes.KEY_LEFTCTRL, evdev.ecodes.KEY_LEFTMETA}
+        output_keys |= {evdev.ecodes.KEY_C, evdev.ecodes.KEY_V, evdev.ecodes.KEY_Z}
         output_keys |= set(config['chords'].values())
         with evdev.UInput({evdev.ecodes.EV_KEY: sorted(output_keys), evdev.ecodes.EV_REP: []},
                           name='ubuntu-mini gamepad keyboard', phys='mini-os/gamepad-keyboard', vendor=0x1209, product=2) as keyboard:

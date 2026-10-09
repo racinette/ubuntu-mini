@@ -143,19 +143,95 @@ def main():
         tap_super()
         assert not state.super_armed and not keyboard.events, 'Second L3 tap did not cancel'
 
-        for face, output in (('A', codes.KEY_ENTER), ('B', codes.KEY_ESC),
-                             ('X', codes.KEY_BACKSPACE), ('Y', codes.KEY_TAB),
-                             ('UP', codes.KEY_UP)):
-            reset()
-            tap_super()
-            frame({face})
-            assert not keyboard.events
-            frame(set())
-            assert keyboard.events == super_events(output), (face, keyboard.events)
+        for face, command in (('A', 'exec foot'), ('X', 'kill'),
+                              ('Y', 'layout toggle tabbed split'), ('B', None)):
+            reset(); tap_super()
+            with patch.object(state, 'command') as run, patch.object(mapper.subprocess, 'run'):
+                frame({face})
+                assert not keyboard.events and not run.called, ('early command', face)
+                frame(set())
+                assert run.call_args_list == ([] if command is None else [((command,), {})])
             assert not state.super_armed and not state.super_active and not state.keys
-            keyboard.events.clear()
+            assert not keyboard.events, ('command leaked keyboard input', face)
             frame({face}); frame(set())
-            assert keyboard.events == [(codes.EV_KEY, output, 1), (codes.EV_KEY, output, 0)], 'Super leaked into the next key'
+            output = config['buttons'][XBOX_FACE_CODES[face]]
+            assert keyboard.events == [(codes.EV_KEY, output, 1), (codes.EV_KEY, output, 0)]
+
+        def stroke(output, modifiers):
+            return ([(codes.EV_KEY, key, 1) for key in sorted(modifiers)] +
+                    [(codes.EV_KEY, output, 1), (codes.EV_KEY, output, 0)] +
+                    [(codes.EV_KEY, key, 0) for key in sorted(modifiers)])
+
+        # Every clipboard/editing command waits for release, consumes the layer,
+        # and suppresses held triggers during its exact shortcut, restoring them.
+        for application in ('gui', 'foot', 'terminal', 'unknown'):
+            for direction, output in (('UP', codes.KEY_C), ('DOWN', codes.KEY_V),
+                                      ('LEFT', codes.KEY_Z), ('RIGHT', codes.KEY_Z)):
+                for held_modifiers in (False, True):
+                    reset(); tap_super()
+                    context = (patch.object(state, 'focused_application', side_effect=ValueError('unknown'))
+                               if application == 'unknown' else
+                               patch.object(state, 'focused_application', return_value=application))
+                    with context, patch.object(mapper.subprocess, 'run'):
+                        frame({direction}, shift=held_modifiers, ctrl=held_modifiers)
+                        before = list(keyboard.events)
+                        frame({direction}, shift=held_modifiers, ctrl=held_modifiers)
+                        assert keyboard.events == before, 'Held command repeated'
+                        frame(set(), shift=held_modifiers, ctrl=held_modifiers)
+                    blocked = application in ('unknown', 'terminal') or application == 'foot' and direction in ('LEFT', 'RIGHT')
+                    trigger_keys = {codes.KEY_LEFTCTRL, codes.KEY_LEFTSHIFT} if held_modifiers else set()
+                    assert state.keys == trigger_keys and not state.super_armed and not state.super_active
+                    events = keyboard.events[len(before):]
+                    if blocked:
+                        assert not events, (application, direction, events)
+                    else:
+                        modifiers = {codes.KEY_LEFTCTRL}
+                        if application == 'foot' or direction == 'RIGHT':
+                            modifiers.add(codes.KEY_LEFTSHIFT)
+                        expected = ([(codes.EV_KEY, key, 0) for key in sorted(trigger_keys - modifiers)] +
+                                    [(codes.EV_KEY, key, 1) for key in sorted(modifiers - trigger_keys)] +
+                                    [(codes.EV_KEY, output, 1), (codes.EV_KEY, output, 0)] +
+                                    [(codes.EV_KEY, key, 0) for key in sorted(modifiers - trigger_keys)] +
+                                    [(codes.EV_KEY, key, 1) for key in sorted(trigger_keys - modifiers)])
+                        assert events == expected, (application, direction, held_modifiers, events)
+                    frame(set())
+                    assert not state.keys
+                    keyboard.events.clear()
+                    frame({direction}); frame(set())
+                    key = getattr(codes, 'KEY_' + direction)
+                    assert keyboard.events == [(codes.EV_KEY, key, 1), (codes.EV_KEY, key, 0)], 'Command layer leaked'
+
+        # Real focus classification: floating windows, custom Foot app IDs,
+        # Xwayland terminal classes, unreadable processes and missing focus.
+        def focus_tree(app_id='org.mozilla.firefox', properties=None):
+            return {'nodes': [], 'floating_nodes': [{'nodes': [
+                {'focused': True, 'pid': 123, 'app_id': app_id, 'window_properties': properties}
+            ]}]}
+
+        for executable, app_id, properties, expected in (
+                ('foot', 'custom-editor', None, 'foot'),
+                ('footclient', 'custom-terminal', None, 'foot'),
+                ('foot (deleted)', 'custom-editor', None, 'foot'),
+                ('firefox', 'org.mozilla.firefox', None, 'gui'),
+                ('kitty', 'custom', None, 'terminal'),
+                ('custom', 'org.gnome.Terminal', None, 'terminal'),
+                ('custom', None, {'class': 'XTerm'}, 'terminal')):
+            with patch.object(mapper, 'ipc', return_value=focus_tree(app_id, properties)), patch.object(
+                    mapper.os, 'readlink', return_value='/usr/bin/' + executable):
+                assert state.focused_application() == expected
+        with patch.object(mapper, 'ipc', return_value=focus_tree()), patch.object(
+                mapper.os, 'readlink', side_effect=PermissionError):
+            try:
+                state.focused_application()
+                raise AssertionError('Unreadable process was treated as GUI')
+            except PermissionError:
+                pass
+        with patch.object(mapper, 'ipc', return_value={'focused': True, 'nodes': []}):
+            try:
+                state.focused_application()
+                raise AssertionError('Missing application was treated as GUI')
+            except ValueError:
+                pass
 
         super_orders = 0
         for chord, output in config['chords'].items():
@@ -189,15 +265,16 @@ def main():
             for held in invalid:
                 frame(held)
             assert state.super_armed and not keyboard.events
-            frame({'A'}); frame(set())
-            assert keyboard.events == super_events(codes.KEY_ENTER)
+            frame({'UP', 'Y'}); frame(set())
+            assert keyboard.events == super_events(codes.KEY_E)
 
-        # An L3 release in the same report as a key release applies Super first.
+        # An L3 release in the same report as A release dispatches the command.
         reset()
         frame({'A'}, buttons=(317,))
-        with patch.object(mapper.subprocess, 'run'):
+        with patch.object(mapper.subprocess, 'run'), patch.object(state, 'command') as run:
             frame(set())
-        assert keyboard.events == super_events(codes.KEY_ENTER)
+            run.assert_called_once_with('exec foot')
+        assert not keyboard.events and not state.super_armed
 
         for button in (315, 314, 316, 318, 310, 311):
             reset(); tap_super()
@@ -205,12 +282,25 @@ def main():
                 frame(set(), buttons=(button,)); frame(set())
             assert not state.super_armed and not keyboard.events, ('Direct action left Super armed', button)
 
+        reset(); tap_super()
+        frame({'UP', 'Y'})
+        tap_super({'UP', 'Y'})
+        frame({'Y'}); frame(set())
+        assert not keyboard.events and not state.super_armed, 'Cancelled command gesture leaked a character'
+        reset(); tap_super(); frame({'UP', 'Y'})
+        with patch.object(state, 'command') as run:
+            frame({'UP', 'Y'}, buttons=(315,)); frame(set())
+            run.assert_called_once_with('exec foot')
+        assert not keyboard.events and not state.super_armed, 'Direct action leaked an unfinished Super chord'
+
         class Device:
             def ungrab(self): pass
             def close(self): pass
 
         for reason in ('reset', 'disconnect', 'inactive', 'paused', 'passthrough'):
             reset(); tap_super()
+            frame({'UP'}, shift=True, ctrl=True)
+            assert state.command_gesture
             state.device = Device()
             if reason == 'reset': state.reset()
             elif reason == 'disconnect': state.detach()
@@ -223,27 +313,37 @@ def main():
                 with patch.object(mapper.subprocess, 'run'):
                     state.toggle()
                 state.mode = 'desktop'
-            assert not state.super_armed and not state.super_active and not state.keys, reason
+            assert not state.super_armed and not state.super_active and not state.keys and not state.command_gesture, reason
         state.device = None
 
-        # The optional no-chords profile still wraps a held/repeating D-pad key.
+        # A no-chords profile keeps ordinary held/repeating arrows while the
+        # command layer still consumes singles on release.
         chords = config['chords']
         config['chords'] = {}
-        reset(); tap_super()
-        frame({'UP'})
-        assert state.keys == {codes.KEY_LEFTMETA, codes.KEY_UP}
-        frame({'UP'})
-        assert keyboard.events == super_events(codes.KEY_UP)[:2]
+        reset()
+        frame({'UP'}); frame({'UP'})
+        assert keyboard.events == [(codes.EV_KEY, codes.KEY_UP, 1)]
         frame(set())
-        assert keyboard.events == super_events(codes.KEY_UP) and not state.keys
+        assert keyboard.events[-1] == (codes.EV_KEY, codes.KEY_UP, 0)
+        for token in ('UP', 'X', 'A', 'B', 'Y'):
+            reset(); tap_super()
+            with patch.object(state, 'focused_application', return_value='gui'), patch.object(
+                    state, 'command') as run, patch.object(mapper.subprocess, 'run'):
+                frame({token}); frame({token})
+                assert not keyboard.events and not run.called
+                frame(set())
+            assert not state.super_armed and not state.keys
+            if token == 'UP':
+                assert keyboard.events == stroke(codes.KEY_C, {codes.KEY_LEFTCTRL})
+            else:
+                assert not keyboard.events
         reset(); tap_super(); frame({'UP'})
         tap_super({'UP'})
-        assert not state.super_active and not state.super_armed and state.keys == {codes.KEY_UP}
         frame(set())
-        assert not state.keys
+        assert not keyboard.events and not state.super_armed, 'Cancelled held command leaked an arrow'
         config['chords'] = chords
 
-        print(f'Passed: Xbox driver face codes, four single actions, {orders} chord orders, {super_orders} one-shot Super orders, late modifiers, cancellation, lifecycle cleanup and held-arrow compatibility.')
+        print(f'Passed: Xbox driver face codes, four single actions, {orders} chord orders, {super_orders} one-shot Super orders, all eight command singles, app-aware clipboard/editing, trigger restoration, cancellation, lifecycle cleanup and no-chords compatibility.')
 
 
 if __name__ == '__main__':

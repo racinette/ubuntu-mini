@@ -30,7 +30,7 @@ After reboot, enter your LUKS passphrase if you configured encryption, then log 
 
 Setup also installs [gamepad desktop navigation](gamepad-controls.md): triggers hold Shift/Ctrl, bumpers change workspaces, the D-pad sends arrows, and sticks focus/move/resize windows. Start opens a terminal; Select opens the window picker; Menu opens the launcher. Button actions fire on release. [V1 typing chords](gamepad-chord-layout.md) combine the D-pad and face buttons to type US keyboard letters, digits and punctuation; release the whole combination to emit one key. D-pad arrows also wait for release. Hold Start+Select together, then release both, or press Super+Ctrl+G to toggle normal gamepad input for games. Personal overrides in `~/.config/mini-os/gamepad.json` are preserved across setup reruns. The mapping has [VM acceptance tests](testing.md#gamepad-tests); actual WIN Mini controls still need verification.
 
-L3 now arms [one-shot Super](gamepad-controls.md#one-shot-super) for the next gamepad key/chord. For example, L3 then Up+Y emits Super+E to open the file manager. A second L3 tap cancels it; Shift/Ctrl triggers can combine with the shortcut.
+L3 arms the [command layer](gamepad-controls.md#l3-commands-and-one-shot-super): X closes the focused window, Y toggles tabbed/tiled layout, A opens a terminal, B cancels, and Up/Down/Left/Right copy/paste/undo/redo. Undo/redo are disabled in detected terminals. Multi-input typing chords still emit one-shot Super shortcuts; for example, L3 then Up+Y emits Super+E to open the file manager. A second L3 tap cancels; Shift/Ctrl triggers can combine with typing shortcuts.
 
 ## Screen size and Fn keys
 

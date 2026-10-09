@@ -4,11 +4,13 @@ import os
 import argparse
 import configparser
 from pathlib import Path
+import pwd
 import shutil
 import subprocess
 
 HERE = Path(__file__).resolve().parent
 parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--user', help='Existing desktop account; defaults to the account invoking sudo')
 parser.add_argument('--defer-activation', action='store_true',
                     help='Prepare networking and login for reboot; keep the current session running')
 args = parser.parse_args()
@@ -28,6 +30,12 @@ if os.geteuid() != 0:
     raise SystemExit('Run this script as root in the installed target')
 if 'ID=ubuntu' not in Path('/etc/os-release').read_text():
     raise SystemExit('This provisioning targets Ubuntu')
+username = args.user or os.environ.get('SUDO_USER')
+if not username or username == 'root':
+    raise SystemExit('Use sudo from your desktop account, or pass --user USERNAME')
+user = pwd.getpwnam(username)
+if user.pw_uid < 1000:
+    raise SystemExit('Select an existing regular desktop account')
 os.environ['DEBIAN_FRONTEND'] = 'noninteractive'
 os.environ['LC_ALL'] = 'C'
 # Prevent the newly installed greeter from taking over the setup console.
@@ -40,6 +48,10 @@ try:
 finally:
     if created_mask:
         run('systemctl', 'unmask', '--runtime', 'greetd.service')
+# Ubuntu splits these rules out of brightnessctl as a recommended package.
+# Our no-recommends install includes them explicitly; they grant video-group
+# writes to screen backlights. New group membership takes effect next login.
+run('usermod', '-a', '-G', 'video', user.pw_name)
 for name in ('mini-os-session', 'mini-os-session-ready', 'mini-os-lock', 'mini-os-status', 'mini-os-gamepad', 'mini-os-window-picker'):
     write('/usr/local/bin/' + name, HERE.joinpath(name).read_text(), 0o755)
 write('/etc/mini-os/sway.conf', HERE.joinpath('sway.conf').read_text())
@@ -51,6 +63,7 @@ write('/etc/udev/rules.d/60-mini-os-gamepad-uinput.rules',
 write('/etc/modules-load.d/mini-os-gamepad.conf', 'uinput\n')
 run('modprobe', 'uinput')
 run('udevadm', 'control', '--reload-rules')
+run('udevadm', 'trigger', '--action=add', '--subsystem-match=backlight')
 run('udevadm', 'trigger', '--action=add', '--subsystem-match=misc', '--sysname-match=uinput')
 run('udevadm', 'settle')
 for name in ('mini-os-gamepad', 'mini-os-screen-lock'):

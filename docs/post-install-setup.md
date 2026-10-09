@@ -30,6 +30,24 @@ After reboot, enter your LUKS passphrase if you configured encryption, then log 
 
 Setup also installs [gamepad desktop navigation](gamepad-controls.md): triggers hold Shift/Ctrl, bumpers change workspaces, the D-pad sends arrows, and sticks focus/move/resize windows. Start opens a terminal; Select opens the window picker; Menu opens the launcher. Button actions fire on release. [V1 typing chords](gamepad-chord-layout.md) combine the D-pad and face buttons to type US keyboard letters, digits and punctuation; release the whole combination to emit one key. D-pad arrows also wait for release. Hold Start+Select together, then release both, or press Super+Ctrl+G to toggle normal gamepad input for games. Personal overrides in `~/.config/mini-os/gamepad.json` are preserved across setup reruns. The mapping has [VM acceptance tests](testing.md#gamepad-tests); actual WIN Mini controls still need verification.
 
+## Screen size and Fn keys
+
+The desktop defaults to 2× output scaling for the WIN Mini's 7-inch 1920×1080 panel. This enlarges controls and text together, with a 960×540 logical workspace. It does not change the console, encryption prompt or text login greeter. For a smaller desktop UI, add `output * scale 1.5` to `~/.config/sway/mini-os.conf` and press Super+Shift+C. Personal output settings are loaded after the defaults. External monitors also inherit 2× unless overridden, for example `output HDMI-A-1 scale 1`; use `swaymsg -t get_outputs` to find the actual output name.
+
+Fn+F1/F2 adjust the screen backlight. Setup explicitly installs `brightness-udev` and adds your account to the `video` group so `brightnessctl` can write to it without sudo. Brightness and volume controls also work while the screen is locked. Playback keys use `playerctl` with an active MPRIS-capable player: stop, previous, play/pause and next. Print Screen copies a screenshot to the clipboard. Insert and Scroll Lock are passed through to applications; ordinary F1–F12 remain available to applications.
+
+To update only the desktop on an already configured device, from your normal account in the cloned repository:
+
+```bash
+git pull --ff-only
+sudo python3 setup/desktop/provision.py --defer-activation
+sudo reboot
+```
+
+This reapplies desktop configuration and installs any missing desktop packages without running shell or browser downloads. Personal Sway overrides are retained. Reboot or log out and back in to activate the new group membership. The full `setup.sh` also includes these changes.
+
+For brightness troubleshooting, run `brightnessctl -c backlight set +5%` without sudo. A permission error means the rules or new group membership are not active; `id -nG` should include `video` after a fresh login. No backlight devices means a separate kernel/device issue. If this command works but Fn keys do not, check the active Sway configuration and the key events emitted by the device rather than remapping ordinary F1/F2.
+
 ## Logs and reruns
 
 Every applied run saves `setup.log`, `result.json` and `configuration-before.tar.gz` under `/var/lib/mini-os/setup/TIMESTAMP/`. These directories are private to root. `/var/lib/mini-os/setup/last-success.json` identifies the last successful run. A failure prints the log path and returns nonzero; inspect the log, resolve the problem and rerun the same command.

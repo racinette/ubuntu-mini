@@ -161,7 +161,7 @@ def main():
                 run('apt-get', 'update')
                 run('apt-get', 'install', '-y', '--no-install-recommends',
                     *(ROOT / 'base/packages.txt').read_text().split())
-                run(sys.executable, ROOT / 'desktop/provision.py', '--defer-activation')
+                run(sys.executable, ROOT / 'desktop/provision.py', '--user', user.pw_name, '--defer-activation')
                 cache_options = ['--asset-url', asset_url] if asset_url else []
                 run(sys.executable, ROOT / 'shell/provision.py', user.pw_name, *cache_options)
                 run('systemctl', 'start', 'snapd.socket')

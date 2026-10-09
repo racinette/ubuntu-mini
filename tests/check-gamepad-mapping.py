@@ -160,7 +160,8 @@ else:raise ValueError('Mapped keyboard is missing')
         wait(browser, lambda s: s.get('focused') and s.get('target') == 'editor', 'Browser keyboard fixture missing')
 
         face_results = []
-        for button, expected in ((304, 'Enter'), (305, 'Escape'), (308, 'Backspace'), (307, 'Tab')):
+        # Xbox/xpad A/B/X/Y event codes, independent of mapper configuration.
+        for button, expected in ((304, 'Enter'), (305, 'Escape'), (307, 'Backspace'), (308, 'Tab')):
             browser_set(text='hello world', selection=[11, 11], focus='editor', clear=True)
             pulse(1, button)
             result = wait(browser, lambda s: any(e['type'] == 'keyup' and e['code'] == expected for e in s['events']), expected + ' was not delivered')
@@ -172,14 +173,14 @@ else:raise ValueError('Mapped keyboard is missing')
         report['face_buttons'] = face_results
         report['checks']['face_keys_in_browser'] = True
         browser_set(text='hello world', selection=[11, 11], focus='editor', clear=True)
-        control('emit', [[1, 308, 1]])
+        control('emit', [[1, 307, 1]])
         time.sleep(.4)
         held_face = browser()
         if held_face['text'] != 'hello world' or held_face['events']:
             raise ValueError('Face key acted before release')
         control('emit', [[3, 5, 255]])
         wait(keyboard_keys, lambda keys: keys == [29], 'Late Ctrl hold missing')
-        control('emit', [[1, 308, 0]])
+        control('emit', [[1, 307, 0]])
         release_combo = wait(browser, lambda s: s['text'] == 'hello ', 'Modifier added after button press was ignored')
         if not any(e['code'] == 'Backspace' and e['ctrl'] for e in release_combo['events']):
             raise ValueError('Released face key lost the held modifier')
@@ -212,7 +213,7 @@ else:raise ValueError('Mapped keyboard is missing')
                  'KEY_GRAVE': '`', 'KEY_BACKSLASH': '\\', 'KEY_LEFTBRACE': '[', 'KEY_RIGHTBRACE': ']'}
         shifted = dict(zip('`1234567890-=[]\\;\',./', '~!@#$%^&*()_+{}|:"<>?'))
         inputs = {'UP': [3, 17, -1], 'DOWN': [3, 17, 1], 'LEFT': [3, 16, -1], 'RIGHT': [3, 16, 1],
-                  'A': [1, 304, 1], 'B': [1, 305, 1], 'X': [1, 308, 1], 'Y': [1, 307, 1]}
+                  'A': [1, 304, 1], 'B': [1, 305, 1], 'X': [1, 307, 1], 'Y': [1, 308, 1]}
         chord_results = []
         for chord, output_key in profile['chords'].items():
             base = chars.get(output_key, output_key.removeprefix('KEY_').lower())
@@ -278,7 +279,7 @@ else:raise ValueError('Mapped keyboard is missing')
         browser_set(text='select this text', selection=[16, 16], focus='editor', clear=True)
         control('emit', [[3, 5, 255]])
         wait(keyboard_keys, lambda keys: keys == [29], 'Ctrl missing before letter chord shortcut')
-        control('pulse', [inputs['LEFT'], inputs['X']], [[3, 16, 0], [1, 308, 0]], .12)
+        control('pulse', [inputs['LEFT'], inputs['X']], [[3, 16, 0], [1, 307, 0]], .12)
         report['ctrl_letter_chord'] = wait(browser, lambda s: s['selection'] == [0, 16], 'Ctrl+A letter chord did not select all')
         control('emit', [[3, 5, 0]])
         wait(keyboard_keys, lambda keys: not keys, 'Ctrl remained held after letter chord')
@@ -291,7 +292,7 @@ else:raise ValueError('Mapped keyboard is missing')
         selected = wait(browser, lambda s: s['selection'] == [10, 11], 'Shift+arrow selection failed')
         report['shift_selection'] = selected
         browser_set(focus='next', clear=True)
-        pulse(1, 307)
+        pulse(1, 308)
         reverse_focus = wait(browser, lambda s: s['target'] == 'editor', 'Shift+Tab navigation failed')
         report['shift_tab'] = reverse_focus
         control('emit', [[3, 2, 0]])
@@ -299,7 +300,7 @@ else:raise ValueError('Mapped keyboard is missing')
         browser_set(text='hello world', selection=[11, 11], focus='editor', clear=True)
         control('emit', [[3, 5, 255]])
         wait(keyboard_keys, lambda keys: keys == [29], 'Right trigger did not hold Ctrl')
-        pulse(1, 308)
+        pulse(1, 307)
         deleted = wait(browser, lambda s: s['text'] == 'hello ', 'Ctrl+Backspace did not delete a word')
         report['ctrl_backspace'] = deleted
         browser_set(text='hello world', selection=[11, 11], focus='editor', clear=True)
@@ -322,11 +323,11 @@ else:raise ValueError('Mapped keyboard is missing')
         browser_set(focus='editor', clear=True)
         control('emit', [[3, 5, 255]])
         wait(keyboard_keys, lambda keys: keys == [29], 'Ctrl missing before browser tab navigation')
-        pulse(1, 307)
+        pulse(1, 308)
         wait(browser, lambda s: not s['focused'], 'Ctrl+Tab did not switch browser tabs')
         control('emit', [[3, 2, 255]])
         wait(keyboard_keys, lambda keys: keys == [29, 42], 'Ctrl+Shift missing before reverse tab navigation')
-        pulse(1, 307)
+        pulse(1, 308)
         wait(browser, lambda s: s['focused'], 'Ctrl+Shift+Tab did not return to the browser fixture')
         control('emit', [[3, 2, 0], [3, 5, 0]])
         wait(keyboard_keys, lambda keys: not keys, 'Browser tab modifiers did not release')

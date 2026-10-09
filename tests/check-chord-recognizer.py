@@ -11,6 +11,10 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 PROJECT = Path(__file__).resolve().parents[1]
+# xpad reports Xbox A/B/X/Y as BTN_A/B/X/Y. The historical Linux aliases
+# put BTN_X at BTN_NORTH (0x133), and BTN_Y at BTN_WEST (0x134).
+# Keep this fixture independent of FACE_NAMES and the loaded configuration.
+XBOX_FACE_CODES = {'A': 0x130, 'B': 0x131, 'X': 0x133, 'Y': 0x134}
 loader = importlib.machinery.SourceFileLoader('mapper', str(PROJECT / 'setup/desktop/mini-os-gamepad'))
 spec = importlib.util.spec_from_loader(loader.name, loader)
 mapper = importlib.util.module_from_spec(spec)
@@ -52,7 +56,7 @@ def main():
         def frame(tokens, shift=False, ctrl=False):
             nonlocal frames
             previous = set(state.raw_keys)
-            state.raw_keys = {config['chord_faces'][t] for t in tokens if t in mapper.FACE_NAMES}
+            state.raw_keys = {XBOX_FACE_CODES[t] for t in tokens if t in XBOX_FACE_CODES}
             horizontal, vertical = config['chord_axes']
             state.raw_axes = {horizontal: -1 if 'LEFT' in tokens else 1 if 'RIGHT' in tokens else 0,
                               vertical: -1 if 'UP' in tokens else 1 if 'DOWN' in tokens else 0,
@@ -66,6 +70,14 @@ def main():
             state.grabbed = state.ready = True
             state.raw_keys.clear()
             keyboard.events.clear()
+
+        for face, output in (('A', codes.KEY_ENTER), ('B', codes.KEY_ESC),
+                             ('X', codes.KEY_BACKSPACE), ('Y', codes.KEY_TAB)):
+            reset()
+            frame({face})
+            assert not keyboard.events, ('early single face', face)
+            frame(set())
+            assert keyboard.events == [(codes.EV_KEY, output, 1), (codes.EV_KEY, output, 0)], (face, keyboard.events)
 
         orders = 0
         for chord, output in config['chords'].items():
@@ -111,7 +123,7 @@ def main():
         profile = json.loads((PROJECT / 'setup/desktop/gamepad.json').read_text())
         assert len(profile['chords']) == 48 and len(set(profile['chords'].values())) == 48
         assert profile['chords']['DOWN+A'] == 'KEY_SPACE'
-        print(f'Passed: {orders} press/release orders, all 48 late modifier combinations, invalid/reserved/rolling chords and reset.')
+        print(f'Passed: Xbox driver face codes, four single actions, {orders} press/release orders, all 48 late modifier combinations, invalid/reserved/rolling chords and reset.')
 
 
 if __name__ == '__main__':

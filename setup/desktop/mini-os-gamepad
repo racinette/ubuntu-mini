@@ -25,7 +25,9 @@ ACTION_COMMANDS = {
     'fullscreen': 'fullscreen toggle',
 }
 
-FACE_NAMES = {'A': 'BTN_SOUTH', 'B': 'BTN_EAST', 'X': 'BTN_WEST', 'Y': 'BTN_NORTH'}
+# Xbox/xpad uses Linux's historical BTN_X=BTN_NORTH, BTN_Y=BTN_WEST
+# aliases. The directional code names do not match Xbox button positions.
+FACE_NAMES = {'A': 'BTN_SOUTH', 'B': 'BTN_EAST', 'X': 'BTN_NORTH', 'Y': 'BTN_WEST'}
 DIRECTION_PAIRS = ({'UP', 'LEFT'}, {'UP', 'RIGHT'}, {'DOWN', 'LEFT'}, {'DOWN', 'RIGHT'})
 FACE_PAIRS = ({'X', 'Y'}, {'Y', 'B'}, {'B', 'A'}, {'A', 'X'})
 

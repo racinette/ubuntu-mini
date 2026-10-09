@@ -3,8 +3,8 @@
   "buttons": {
     "BTN_SOUTH": "KEY_ENTER",
     "BTN_EAST": "KEY_ESC",
-    "BTN_WEST": "KEY_BACKSPACE",
-    "BTN_NORTH": "KEY_TAB"
+    "BTN_NORTH": "KEY_BACKSPACE",
+    "BTN_WEST": "KEY_TAB"
   },
   "actions": {
     "BTN_START": "terminal",

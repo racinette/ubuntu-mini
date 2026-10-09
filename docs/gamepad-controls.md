@@ -17,7 +17,7 @@ Post-install setup installs this profile automatically. In the WIN Mini's gamepa
 | Start | Open a terminal, on release |
 | Select | Open the window picker, on release |
 | Menu / Xbox | Open the application launcher, on release |
-| Left stick click, L3 | Toggle the focused window group's tabbed/tiled layout, on release |
+| Left stick click, L3 | Arm Super for the next key/chord; tap again to cancel, on release |
 | Right stick click, R3 | Toggle fullscreen, on release |
 | L4 / R4 | Unassigned |
 
@@ -30,6 +30,21 @@ D-pad and face buttons also support the [V1 typing chords](gamepad-chord-layout.
 The window picker lists open windows across workspaces, with the current window first. Use D-pad up/down to select, A to focus that window, and B to cancel. Typing filters the list by application, window title or workspace. The application launcher uses the same navigation keys. The Menu/L3/R3 actions are optional capabilities; if a controller does not expose one of these buttons on its gamepad event device, status reports the unavailable action while the main navigation controls remain usable.
 
 The face buttons are keyboard keys, so applications determine their behavior. For example, Shift + D-pad selects text; Ctrl + left/right moves by words; Ctrl + X emits Ctrl+Backspace to delete a word. Shift + Y reverses application focus. In Firefox, Ctrl + Y changes tabs and Ctrl + Shift + Y changes them in reverse.
+
+## One-shot Super
+
+Tap and release **L3**, then enter a single D-pad/face input or typing chord. The mapper presses Super immediately before that key and releases it after the key, so both thumbs are free to enter the gesture. Arming alone emits no keyboard key and does not affect the physical keyboard. A notification confirms arming/cancellation; `mini-os-gamepad --status` reports `super_armed`.
+
+| After tapping L3 | Shortcut | Result |
+| --- | --- | --- |
+| A | Super+Enter | Open a terminal |
+| Up+Y (`e`) | Super+E | Open the file manager |
+| Right+Y (`d`) | Super+D | Open the application launcher |
+| Right+A (`f`) | Super+F | Toggle fullscreen |
+
+Super clears after one emitted key. Tap L3 a second time to cancel before typing. Invalid/unassigned gestures leave it armed so you can retry. Shift/Ctrl triggers can still be held while entering the chord: L3, hold L2, then Up+X+Y (`q`) emits Super+Shift+Q to close the focused window. Keep the trigger held until the chord finishes.
+
+Direct button actions (Start, Select, Menu, R3 and bumpers) cancel pending Super before doing their usual action. Stick navigation and trigger changes leave it armed. Locking, switching away from the graphical session, disconnecting, input resynchronization, service restart and switching to normal gamepad input clear it. It is never restored after reconnect/restart. With typing chords disabled in a personal profile, a D-pad arrow retains its existing held/repeating behavior and Super lasts until that arrow is released.
 
 ## Switch to normal gamepad input
 
@@ -56,7 +71,7 @@ systemctl --user restart mini-os-gamepad.service
 mini-os-gamepad --status
 ```
 
-Setup reruns preserve this personal file. Its top-level settings override the default; a nested object replaces that entire object. Copying the complete default makes button edits straightforward. You can adjust workspace numbers, axis/button symbols, thresholds, repeat timing and resize increments. The `actions` object assigns desktop actions (`terminal`, `window_picker`, `launcher`, `layout`, `fullscreen`) to button symbols; set it to `{}` to disable these extra actions. The `chords` object maps combinations to ordinary Linux keyboard codes; set it to `{}` to disable typing chords and restore held D-pad arrows/repeat. `chord_axes` lists the horizontal and vertical D-pad axes. Profiles copied before these settings were added inherit them from the current default.
+Setup reruns preserve this personal file. Its top-level settings override the default; a nested object replaces that entire object. Copying the complete default makes button edits straightforward. You can adjust workspace numbers, axis/button symbols, thresholds, repeat timing and resize increments. The `actions` object assigns desktop actions (`terminal`, `window_picker`, `launcher`, `layout`, `fullscreen`, `super`) to button symbols; set it to `{}` to disable these extra actions. The default assigns `super` to `BTN_THUMBL` (L3); personal action maps retain their own assignments. The `chords` object maps combinations to ordinary Linux keyboard codes; set it to `{}` to disable typing chords and restore held D-pad arrows/repeat. `chord_axes` lists the horizontal and vertical D-pad axes. Profiles copied before these settings were added inherit them from the current default.
 
 The mapper automatically chooses one accessible controller with all configured controls. If several controllers match, it waits for an explicit selector. Set `device` to an exact name, or integer USB vendor/product IDs, for example `{"name": "Your controller's exact name"}`. Status reports the selected name, axis ranges, grab state and recent Sway commands. Inspect failures with `journalctl --user -u mini-os-gamepad.service -b`.
 

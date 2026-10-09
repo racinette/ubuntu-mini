@@ -10,7 +10,7 @@
     "BTN_START": "terminal",
     "BTN_SELECT": "window_picker",
     "BTN_MODE": "launcher",
-    "BTN_THUMBL": "layout",
+    "BTN_THUMBL": "super",
     "BTN_THUMBR": "fullscreen"
   },
   "dpad": {

@@ -30,6 +30,8 @@ After reboot, enter your LUKS passphrase if you configured encryption, then log 
 
 Setup also installs [gamepad desktop navigation](gamepad-controls.md): triggers hold Shift/Ctrl, bumpers change workspaces, the D-pad sends arrows, and sticks focus/move/resize windows. Start opens a terminal; Select opens the window picker; Menu opens the launcher. Button actions fire on release. [V1 typing chords](gamepad-chord-layout.md) combine the D-pad and face buttons to type US keyboard letters, digits and punctuation; release the whole combination to emit one key. D-pad arrows also wait for release. Hold Start+Select together, then release both, or press Super+Ctrl+G to toggle normal gamepad input for games. Personal overrides in `~/.config/mini-os/gamepad.json` are preserved across setup reruns. The mapping has [VM acceptance tests](testing.md#gamepad-tests); actual WIN Mini controls still need verification.
 
+L3 now arms [one-shot Super](gamepad-controls.md#one-shot-super) for the next gamepad key/chord. For example, L3 then Up+Y emits Super+E to open the file manager. A second L3 tap cancels it; Shift/Ctrl triggers can combine with the shortcut.
+
 ## Screen size and Fn keys
 
 The desktop defaults to 2× output scaling for the WIN Mini's 7-inch 1920×1080 panel. This enlarges controls and text together, with a 960×540 logical workspace. It does not change the console, encryption prompt or text login greeter. For a smaller desktop UI, add `output * scale 1.5` to `~/.config/sway/mini-os.conf` and press Super+Shift+C. Personal output settings are loaded after the defaults. External monitors also inherit 2× unless overridden, for example `output HDMI-A-1 scale 1`; use `swaymsg -t get_outputs` to find the actual output name.

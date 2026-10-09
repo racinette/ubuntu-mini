@@ -14,7 +14,7 @@ python3 tests/check-install-plan.py
 python3 tests/check-install-launch.py
 ```
 
-The setup check verifies the root entry point, source staging and coordinator paths without installing packages. The browser check isolates Snap command selection and existing-browser retention. The chord check exercises all 960 press/release orders and all 48 late Shift/Ctrl combinations, plus invalid/reserved/rolling gestures and reset. It creates no host input device and reads Linux key codes from `/usr/include/linux/input-event-codes.h`.
+The setup check verifies the root entry point, source staging and coordinator paths without installing packages. The browser check isolates Snap command selection and existing-browser retention. The chord check feeds independent Xbox face codes through all 960 press/release orders, both normally and with one-shot Super, and checks late Shift/Ctrl combinations, release-only arming, cancellation, single-use behavior, modifier ordering, invalid/reserved/rolling gestures, lifecycle cleanup and held-arrow compatibility. It creates no host input device and reads Linux key codes from `/usr/include/linux/input-event-codes.h`.
 
 ## VM host requirements
 
@@ -175,6 +175,8 @@ python3 tests/check-gamepad-mapping.py "$VM_DIR"
 The synthetic controller is created inside the guest. Mapping tests exercise real Firefox input, all assigned chords with normal/Shift output, constituent suppression, late modifiers, Sway focus/move/resize/workspaces, picker/launcher, passthrough, reconnect, lock, inactive-console and restart behavior. The test removes its controller and HTTP service afterward. Physical trigger axes, adjacent presses and comfort remain device checks.
 
 ## Recorded results and current limits
+
+On 2026-10-09, L3 was changed to arm/cancel one-shot Super. Host checks passed all 960 chord press/release orders both normally and with Super, all 48 late Shift/Ctrl combinations with Super, single-key shortcuts, modifier ordering, cancellation, pending-state cleanup across disconnect/lock/inactive-session/passthrough/reset, and held-arrow compatibility when chords are disabled. The setup-layout check passed. The VM harness now checks actual Super+Enter, Super+F, Super+D and Super+Shift+Q shortcuts, but has not been rerun for this change; physical L3 comfort and shortcut dispatch need device QA.
 
 On 2026-10-09, physical WIN Mini QA reported that Y produced Backspace, X produced Tab, and Y+B/X+A produced nothing. Feeding Xbox/xpad event codes into the mapper reproduced all four symptoms. The X/Y translation and single-button defaults were corrected. The host chord checker now feeds independent Xbox face codes rather than deriving input from the mapper's own configuration; it failed on the previous source and passed after the correction, including all four single actions, 960 chord press/release orders and 48 late-modifier cases. The setup-layout check also passed. The browser VM harness was corrected to use the same driver codes, but has not been rerun; the device still needs a retest after applying the updated setup.
 

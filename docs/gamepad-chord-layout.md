@@ -10,6 +10,8 @@ Press the controls in any order, keeping them overlapping. Release all D-pad and
 
 A single D-pad direction still emits its arrow; A/B/X/Y still emit Enter/Escape/Backspace/Tab. These inputs now all wait for release. Holding a D-pad direction no longer repeats; sticks retain their existing navigation and repeat behavior. Invalid and unassigned combinations emit nothing and consume their single actions. Once release begins, pressing another D-pad direction or face button cancels the gesture; finish releasing before starting the next character.
 
+Tap L3 before a gesture to add [one-shot Super](gamepad-controls.md#one-shot-super). It applies to one emitted key and then releases automatically. Shift/Ctrl trigger holds still combine with it; invalid/unassigned gestures leave Super armed, and a second L3 tap cancels it.
+
 ## Convenience tiers
 
 | Tier | Combination | Available | Assigned |

@@ -158,7 +158,7 @@ def configuration(path, codes):
 
     config['buttons'] = {code(k, 'BTN_'): code(v, 'KEY_') for k, v in config['buttons'].items()}
     config['actions'] = {code(k, 'BTN_'): v for k, v in config['actions'].items()}
-    if any(v not in ACTION_COMMANDS for v in config['actions'].values()):
+    if any(v not in ACTION_COMMANDS and v != 'super' for v in config['actions'].values()):
         raise ValueError('Unknown desktop button action')
     config['dpad'] = {code(k, 'ABS_'): [code(v, 'KEY_') for v in values] for k, values in config['dpad'].items()}
     if any(len(values) != 2 for values in config['dpad'].values()):
@@ -198,6 +198,8 @@ class Mapper:
         self.device = None
         self.grabbed = False
         self.keys = set()
+        self.super_armed = False
+        self.super_active = False
         self.raw_keys = set()
         self.raw_axes = {}
         self.ranges = {}
@@ -220,7 +222,21 @@ class Mapper:
             self.mode = 'desktop'
 
     def write_keys(self, desired):
-        modifiers = {self.e.KEY_LEFTSHIFT, self.e.KEY_LEFTCTRL}
+        desired = set(desired)
+        modifiers = {self.e.KEY_LEFTSHIFT, self.e.KEY_LEFTCTRL, self.e.KEY_LEFTMETA}
+        # Arming emits no key. Apply Super only when a mapped non-modifier key
+        # starts, then keep it until that key/held arrow has been released.
+        # Snapshots of self.keys can include our injected Meta; recalculate it.
+        if self.super_active:
+            desired.discard(self.e.KEY_LEFTMETA)
+        if self.super_armed and desired - self.keys - modifiers:
+            self.super_armed = False
+            self.super_active = True
+        if self.super_active:
+            if desired - modifiers:
+                desired.add(self.e.KEY_LEFTMETA)
+            else:
+                self.super_active = False
         for key in sorted(self.keys - desired, key=lambda k: k in modifiers):
             self.keyboard.write(self.e.EV_KEY, key, 0)
         for key in sorted(desired - self.keys, key=lambda k: k not in modifiers):
@@ -230,6 +246,7 @@ class Mapper:
         self.keys = set(desired)
 
     def reset(self):
+        self.super_armed = self.super_active = False
         self.write_keys(set())
         self.triggers = [False, False]
         self.sticks = [None, None]
@@ -239,6 +256,23 @@ class Mapper:
         self.text_gesture.clear()
         self.chord_since = None
         self.chord_consumed = self.chord_armed = False
+
+    def clear_super(self):
+        self.super_armed = self.super_active = False
+        self.write_keys(self.keys - {self.e.KEY_LEFTMETA})
+
+    def toggle_super(self):
+        if self.super_active or self.super_armed:
+            self.clear_super()
+        else:
+            self.super_armed = True
+        label = 'Super armed: next key or chord. Tap L3 again to cancel.' if self.super_armed else 'Super cancelled'
+        log.info(label)
+        try:
+            subprocess.run(['notify-send', '-a', 'ubuntu-mini', '-t', '2500',
+                            'Gamepad Super', label], check=False, timeout=2)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            log.warning('Super notification failed: %s', error)
 
     def ungrab(self):
         self.reset()
@@ -313,6 +347,7 @@ class Mapper:
     def button_gestures(self, pressed, released, now, active):
         """Defer individual actions to release; consume overlapping toggle buttons."""
         if not active or (self.directory / 'paused').exists():
+            self.clear_super()
             self.pending_buttons.clear()
             self.chord_since = None
             self.chord_consumed = self.chord_armed = False
@@ -346,11 +381,18 @@ class Mapper:
                     self.write_keys(held_keys | {key})
                     self.write_keys(held_keys)
                 elif button == self.config['previous_bumper']:
+                    self.clear_super()
                     self.workspace(-1)
                 elif button == self.config['next_bumper']:
+                    self.clear_super()
                     self.workspace(1)
                 elif button in self.config['actions']:
-                    self.command(ACTION_COMMANDS[self.config['actions'][button]])
+                    action = self.config['actions'][button]
+                    if action == 'super':
+                        self.toggle_super()
+                    else:
+                        self.clear_super()
+                        self.command(ACTION_COMMANDS[action])
         self.pending_buttons.difference_update(released)
 
     def frame(self, pressed, released, now, active):
@@ -372,9 +414,9 @@ class Mapper:
         if self.triggers[1]:
             desired.add(self.e.KEY_LEFTCTRL)
         self.write_keys(desired)
-        if self.config['chords']:
-            self.typing_frame()
         self.button_gestures(pressed, released, now, active)
+        if self.config['chords'] and self.permitted(active) and self.grabbed and self.ready:
+            self.typing_frame()
 
     def typing_frame(self):
         held = {name for name, code in self.config['chord_faces'].items() if code in self.raw_keys}
@@ -445,6 +487,7 @@ class Mapper:
                 'device': self.device.path if self.device else None,
                 'device_name': self.device.name if self.device else None,
                 'grabbed': self.grabbed, 'ready': self.ready, 'keys': sorted(self.keys),
+                'super_armed': self.super_armed, 'super_active': self.super_active,
                 'axis_ranges': self.ranges, 'actions': list(self.actions), 'reason': self.reason,
                 'unavailable_actions': self.unavailable_actions}
 
@@ -520,7 +563,7 @@ def main():
         except BlockingIOError:
             raise SystemExit('A mapper is already running')
         output_keys = set(config['buttons'].values()) | {key for values in config['dpad'].values() for key in values}
-        output_keys |= {evdev.ecodes.KEY_LEFTSHIFT, evdev.ecodes.KEY_LEFTCTRL}
+        output_keys |= {evdev.ecodes.KEY_LEFTSHIFT, evdev.ecodes.KEY_LEFTCTRL, evdev.ecodes.KEY_LEFTMETA}
         output_keys |= set(config['chords'].values())
         with evdev.UInput({evdev.ecodes.EV_KEY: sorted(output_keys), evdev.ecodes.EV_REP: []},
                           name='ubuntu-mini gamepad keyboard', phys='mini-os/gamepad-keyboard', vendor=0x1209, product=2) as keyboard:

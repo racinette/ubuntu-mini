@@ -395,16 +395,6 @@ else:raise ValueError('Mapped keyboard is missing')
         def picker_processes():
             return ssh(directory, 'pgrep -x fuzzel || true').splitlines()
 
-        def workspace_layout():
-            def find(node, parent=None):
-                if node.get('id') == terminal_id:
-                    return parent['layout']
-                for child in node.get('nodes', []) + node.get('floating_nodes', []):
-                    result = find(child, node)
-                    if result:
-                        return result
-            return find(json.loads(graphical(directory, 'swaymsg -t get_tree')))
-
         before_terminal = {node['id'] for node in tree()}
         control('emit', [[1, 315, 1]])
         time.sleep(.4)
@@ -421,12 +411,47 @@ else:raise ValueError('Mapped keyboard is missing')
 
         control('emit', [[1, 317, 1]])
         time.sleep(.4)
-        if workspace_layout() != 'splith':
-            raise ValueError('L3 changed layout before release')
+        if status()['super_armed'] or keyboard_keys():
+            raise ValueError('L3 armed or pressed Super before release')
         control('emit', [[1, 317, 0]])
-        wait(workspace_layout, lambda layout: layout == 'tabbed', 'L3 did not select tabbed layout')
+        wait(status, lambda s: s['super_armed'] and not s['keys'], 'L3 did not arm one-shot Super')
         pulse(1, 317)
-        wait(workspace_layout, lambda layout: layout == 'splith', 'L3 did not restore the split layout')
+        wait(status, lambda s: not s['super_armed'] and not s['keys'], 'Second L3 did not cancel Super')
+
+        before_super_terminal = {node['id'] for node in tree()}
+        pulse(1, 317)
+        pulse(1, 304)
+        super_terminal_tree = wait(tree, lambda nodes: any(n['id'] not in before_super_terminal and n['app_id'] == 'foot' for n in nodes), 'L3 then A did not open a terminal through Super+Enter')
+        super_terminal_id = next(n['id'] for n in super_terminal_tree if n['id'] not in before_super_terminal and n['app_id'] == 'foot')
+        wait(status, lambda s: not s['super_armed'] and not s['super_active'] and not s['keys'], 'Super remained after terminal shortcut')
+        pulse(1, 304)
+        time.sleep(.3)
+        if len({n['id'] for n in tree()} - before_super_terminal) != 1:
+            raise ValueError('One-shot Super affected the next Enter')
+
+        pulse(1, 317)
+        control('emit', [[3, 2, 255]])
+        wait(keyboard_keys, lambda keys: keys == [42], 'Shift missing before Super+Shift+Q')
+        control('pulse', [inputs['UP'], inputs['X'], inputs['Y']], [[3, 17, 0], [1, 307, 0], [1, 308, 0]])
+        wait(tree, lambda nodes: all(n['id'] != super_terminal_id for n in nodes), 'One-shot Super with Shift+q did not close the temporary terminal')
+        wait(keyboard_keys, lambda keys: keys == [42], 'Super shortcut lost Shift or left Super held')
+        control('emit', [[3, 2, 0]])
+        wait(keyboard_keys, lambda keys: not keys, 'Shift remained after the close shortcut')
+        graphical(directory, f'swaymsg "[con_id={terminal_id}] focus"')
+
+        pulse(1, 317)
+        control('pulse', [inputs['RIGHT'], inputs['A']], [[3, 16, 0], [1, 304, 0]])
+        wait(tree, lambda nodes: next(n for n in nodes if n['id'] == terminal_id)['fullscreen_mode'] == 1, 'One-shot Super+f chord did not enable fullscreen')
+        pulse(1, 317)
+        control('pulse', [inputs['RIGHT'], inputs['A']], [[3, 16, 0], [1, 304, 0]])
+        wait(tree, lambda nodes: next(n for n in nodes if n['id'] == terminal_id)['fullscreen_mode'] == 0, 'Second Super+f chord did not leave fullscreen')
+        pulse(1, 317)
+        control('pulse', [inputs['RIGHT'], inputs['Y']], [[3, 16, 0], [1, 308, 0]])
+        wait(picker_processes, bool, 'One-shot Super+d chord did not open the launcher')
+        wait(status, lambda s: not s['super_armed'] and not s['keys'], 'Launcher shortcut left Super armed')
+        pulse(1, 305)
+        wait(picker_processes, lambda pids: not pids, 'Plain B did not cancel the launcher after Super was consumed')
+        report['checks']['one_shot_super_release_cancel_terminal_chords_and_late_shift'] = True
         control('emit', [[1, 318, 1]])
         time.sleep(.4)
         if next(n for n in tree() if n['id'] == terminal_id)['fullscreen_mode']:
@@ -435,7 +460,7 @@ else:raise ValueError('Mapped keyboard is missing')
         wait(tree, lambda nodes: next(n for n in nodes if n['id'] == terminal_id)['fullscreen_mode'] == 1, 'R3 did not enable fullscreen')
         pulse(1, 318)
         wait(tree, lambda nodes: next(n for n in nodes if n['id'] == terminal_id)['fullscreen_mode'] == 0, 'R3 did not leave fullscreen')
-        report['checks']['stick_click_layout_and_fullscreen_on_release'] = True
+        report['checks']['stick_click_super_and_fullscreen_on_release'] = True
 
         pulse(1, 318)
         wait(tree, lambda nodes: next(n for n in nodes if n['id'] == terminal_id)['fullscreen_mode'] == 1, 'Fullscreen missing before launcher')
@@ -476,15 +501,17 @@ else:raise ValueError('Mapped keyboard is missing')
         graphical(directory, 'swaymsg "[con_id=' + str(terminal_id) + '] fullscreen disable"')
         report['picker_selected_window_id'] = selected_id
         report['checks']['select_picker_navigation_accept_and_cancel'] = True
-        print('Extra buttons passed: release-only terminal, launcher, window picker, layout and fullscreen.', flush=True)
+        print('Extra buttons passed: release-only terminal, launcher, window picker, one-shot Super shortcuts and fullscreen.', flush=True)
 
         graphical(directory, 'swaymsg "workspace number 1; [app_id=firefox_firefox] focus"')
         browser_set(text='preserved', selection=[9, 9], focus='editor', clear=True)
         control('emit', [inputs['UP'], inputs['A']])
         control('emit', [[3, 5, 255]])
         wait(keyboard_keys, lambda keys: keys == [29], 'Ctrl missing before disconnect')
+        pulse(1, 317)
+        wait(status, lambda s: s['super_armed'], 'Super missing before disconnect')
         control('destroy')
-        wait(status, lambda s: s['device'] is None and not s['keys'], 'Disconnect left mapped keys held')
+        wait(status, lambda s: s['device'] is None and not s['keys'] and not s['super_armed'], 'Disconnect left mapped keys or Super armed')
         wait(keyboard_keys, lambda keys: not keys, 'Kernel keyboard retained Ctrl after disconnect')
         control('create')
         root('udevadm settle')
@@ -498,8 +525,10 @@ else:raise ValueError('Mapped keyboard is missing')
         browser_set(text='hello', selection=[5, 5], focus='editor', clear=True)
         control('emit', [[3, 5, 255]])
         wait(keyboard_keys, lambda keys: keys == [29], 'Ctrl missing before passthrough')
+        pulse(1, 317)
+        wait(status, lambda s: s['super_armed'], 'Super missing before passthrough')
         graphical(directory, 'mini-os-gamepad --toggle')
-        wait(status, lambda s: s['mode'] == 'passthrough' and not s['grabbed'] and not s['keys'], 'Passthrough did not release keyboard or source grab')
+        wait(status, lambda s: s['mode'] == 'passthrough' and not s['grabbed'] and not s['keys'] and not s['super_armed'], 'Passthrough did not clear modifiers or release source grab')
         wait(keyboard_keys, lambda keys: not keys, 'Ctrl remained held in passthrough')
         control('emit', [[3, 5, 0]])
         control('emit', [[1, 304, 1]])
@@ -536,8 +565,10 @@ else:raise ValueError('Mapped keyboard is missing')
 
         control('emit', [[3, 2, 255]])
         wait(keyboard_keys, lambda keys: keys == [42], 'Shift missing before lock')
+        pulse(1, 317)
+        wait(status, lambda s: s['super_armed'], 'Super missing before lock')
         graphical(directory, 'mini-os-lock')
-        wait(status, lambda s: s['paused'] and not s['grabbed'] and not s['keys'], 'Lock did not pause and release mapped keys')
+        wait(status, lambda s: s['paused'] and not s['grabbed'] and not s['keys'] and not s['super_armed'], 'Lock did not pause and clear modifiers')
         wait(keyboard_keys, lambda keys: not keys, 'Shift remained held behind lock')
         pulse(1, 304)
         if not ssh(directory, 'pgrep -x swaylock || true').strip():
@@ -551,8 +582,10 @@ else:raise ValueError('Mapped keyboard is missing')
 
         control('emit', [[3, 5, 255]])
         wait(keyboard_keys, lambda keys: keys == [29], 'Ctrl missing before switching consoles')
+        pulse(1, 317)
+        wait(status, lambda s: s['super_armed'], 'Super missing before switching consoles')
         key(monitor, ['ctrl', 'alt', 'f2'])
-        wait(status, lambda s: not s['session_active'] and not s['grabbed'] and not s['keys'], 'Inactive graphical session kept injecting keys')
+        wait(status, lambda s: not s['session_active'] and not s['grabbed'] and not s['keys'] and not s['super_armed'], 'Inactive graphical session kept modifiers')
         wait(keyboard_keys, lambda keys: not keys, 'Ctrl remained held on another console')
         control('emit', [[3, 5, 0]])
         key(monitor, ['ctrl', 'alt', 'f1'])
@@ -561,8 +594,10 @@ else:raise ValueError('Mapped keyboard is missing')
 
         control('emit', [[3, 5, 255]])
         wait(keyboard_keys, lambda keys: keys == [29], 'Ctrl missing before service restart')
+        pulse(1, 317)
+        wait(status, lambda s: s['super_armed'], 'Super missing before service restart')
         graphical(directory, 'systemctl --user restart mini-os-gamepad.service')
-        wait(status, lambda s: not s['keys'] and not s['ready'], 'Service restart injected held modifiers')
+        wait(status, lambda s: not s['keys'] and not s['ready'] and not s['super_armed'], 'Service restart retained modifiers')
         wait(keyboard_keys, lambda keys: not keys, 'New keyboard started with Ctrl held')
         control('emit', [[3, 5, 0]])
         wait(status, lambda s: s['ready'], 'Mapping did not resume after neutral return')

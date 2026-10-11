@@ -35,7 +35,7 @@ Installed commands, services, configuration and state use the `minion` name. Pre
 Only `setup.sh` and `setup/` are needed for post-install device setup. `install.sh` is a standalone file used earlier in the live USB environment. Tests run separately and are not installed by setup. `tests/vm.py` supports manual VM installation; `tests/test-install-vm.py` tests the optional installer helper on disposable virtual disks.
 
 - [Gamepad navigation and customization](docs/gamepad-controls.md)
-- [Gamepad chord typing layout](docs/gamepad-chord-layout.md)
+- [Gamepad shortcut layout](docs/gamepad-chord-layout.md)
 - [Run tests and inspect validation results](docs/testing.md)
 - [Reuse downloads through the local mirror](docs/local-mirror.md)
 - [Configure and enable the proxy service](docs/proxy.md)

@@ -2,6 +2,11 @@
 set -eu
 printf '{"version":1}\n[\n'
 while :; do
-    printf '[{"full_text":"%s"}],\n' "$(date '+%a %d %b %H:%M')"
-    sleep 30
+    mode=Resize
+    if [ -n "${XDG_RUNTIME_DIR:-}" ] && [ -r "$XDG_RUNTIME_DIR/minion-gamepad/right-stick-mode" ]; then
+        read -r stick_mode < "$XDG_RUNTIME_DIR/minion-gamepad/right-stick-mode" || true
+        if [ "$stick_mode" = select ]; then mode='Select text'; fi
+    fi
+    printf '[{"full_text":"R: %s | %s"}],\n' "$mode" "$(date '+%a %d %b %H:%M')"
+    sleep 1
 done

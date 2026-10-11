@@ -113,12 +113,14 @@ else:raise ValueError('Mapped keyboard is missing')
     def tree():
         value = json.loads(graphical(directory, 'swaymsg -t get_tree'))
 
-        def walk(node, workspace=None):
+        def walk(node, workspace=None, floating=False):
             if node.get('type') == 'workspace':
                 workspace = node['name']
-            result = [dict(node, workspace=workspace)] if node.get('app_id') else []
-            for child in node.get('nodes', []) + node.get('floating_nodes', []):
-                result.extend(walk(child, workspace))
+            result = [dict(node, workspace=workspace, is_floating=floating)] if node.get('app_id') else []
+            for child in node.get('nodes', []):
+                result.extend(walk(child, workspace, floating))
+            for child in node.get('floating_nodes', []):
+                result.extend(walk(child, workspace, True))
             return result
 
         return walk(value)
@@ -172,22 +174,20 @@ else:raise ValueError('Mapped keyboard is missing')
                 raise ValueError('Tab did not advance application focus')
         report['face_buttons'] = face_results
         report['checks']['face_keys_in_browser'] = True
-        browser_set(text='hello world', selection=[11, 11], focus='editor', clear=True)
+        browser_set(text='x' * 100, selection=[100, 100], focus='editor', clear=True)
         control('emit', [[1, 307, 1]])
-        time.sleep(.4)
-        held_face = browser()
-        if held_face['text'] != 'hello world' or held_face['events']:
-            raise ValueError('Face key acted before release')
-        control('emit', [[3, 5, 255]])
-        wait(keyboard_keys, lambda keys: keys == [29], 'Late Ctrl hold missing')
+        immediate = wait(browser, lambda s: len(s['text']) < 100, 'Backspace did not act on press')
+        time.sleep(1)
+        repeated = browser()
+        if len(repeated['text']) >= len(immediate['text']) or not any(e['repeat'] for e in repeated['events']):
+            raise ValueError('Held Backspace did not repeat')
         control('emit', [[1, 307, 0]])
-        release_combo = wait(browser, lambda s: s['text'] == 'hello ', 'Modifier added after button press was ignored')
-        if not any(e['code'] == 'Backspace' and e['ctrl'] for e in release_combo['events']):
-            raise ValueError('Released face key lost the held modifier')
-        control('emit', [[3, 5, 0]])
-        wait(keyboard_keys, lambda keys: not keys, 'Late Ctrl did not release')
-        report['face_release_combination'] = release_combo
-        report['checks']['face_release_and_late_modifier'] = True
+        wait(keyboard_keys, lambda keys: not keys, 'Backspace remained held')
+        time.sleep(.2)
+        frozen = browser()['text']; time.sleep(.4)
+        if browser()['text'] != frozen:
+            raise ValueError('Backspace repeated after release')
+        report['checks']['immediate_backspace_hold_repeat_and_release'] = True
         arrow_results = []
         for axis, value, expected in ((16, -1, 'ArrowLeft'), (16, 1, 'ArrowRight'), (17, -1, 'ArrowUp'), (17, 1, 'ArrowDown')):
             browser_set(text='hello world', selection=[6, 6], focus='editor', clear=True)
@@ -207,64 +207,25 @@ else:raise ValueError('Mapped keyboard is missing')
         report['dpad_release'] = released_arrow['events']
         report['checks']['dpad_arrows_on_release'] = True
 
-        profile = json.loads((experiment.PROJECT / 'setup/desktop/gamepad.json').read_text())
-        chars = {'KEY_SPACE': ' ', 'KEY_APOSTROPHE': "'", 'KEY_MINUS': '-', 'KEY_SLASH': '/',
-                 'KEY_COMMA': ',', 'KEY_DOT': '.', 'KEY_SEMICOLON': ';', 'KEY_EQUAL': '=',
-                 'KEY_GRAVE': '`', 'KEY_BACKSLASH': '\\', 'KEY_LEFTBRACE': '[', 'KEY_RIGHTBRACE': ']'}
-        shifted = dict(zip('`1234567890-=[]\\;\',./', '~!@#$%^&*()_+{}|:"<>?'))
         inputs = {'UP': [3, 17, -1], 'DOWN': [3, 17, 1], 'LEFT': [3, 16, -1], 'RIGHT': [3, 16, 1],
-                  'A': [1, 304, 1], 'B': [1, 305, 1], 'X': [1, 307, 1], 'Y': [1, 308, 1]}
-        chord_results = []
-        for chord, output_key in profile['chords'].items():
-            base = chars.get(output_key, output_key.removeprefix('KEY_').lower())
-            events = [inputs[token] for token in chord.split('+')]
-            for shift in (False, True):
-                browser_set(text='', selection=[0, 0], focus='editor', clear=True)
-                if shift:
-                    control('emit', [[3, 2, 255]])
-                    wait(keyboard_keys, lambda keys: keys == [42], 'Shift missing before chord')
-                # Staggered presses allow all prefixes to be observed by the mapper.
-                for event in events:
-                    control('emit', [event])
-                if browser()['text']:
-                    raise ValueError('Chord typed before release: ' + chord)
-                releases = list(reversed(events)) if shift else events
-                for event in releases[:-1]:
-                    control('emit', [[event[0], event[1], 0]])
-                    if browser()['text']:
-                        raise ValueError('Chord typed on partial release: ' + chord)
-                event = releases[-1]
-                control('emit', [[event[0], event[1], 0]])
-                expected = shifted.get(base, base.upper()) if shift else base
-                result = wait(browser, lambda s: s['text'] == expected, 'Incorrect chord output: ' + chord)
-                downs = [e for e in result['events'] if e['type'] == 'keydown' and e['code'] != 'ShiftLeft']
-                if len(downs) != 1 or downs[0]['key'] != expected:
-                    raise ValueError('Chord leaked a constituent action: ' + chord)
-                if shift:
-                    control('emit', [[3, 2, 0]])
-                    wait(keyboard_keys, lambda keys: not keys, 'Chord left Shift held')
-                chord_results.append({'chord': chord, 'shift': shift, 'expected': expected, 'observed': result['text']})
-        report['typing_chords'] = chord_results
-        report['checks']['all_48_chords_and_us_shift_output'] = True
-
-        for tokens in (['A', 'Y'], ['A', 'B', 'Y'], ['DOWN', 'X', 'Y']):
+                  'A': [1, 304, 1], 'B': [1, 305, 1], 'Y': [1, 308, 1]}
+        def chord(name):
+            events = [inputs[token] for token in name.split('+')]
+            return control('pulse', events, [[kind, code, 0] for kind, code, value in reversed(events)])
+        for tokens in (['A', 'Y'], ['A', 'B', 'Y'], ['A', 'B']):
             browser_set(text='preserved', selection=[9, 9], focus='editor', clear=True)
             events = [inputs[token] for token in tokens]
-            control('emit', events)
-            control('emit', [[e[0], e[1], 0] for e in events])
+            control('emit', events); control('emit', [[e[0], e[1], 0] for e in events])
             time.sleep(.15)
             if browser()['text'] != 'preserved' or browser()['events']:
-                raise ValueError('Invalid or reserved chord leaked single actions')
-        report['checks']['invalid_and_reserved_chords_are_consumed'] = True
+                raise ValueError('Invalid or reserved shortcut leaked single actions')
         browser_set(text='preserved', selection=[9, 9], focus='editor', clear=True)
-        control('emit', [inputs['UP'], inputs['A']])
-        control('emit', [[3, 17, 0]])
-        control('emit', [inputs['B']])
-        control('emit', [[1, 304, 0], [1, 305, 0]])
+        control('emit', [inputs['UP'], inputs['Y']]); control('emit', [[3, 17, 0]])
+        control('emit', [inputs['B']]); control('emit', [[1, 308, 0], [1, 305, 0]])
         time.sleep(.15)
-        if browser()['text'] != 'preserved' or browser()['events']:
-            raise ValueError('Rolling a new button into a releasing chord typed unexpectedly')
-        report['checks']['new_presses_during_chord_release_cancel'] = True
+        if browser()['events']:
+            raise ValueError('Rolling shortcut leaked single actions')
+        report['checks']['invalid_reserved_and_rolling_shortcuts_consumed'] = True
 
         trigger_cases = []
         for axis, key_code in ((2, 42), (5, 29)):
@@ -276,91 +237,38 @@ else:raise ValueError('Mapped keyboard is missing')
         report['trigger_hysteresis'] = trigger_cases
         report['checks']['trigger_thresholds_and_hysteresis'] = True
 
-        browser_set(text='select this text', selection=[16, 16], focus='editor', clear=True)
-        control('emit', [[3, 5, 255]])
-        wait(keyboard_keys, lambda keys: keys == [29], 'Ctrl missing before letter chord shortcut')
-        control('pulse', [inputs['LEFT'], inputs['X']], [[3, 16, 0], [1, 307, 0]], .12)
-        report['ctrl_letter_chord'] = wait(browser, lambda s: s['selection'] == [0, 16], 'Ctrl+A letter chord did not select all')
-        control('emit', [[3, 5, 0]])
-        wait(keyboard_keys, lambda keys: not keys, 'Ctrl remained held after letter chord')
-        report['checks']['ctrl_letter_chord_shortcut'] = True
-
-        browser_set(text='hello world', selection=[11, 11], focus='editor', clear=True)
-        control('emit', [[3, 2, 255]])
-        wait(keyboard_keys, lambda keys: keys == [42], 'Left trigger did not hold Shift')
-        pulse(3, 16, -1)
-        selected = wait(browser, lambda s: s['selection'] == [10, 11], 'Shift+arrow selection failed')
-        report['shift_selection'] = selected
-        browser_set(focus='next', clear=True)
-        pulse(1, 308)
-        reverse_focus = wait(browser, lambda s: s['target'] == 'editor', 'Shift+Tab navigation failed')
-        report['shift_tab'] = reverse_focus
-        control('emit', [[3, 2, 0]])
-        wait(keyboard_keys, lambda keys: not keys, 'Shift did not release')
-        browser_set(text='hello world', selection=[11, 11], focus='editor', clear=True)
-        control('emit', [[3, 5, 255]])
-        wait(keyboard_keys, lambda keys: keys == [29], 'Right trigger did not hold Ctrl')
-        pulse(1, 307)
-        deleted = wait(browser, lambda s: s['text'] == 'hello ', 'Ctrl+Backspace did not delete a word')
-        report['ctrl_backspace'] = deleted
-        browser_set(text='hello world', selection=[11, 11], focus='editor', clear=True)
-        pulse(3, 16, -1)
-        moved = wait(browser, lambda s: s['selection'] == [6, 6], 'Ctrl+arrow did not move by words')
-        report['ctrl_arrow'] = moved
-        control('emit', [[3, 2, 255]])
-        wait(keyboard_keys, lambda keys: keys == [29, 42], 'Two trigger holds did not combine')
-        browser_set(text='hello world', selection=[11, 11], focus='editor', clear=True)
-        pulse(3, 16, -1)
-        selected_word = wait(browser, lambda s: s['selection'] == [6, 11], 'Ctrl+Shift+arrow did not select a word')
-        report['ctrl_shift_selection'] = selected_word
-        control('emit', [[3, 2, 0], [3, 5, 0]])
-        wait(keyboard_keys, lambda keys: not keys, 'Combined modifiers did not release')
-        # Establish a second tab explicitly; do not depend on Firefox welcome tabs.
-        key(monitor, ['ctrl', 't'])
-        wait(browser, lambda s: not s['focused'], 'Second browser tab did not open')
-        key(monitor, ['ctrl', 'shift', 'tab'])
-        wait(browser, lambda s: s['focused'], 'Could not return to the keyboard fixture')
-        browser_set(focus='editor', clear=True)
-        control('emit', [[3, 5, 255]])
-        wait(keyboard_keys, lambda keys: keys == [29], 'Ctrl missing before browser tab navigation')
-        pulse(1, 308)
-        wait(browser, lambda s: not s['focused'], 'Ctrl+Tab did not switch browser tabs')
-        control('emit', [[3, 2, 255]])
-        wait(keyboard_keys, lambda keys: keys == [29, 42], 'Ctrl+Shift missing before reverse tab navigation')
-        pulse(1, 308)
-        wait(browser, lambda s: s['focused'], 'Ctrl+Shift+Tab did not return to the browser fixture')
-        control('emit', [[3, 2, 0], [3, 5, 0]])
-        wait(keyboard_keys, lambda keys: not keys, 'Browser tab modifiers did not release')
-        report['checks']['ctrl_tab_and_reverse_tab'] = True
-        report['checks']['trigger_modifiers_and_combinations'] = True
         browser_set(text='controller clipboard', selection=[0, 20], focus='editor', clear=True)
-        pulse(1, 317)
-        control('emit', [[3, 17, -1]])
-        time.sleep(.3)
-        if browser()['events']:
-            raise ValueError('Copy command acted before release')
-        control('emit', [[3, 17, 0]])
-        wait(lambda: graphical(directory, 'wl-paste --no-newline'),
-             lambda text: text == 'controller clipboard', 'Command layer did not copy browser selection')
+        chord('UP+Y')
+        wait(lambda: graphical(directory, 'wl-paste --no-newline'), lambda text: text == 'controller clipboard', 'Copy failed')
         browser_set(text='', selection=[0, 0], focus='editor', clear=True)
-        pulse(1, 317); pulse(3, 17, 1)
-        wait(browser, lambda s: s['text'] == 'controller clipboard', 'Command layer did not paste browser clipboard')
+        chord('DOWN+Y'); wait(browser, lambda s: s['text'] == 'controller clipboard', 'Paste failed')
+        chord('UP+RIGHT+Y'); wait(browser, lambda s: s['selection'] == [0, 20], 'Select all failed')
+        chord('UP+LEFT+Y'); wait(browser, lambda s: not s['text'], 'Cut failed')
         browser_set(text='', selection=[0, 0], focus='editor', clear=True)
-        type_text(monitor, 'undo-redo')
-        wait(browser, lambda s: s['text'] == 'undo-redo', 'Undo fixture text missing')
-        pulse(1, 317); pulse(3, 16, -1)
-        wait(browser, lambda s: s['text'] != 'undo-redo', 'Command layer did not undo browser typing')
-        pulse(1, 317); pulse(3, 16, 1)
-        wait(browser, lambda s: s['text'] == 'undo-redo', 'Command layer did not redo browser typing')
-        browser_set(clear=True)
-        pulse(1, 317); pulse(1, 305)
-        wait(status, lambda s: not s['super_armed'] and not s['keys'], 'B did not cancel command layer')
-        time.sleep(.3)
-        if browser()['events']:
-            raise ValueError('Command cancellation leaked Escape into the application')
-        report['checks']['command_layer_browser_copy_paste_undo_redo_and_cancel'] = True
-        print('Application keys passed: 48 typing chords with Shift, release-only arrows, trigger holds and editing combinations.', flush=True)
-        capture(monitor, directory, 'mapped-controller-browser')
+        type_text(monitor, 'undo-redo'); wait(browser, lambda s: s['text'] == 'undo-redo', 'Undo fixture missing')
+        chord('LEFT+Y'); wait(browser, lambda s: s['text'] != 'undo-redo', 'Undo failed')
+        chord('RIGHT+Y'); wait(browser, lambda s: s['text'] == 'undo-redo', 'Redo failed')
+        report['checks']['copy_paste_cut_select_all_undo_redo'] = True
+        browser_set(text='hello world', selection=[6, 6], focus='editor', clear=True)
+        chord('LEFT+B'); wait(browser, lambda s: s['selection'] == [0, 0], 'Home failed')
+        control('emit', [[3, 2, 255]])
+        chord('RIGHT+B'); wait(browser, lambda s: s['selection'] == [0, 11], 'Shift+End selection failed')
+        control('emit', [[3, 2, 0]])
+        wait(keyboard_keys, lambda keys: not keys, 'Navigation retained Shift')
+        browser_set(text='hello world', selection=[11, 11], focus='editor', clear=True)
+        pulse(1, 318)
+        wait(status, lambda s: s['right_stick_mode'] == 'select', 'R3 selection mode missing')
+        control('emit', [[3, 3, -32768]])
+        wait(browser, lambda s: s['selection'][0] < s['selection'][1], 'Right stick did not select text')
+        time.sleep(.8)
+        if browser()['selection'][0] >= 10:
+            raise ValueError('Held right stick did not extend selection')
+        control('emit', [[3, 3, 0]])
+        wait(keyboard_keys, lambda keys: not keys, 'Selection left a key held')
+        pulse(1, 318); wait(status, lambda s: s['right_stick_mode'] == 'resize', 'R3 resize mode missing')
+        report['checks']['navigation_selection_right_stick_and_repeat'] = True
+        print('Application keys passed: shortcut editing, text navigation, holdable Backspace and right-stick selection.', flush=True)
+        capture(monitor, directory, 'mapped-controller-editing')
 
         graphical(directory, 'swaymsg "[app_id=firefox_firefox] fullscreen disable; workspace number 2; layout splith; exec foot --app-id=minion-map-left --title=Controller-left /bin/sleep infinity"')
         wait(tree, lambda nodes: any(n['app_id'] == 'minion-map-left' for n in nodes), 'First Foot window missing')
@@ -436,90 +344,41 @@ else:raise ValueError('Mapped keyboard is missing')
         report['checks']['start_terminal_on_release'] = True
 
         control('emit', [[1, 317, 1]])
-        time.sleep(.4)
-        if status()['super_armed'] or keyboard_keys():
-            raise ValueError('L3 armed or pressed Super before release')
+        time.sleep(.3)
+        if status()['legend_open'] or keyboard_keys():
+            raise ValueError('L3 acted before release')
         control('emit', [[1, 317, 0]])
-        wait(status, lambda s: s['super_armed'] and not s['keys'], 'L3 did not arm one-shot Super')
-        pulse(1, 317)
-        wait(status, lambda s: not s['super_armed'] and not s['keys'], 'Second L3 did not cancel Super')
-
-        before_super_terminal = {node['id'] for node in tree()}
-        pulse(1, 317)
-        pulse(1, 304)
-        super_terminal_tree = wait(tree, lambda nodes: any(n['id'] not in before_super_terminal and n['app_id'] == 'foot' for n in nodes), 'L3 then A did not open a terminal')
-        super_terminal_id = next(n['id'] for n in super_terminal_tree if n['id'] not in before_super_terminal and n['app_id'] == 'foot')
-        wait(status, lambda s: not s['super_armed'] and not s['super_active'] and not s['keys'], 'Command layer remained after terminal action')
-        pulse(1, 304)
-        time.sleep(.3)
-        if len({n['id'] for n in tree()} - before_super_terminal) != 1:
-            raise ValueError('One-shot Super affected the next Enter')
-
-        pulse(1, 317)
-        control('emit', [[1, 307, 1]])
-        time.sleep(.3)
-        if all(n['id'] != super_terminal_id for n in tree()):
-            raise ValueError('L3 then X closed the window before release')
-        control('emit', [[1, 307, 0]])
-        wait(tree, lambda nodes: all(n['id'] != super_terminal_id for n in nodes), 'L3 then X did not close the temporary terminal')
-        before_super_terminal = {node['id'] for node in tree()}
-        pulse(1, 317); pulse(1, 304)
-        super_terminal_tree = wait(tree, lambda nodes: any(n['id'] not in before_super_terminal and n['app_id'] == 'foot' for n in nodes), 'Second command terminal missing')
-        super_terminal_id = next(n['id'] for n in super_terminal_tree if n['id'] not in before_super_terminal and n['app_id'] == 'foot')
-        report['checks']['command_layer_close_on_release'] = True
-
-        pulse(1, 317)
-        control('emit', [[3, 2, 255]])
-        wait(keyboard_keys, lambda keys: keys == [42], 'Shift missing before Super+Shift+Q')
-        control('pulse', [inputs['UP'], inputs['X'], inputs['Y']], [[3, 17, 0], [1, 307, 0], [1, 308, 0]])
-        wait(tree, lambda nodes: all(n['id'] != super_terminal_id for n in nodes), 'One-shot Super with Shift+q did not close the temporary terminal')
-        wait(keyboard_keys, lambda keys: keys == [42], 'Super shortcut lost Shift or left Super held')
-        control('emit', [[3, 2, 0]])
-        wait(keyboard_keys, lambda keys: not keys, 'Shift remained after the close shortcut')
+        wait(status, lambda s: s['legend_open'], 'L3 did not open legend')
+        wait(picker_processes, bool, 'Legend overlay missing')
+        time.sleep(3)
+        if not status()['legend_open']:
+            raise ValueError('Legend disappeared before dismissal')
+        windows_before = {n['id'] for n in tree()}
+        chord('UP+A')
+        if {n['id'] for n in tree()} != windows_before:
+            raise ValueError('Legend allowed Close to reach the underlying window')
+        capture(monitor, directory, 'mapped-shortcut-legend')
+        pulse(1, 305); wait(status, lambda s: not s['legend_open'], 'B did not dismiss legend')
+        pulse(1, 317); wait(status, lambda s: s['legend_open'], 'Second legend missing')
+        pulse(1, 317); wait(status, lambda s: not s['legend_open'], 'L3 did not dismiss legend')
+        report['checks']['persistent_legend_toggle_and_shortcut_capture'] = True
+        before = {n['id'] for n in tree()}
+        pulse(1, 315)
+        nodes = wait(tree, lambda ns: any(n['id'] not in before for n in ns), 'Temporary terminal missing')
+        temporary = next(n['id'] for n in nodes if n['id'] not in before)
+        graphical(directory, f'swaymsg "[con_id={temporary}] focus"')
+        chord('UP+A')
+        wait(tree, lambda ns: all(n['id'] != temporary for n in ns), 'Close window shortcut failed')
         graphical(directory, f'swaymsg "[con_id={terminal_id}] focus"')
-
-        def focused_layout():
-            value = json.loads(graphical(directory, 'swaymsg -t get_tree'))
-            def walk(node):
-                if any(child.get('id') == terminal_id for child in node.get('nodes', [])):
-                    return node['layout']
-                for child in node.get('nodes', []) + node.get('floating_nodes', []):
-                    result = walk(child)
-                    if result:
-                        return result
-            return walk(value)
-
-        graphical(directory, 'swaymsg \"layout splith\"')
-        for expected in ('tabbed', 'splith'):
-            pulse(1, 317); pulse(1, 308)
-            wait(focused_layout, lambda layout: layout == expected, 'L3 then Y did not toggle layout')
-        report['checks']['command_layer_layout_toggle'] = True
-
-        pulse(1, 317)
-        control('pulse', [inputs['RIGHT'], inputs['A']], [[3, 16, 0], [1, 304, 0]])
-        wait(tree, lambda nodes: next(n for n in nodes if n['id'] == terminal_id)['fullscreen_mode'] == 1, 'One-shot Super+f chord did not enable fullscreen')
-        pulse(1, 317)
-        control('pulse', [inputs['RIGHT'], inputs['A']], [[3, 16, 0], [1, 304, 0]])
-        wait(tree, lambda nodes: next(n for n in nodes if n['id'] == terminal_id)['fullscreen_mode'] == 0, 'Second Super+f chord did not leave fullscreen')
-        pulse(1, 317)
-        control('pulse', [inputs['RIGHT'], inputs['Y']], [[3, 16, 0], [1, 308, 0]])
-        wait(picker_processes, bool, 'One-shot Super+d chord did not open the launcher')
-        wait(status, lambda s: not s['super_armed'] and not s['keys'], 'Launcher shortcut left Super armed')
-        pulse(1, 305)
-        wait(picker_processes, lambda pids: not pids, 'Plain B did not cancel the launcher after Super was consumed')
-        report['checks']['one_shot_super_release_cancel_terminal_chords_and_late_shift'] = True
-        control('emit', [[1, 318, 1]])
-        time.sleep(.4)
-        if next(n for n in tree() if n['id'] == terminal_id)['fullscreen_mode']:
-            raise ValueError('R3 changed fullscreen before release')
-        control('emit', [[1, 318, 0]])
-        wait(tree, lambda nodes: next(n for n in nodes if n['id'] == terminal_id)['fullscreen_mode'] == 1, 'R3 did not enable fullscreen')
-        pulse(1, 318)
-        wait(tree, lambda nodes: next(n for n in nodes if n['id'] == terminal_id)['fullscreen_mode'] == 0, 'R3 did not leave fullscreen')
-        report['checks']['stick_click_super_and_fullscreen_on_release'] = True
-
-        pulse(1, 318)
-        wait(tree, lambda nodes: next(n for n in nodes if n['id'] == terminal_id)['fullscreen_mode'] == 1, 'Fullscreen missing before launcher')
+        for expected in (1, 0):
+            chord('LEFT+A')
+            wait(tree, lambda ns: next(n for n in ns if n['id'] == terminal_id)['fullscreen_mode'] == expected, 'Fullscreen shortcut failed')
+        for expected in (True, False):
+            chord('RIGHT+A')
+            wait(tree, lambda ns: next(n for n in ns if n['id'] == terminal_id)['is_floating'] == expected, 'Floating shortcut failed')
+        report['checks']['close_fullscreen_and_floating_shortcuts'] = True
+        chord('LEFT+A')
+        wait(tree, lambda ns: next(n for n in ns if n['id'] == terminal_id)['fullscreen_mode'] == 1, 'Fullscreen missing before launcher')
         control('emit', [[1, 316, 1]])
         time.sleep(.4)
         if picker_processes():
@@ -557,34 +416,34 @@ else:raise ValueError('Mapped keyboard is missing')
         graphical(directory, 'swaymsg "[con_id=' + str(terminal_id) + '] fullscreen disable"')
         report['picker_selected_window_id'] = selected_id
         report['checks']['select_picker_navigation_accept_and_cancel'] = True
-        print('Extra buttons passed: command layer, release-only terminal, launcher, window picker, one-shot Super chords and fullscreen.', flush=True)
+        print('Desktop passed: named window shortcuts, persistent legend, terminal, launcher and window picker.', flush=True)
 
         graphical(directory, 'swaymsg "workspace number 1; [app_id=firefox_firefox] focus"')
         browser_set(text='preserved', selection=[9, 9], focus='editor', clear=True)
         control('emit', [inputs['UP'], inputs['A']])
         control('emit', [[3, 5, 255]])
         wait(keyboard_keys, lambda keys: keys == [29], 'Ctrl missing before disconnect')
-        pulse(1, 317)
-        wait(status, lambda s: s['super_armed'], 'Super missing before disconnect')
+        pulse(1, 318)
+        wait(status, lambda s: s['right_stick_mode'] == 'select', 'Selection mode missing before disconnect')
         control('destroy')
-        wait(status, lambda s: s['device'] is None and not s['keys'] and not s['super_armed'], 'Disconnect left mapped keys or Super armed')
+        wait(status, lambda s: s['device'] is None and not s['keys'] and s['right_stick_mode'] == 'resize', 'Disconnect left mapped keys or selection armed')
         wait(keyboard_keys, lambda keys: not keys, 'Kernel keyboard retained Ctrl after disconnect')
         control('create')
         root('udevadm settle')
         wait(status, lambda s: s['device'] and s['grabbed'] and s['ready'], 'Reconnect failed')
         if browser()['text'] != 'preserved' or any(e['code'] != 'ControlLeft' for e in browser()['events']):
-            raise ValueError('Disconnect committed an unfinished typing chord')
-        report['checks']['disconnect_discards_unfinished_typing_chord'] = True
+            raise ValueError('Disconnect committed an unfinished shortcut')
+        report['checks']['disconnect_discards_unfinished_shortcut'] = True
         report['checks']['disconnect_reconnect_releases_modifiers'] = True
 
         graphical(directory, 'swaymsg "workspace number 1; [app_id=firefox_firefox] focus; [app_id=firefox_firefox] fullscreen enable"')
         browser_set(text='hello', selection=[5, 5], focus='editor', clear=True)
         control('emit', [[3, 5, 255]])
         wait(keyboard_keys, lambda keys: keys == [29], 'Ctrl missing before passthrough')
-        pulse(1, 317)
-        wait(status, lambda s: s['super_armed'], 'Super missing before passthrough')
+        pulse(1, 318)
+        wait(status, lambda s: s['right_stick_mode'] == 'select', 'Selection mode missing before passthrough')
         graphical(directory, 'minion-gamepad --toggle')
-        wait(status, lambda s: s['mode'] == 'passthrough' and not s['grabbed'] and not s['keys'] and not s['super_armed'], 'Passthrough did not clear modifiers or release source grab')
+        wait(status, lambda s: s['mode'] == 'passthrough' and not s['grabbed'] and not s['keys'] and s['right_stick_mode'] == 'resize', 'Passthrough did not clear modifiers or release source grab')
         wait(keyboard_keys, lambda keys: not keys, 'Ctrl remained held in passthrough')
         control('emit', [[3, 5, 0]])
         control('emit', [[1, 304, 1]])
@@ -621,10 +480,10 @@ else:raise ValueError('Mapped keyboard is missing')
 
         control('emit', [[3, 2, 255]])
         wait(keyboard_keys, lambda keys: keys == [42], 'Shift missing before lock')
-        pulse(1, 317)
-        wait(status, lambda s: s['super_armed'], 'Super missing before lock')
+        pulse(1, 318)
+        wait(status, lambda s: s['right_stick_mode'] == 'select', 'Selection mode missing before lock')
         graphical(directory, 'minion-lock')
-        wait(status, lambda s: s['paused'] and not s['grabbed'] and not s['keys'] and not s['super_armed'], 'Lock did not pause and clear modifiers')
+        wait(status, lambda s: s['paused'] and not s['grabbed'] and not s['keys'] and s['right_stick_mode'] == 'resize', 'Lock did not pause and clear modifiers')
         wait(keyboard_keys, lambda keys: not keys, 'Shift remained held behind lock')
         pulse(1, 304)
         if not ssh(directory, 'pgrep -x swaylock || true').strip():
@@ -638,10 +497,10 @@ else:raise ValueError('Mapped keyboard is missing')
 
         control('emit', [[3, 5, 255]])
         wait(keyboard_keys, lambda keys: keys == [29], 'Ctrl missing before switching consoles')
-        pulse(1, 317)
-        wait(status, lambda s: s['super_armed'], 'Super missing before switching consoles')
+        pulse(1, 318)
+        wait(status, lambda s: s['right_stick_mode'] == 'select', 'Selection mode missing before switching consoles')
         key(monitor, ['ctrl', 'alt', 'f2'])
-        wait(status, lambda s: not s['session_active'] and not s['grabbed'] and not s['keys'] and not s['super_armed'], 'Inactive graphical session kept modifiers')
+        wait(status, lambda s: not s['session_active'] and not s['grabbed'] and not s['keys'] and s['right_stick_mode'] == 'resize', 'Inactive graphical session kept modifiers')
         wait(keyboard_keys, lambda keys: not keys, 'Ctrl remained held on another console')
         control('emit', [[3, 5, 0]])
         key(monitor, ['ctrl', 'alt', 'f1'])
@@ -650,10 +509,10 @@ else:raise ValueError('Mapped keyboard is missing')
 
         control('emit', [[3, 5, 255]])
         wait(keyboard_keys, lambda keys: keys == [29], 'Ctrl missing before service restart')
-        pulse(1, 317)
-        wait(status, lambda s: s['super_armed'], 'Super missing before service restart')
+        pulse(1, 318)
+        wait(status, lambda s: s['right_stick_mode'] == 'select', 'Selection mode missing before service restart')
         graphical(directory, 'systemctl --user restart minion-gamepad.service')
-        wait(status, lambda s: not s['keys'] and not s['ready'] and not s['super_armed'], 'Service restart retained modifiers')
+        wait(status, lambda s: not s['keys'] and not s['ready'] and s['right_stick_mode'] == 'resize', 'Service restart retained modifiers')
         wait(keyboard_keys, lambda keys: not keys, 'New keyboard started with Ctrl held')
         control('emit', [[3, 5, 0]])
         wait(status, lambda s: s['ready'], 'Mapping did not resume after neutral return')

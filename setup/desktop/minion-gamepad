@@ -23,6 +23,33 @@ ACTION_COMMANDS = {
     'launcher': 'exec fuzzel --layer=overlay',
     'layout': 'layout toggle tabbed split',
     'fullscreen': 'fullscreen toggle',
+    'close': 'kill', 'floating': 'floating toggle', 'split': 'split toggle',
+    'file_manager': 'exec thunar', 'screenshot': 'exec grim - | wl-copy --type image/png',
+}
+
+KEY_ACTIONS = {
+    'copy': ('KEY_C', ('KEY_LEFTCTRL',)), 'paste': ('KEY_V', ('KEY_LEFTCTRL',)),
+    'cut': ('KEY_X', ('KEY_LEFTCTRL',)), 'undo': ('KEY_Z', ('KEY_LEFTCTRL',)),
+    'redo': ('KEY_Z', ('KEY_LEFTCTRL', 'KEY_LEFTSHIFT')),
+    'select_all': ('KEY_A', ('KEY_LEFTCTRL',)), 'find': ('KEY_F', ('KEY_LEFTCTRL',)),
+    'save': ('KEY_S', ('KEY_LEFTCTRL',)), 'page_up': ('KEY_PAGEUP', ()),
+    'page_down': ('KEY_PAGEDOWN', ()), 'home': ('KEY_HOME', ()), 'end': ('KEY_END', ()),
+    'document_home': ('KEY_HOME', ('KEY_LEFTCTRL',)),
+    'document_end': ('KEY_END', ('KEY_LEFTCTRL',)),
+    'previous_match': ('KEY_F3', ('KEY_LEFTSHIFT',)), 'next_match': ('KEY_F3', ()),
+}
+NAVIGATION_ACTIONS = {'page_up', 'page_down', 'home', 'end', 'document_home', 'document_end'}
+ACTION_LABELS = {
+    'copy': 'Copy', 'paste': 'Paste', 'cut': 'Cut', 'undo': 'Undo', 'redo': 'Redo',
+    'select_all': 'Select all', 'find': 'Find', 'save': 'Save',
+    'page_up': 'Page Up', 'page_down': 'Page Down', 'home': 'Beginning of line',
+    'end': 'End of line', 'document_home': 'Beginning of document',
+    'document_end': 'End of document', 'previous_match': 'Previous search match',
+    'next_match': 'Next search match', 'close': 'Close window', 'layout': 'Tiled / tabbed',
+    'fullscreen': 'Fullscreen', 'floating': 'Floating', 'file_manager': 'File manager',
+    'split': 'Horizontal / vertical split', 'equalize': 'Equalize tiled sizes',
+    'screenshot': 'Screenshot', 'terminal': 'Terminal', 'window_picker': 'Window picker',
+    'launcher': 'Application launcher', 'legend': 'Shortcut legend', 'selection': 'Resize / select text',
 }
 
 # Xbox/xpad uses Linux's historical BTN_X=BTN_NORTH, BTN_Y=BTN_WEST
@@ -40,8 +67,8 @@ def chord_tokens(name):
             or len(directions) > 2 or len(faces) > 2
             or len(directions) == 2 and directions not in DIRECTION_PAIRS
             or len(faces) == 2 and faces not in FACE_PAIRS
-            or len(tokens) < 2):
-        raise ValueError('Invalid typing chord: ' + name)
+            or 'X' in tokens or len(tokens) < 2):
+        raise ValueError('Invalid shortcut chord: ' + name)
     return frozenset(tokens)
 
 
@@ -158,7 +185,7 @@ def configuration(path, codes):
 
     config['buttons'] = {code(k, 'BTN_'): code(v, 'KEY_') for k, v in config['buttons'].items()}
     config['actions'] = {code(k, 'BTN_'): v for k, v in config['actions'].items()}
-    if any(v not in ACTION_COMMANDS and v != 'super' for v in config['actions'].values()):
+    if any(v not in ACTION_LABELS for v in config['actions'].values()):
         raise ValueError('Unknown desktop button action')
     config['dpad'] = {code(k, 'ABS_'): [code(v, 'KEY_') for v in values] for k, values in config['dpad'].items()}
     if any(len(values) != 2 for values in config['dpad'].values()):
@@ -174,15 +201,19 @@ def configuration(path, codes):
     if len(config['chord_axes']) != 2 or len(set(config['chord_axes'])) != 2 or not set(config['chord_axes']) <= set(config['dpad']):
         raise ValueError('chord_axes requires the horizontal and vertical D-pad axes')
     chords = {}
-    for name, output in config['chords'].items():
+    for name, action in config['chords'].items():
         tokens = chord_tokens(name)
         if tokens in chords:
-            raise ValueError('Duplicate typing chord: ' + name)
-        chords[tokens] = code(output, 'KEY_')
+            raise ValueError('Duplicate shortcut chord: ' + name)
+        if not isinstance(action, str) or action not in ACTION_LABELS:
+            raise ValueError('Unknown shortcut action: ' + str(action))
+        chords[tokens] = action
     config['chords'] = chords
-    config['chord_faces'] = {name: code(symbol, 'BTN_') for name, symbol in FACE_NAMES.items()}
-    if chords and not set(config['chord_faces'].values()) <= set(config['buttons']):
-        raise ValueError('Typing chords require all four face buttons in buttons')
+    config['chord_faces'] = {name: code(symbol, 'BTN_') for name, symbol in FACE_NAMES.items() if name != 'X'}
+    if not set(config['chord_faces'].values()) <= set(config['buttons']):
+        raise ValueError('Shortcuts require A, B and Y in buttons')
+    if config['buttons'].get(code(FACE_NAMES['X'], 'BTN_')) != code('KEY_BACKSPACE', 'KEY_'):
+        raise ValueError('X is reserved for holdable Backspace')
     action_keys = set(config['actions'])
     bumpers = {config['previous_bumper'], config['next_bumper']}
     if action_keys & set(config['buttons']) or bumpers & (action_keys | set(config['buttons'])):
@@ -198,8 +229,9 @@ class Mapper:
         self.device = None
         self.grabbed = False
         self.keys = set()
-        self.super_armed = False
-        self.super_active = False
+        self.legend = None
+        self.right_mode, self.right_pending = 'resize', None
+        self.publish_right_mode()
         self.raw_keys = set()
         self.raw_axes = {}
         self.ranges = {}
@@ -213,7 +245,7 @@ class Mapper:
         self.chord_armed = False
         self.pending_buttons = set()
         self.text_gesture = ReleaseGesture()
-        self.command_gesture = False
+        self.gesture_in_legend = False
         self.unavailable_actions = []
         self.actions = deque(maxlen=24)
         self.reason = 'Waiting for a controller'
@@ -225,19 +257,6 @@ class Mapper:
     def write_keys(self, desired):
         desired = set(desired)
         modifiers = {self.e.KEY_LEFTSHIFT, self.e.KEY_LEFTCTRL, self.e.KEY_LEFTMETA}
-        # Arming emits no key. Apply Super only when a mapped non-modifier key
-        # starts, then keep it until that key/held arrow has been released.
-        # Snapshots of self.keys can include our injected Meta; recalculate it.
-        if self.super_active:
-            desired.discard(self.e.KEY_LEFTMETA)
-        if self.super_armed and desired - self.keys - modifiers:
-            self.super_armed = False
-            self.super_active = True
-        if self.super_active:
-            if desired - modifiers:
-                desired.add(self.e.KEY_LEFTMETA)
-            else:
-                self.super_active = False
         for key in sorted(self.keys - desired, key=lambda k: (k in modifiers, k)):
             self.keyboard.write(self.e.EV_KEY, key, 0)
         for key in sorted(desired - self.keys, key=lambda k: (k not in modifiers, k)):
@@ -247,38 +266,77 @@ class Mapper:
         self.keys = set(desired)
 
     def reset(self):
-        self.super_armed = self.super_active = False
         self.write_keys(set())
+        self.close_legend()
+        self.right_mode, self.right_pending = 'resize', None
+        self.publish_right_mode()
         self.triggers = [False, False]
         self.sticks = [None, None]
         self.next_repeat = [0, 0]
         self.ready = False
         self.pending_buttons.clear()
         self.text_gesture.clear()
-        self.command_gesture = False
+        self.gesture_in_legend = False
         self.chord_since = None
         self.chord_consumed = self.chord_armed = False
 
-    def clear_super(self):
-        self.super_armed = self.super_active = False
-        self.write_keys(self.keys - {self.e.KEY_LEFTMETA})
+    def publish_right_mode(self):
+        (self.directory / 'right-stick-mode').write_text(self.right_mode + '\n')
 
-    def toggle_super(self):
-        if self.super_active or self.super_armed:
-            self.clear_super()
-        else:
-            self.super_armed = True
-        label = ('X close · Y layout · A terminal · B cancel\n'
-                 '↑ copy · ↓ paste · ← undo · → redo\n'
-                 'Typing chord: Super shortcut. L3: cancel.'
-                 if self.super_armed else 'Commands cancelled')
-        self.notify(label)
+    def close_legend(self):
+        if self.legend:
+            if self.legend.poll() is None:
+                self.legend.terminate()
+                try:
+                    self.legend.wait(timeout=1)
+                except subprocess.TimeoutExpired:
+                    self.legend.kill()
+                    self.legend.wait(timeout=1)
+            self.legend = None
+
+    def legend_open(self):
+        if self.legend and self.legend.poll() is not None:
+            self.legend = None
+        return self.legend is not None
+
+    def legend_text(self):
+        order = ('UP', 'DOWN', 'LEFT', 'RIGHT', 'Y', 'A', 'B')
+        lines = ['Right stick: ' + self.right_mode]
+        lines += ['+'.join(t for t in order if t in tokens) + '  :  ' + ACTION_LABELS[action]
+                  for tokens, action in self.config['chords'].items()]
+        lines += ['X: hold Backspace; A: Enter; B: Escape; Y: Tab',
+                  'D-pad: arrows; L2: Shift; R2: Ctrl',
+                  'Left stick: focus; L2 + left stick: move',
+                  'Right stick: resize / select; R3: switch mode',
+                  'L1 / R1: workspaces; L2 + bumper: send window']
+        labels = {self.e.BTN_START: 'Start', self.e.BTN_SELECT: 'Select', self.e.BTN_MODE: 'Menu',
+                  self.e.BTN_THUMBL: 'L3', self.e.BTN_THUMBR: 'R3'}
+        lines += [labels.get(button, 'Button') + '  :  ' + ACTION_LABELS[action]
+                  for button, action in self.config['actions'].items()]
+        lines += ['Start + Select hold: normal gamepad input',
+                  'L3 or B/Escape: dismiss this legend']
+        return '\n'.join(lines) + '\n'
+
+    def toggle_legend(self):
+        if self.legend_open():
+            self.close_legend()
+            return
+        self.text_gesture.clear()
+        try:
+            self.legend = subprocess.Popen(
+                ['fuzzel', '--dmenu', '--layer=overlay', '--width=64', '--lines=18', '--prompt=Controls > '],
+                stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, text=True)
+            self.legend.stdin.write(self.legend_text())
+            self.legend.stdin.close()
+        except (OSError, BrokenPipeError) as error:
+            self.close_legend()
+            self.notify('Cannot show shortcut legend: ' + str(error))
 
     def notify(self, label):
         log.info(label)
         try:
             subprocess.run(['notify-send', '-a', 'minion', '-t', '2500',
-                            'Gamepad commands', label], check=False, timeout=2)
+                            'Gamepad controls', label], check=False, timeout=2)
         except (OSError, subprocess.TimeoutExpired) as error:
             log.warning('Gamepad notification failed: %s', error)
 
@@ -312,37 +370,97 @@ class Mapper:
         return 'foot' if foot else 'terminal' if terminal else 'gui'
 
     def shortcut(self, key, modifiers):
-        # Commands have fixed semantics even while a trigger is held. Restore
-        # those held modifiers afterward, without adding them to the shortcut.
         held = set(self.keys)
-        self.write_keys(modifiers)
-        self.write_keys(set(modifiers) | {key})
-        self.write_keys(modifiers)
+        nonmodifiers = held - {self.e.KEY_LEFTSHIFT, self.e.KEY_LEFTCTRL, self.e.KEY_LEFTMETA}
+        base = nonmodifiers | set(modifiers)
+        self.write_keys(base)
+        self.write_keys(base | {key})
+        self.write_keys(base)
         self.write_keys(held)
 
-    def layer_command(self, name):
-        self.clear_super()
-        if name in ('X', 'Y', 'A'):
-            self.command({'X': 'kill', 'Y': ACTION_COMMANDS['layout'],
-                          'A': ACTION_COMMANDS['terminal']}[name])
-            return
-        if name == 'B':
-            self.notify('Commands cancelled')
-            return
+    def dispatch(self, action):
+        if action == 'legend':
+            self.toggle_legend()
+        elif action == 'selection':
+            current = self.right_pending or self.right_mode
+            self.right_pending = 'select' if current == 'resize' else 'resize'
+            if self.right_pending == self.right_mode:
+                self.right_pending = None
+            self.notify('Right stick: ' + (self.right_pending or self.right_mode) +
+                        (' — return stick to neutral' if self.right_pending else ''))
+        elif action == 'equalize':
+            self.equalize()
+        elif action in ACTION_COMMANDS:
+            self.command(ACTION_COMMANDS[action])
+        else:
+            key, names = KEY_ACTIONS[action]
+            modifiers = {getattr(self.e, name) for name in names}
+            if action in NAVIGATION_ACTIONS:
+                modifiers |= self.keys & {self.e.KEY_LEFTSHIFT, self.e.KEY_LEFTCTRL}
+            else:
+                try:
+                    application = self.focused_application()
+                except (OSError, ValueError, EOFError, KeyError) as error:
+                    log.warning('Cannot identify focused application: %s', error)
+                    self.notify('Shortcut skipped: cannot identify the focused application')
+                    return
+                if application != 'gui':
+                    if application == 'foot' and action in ('copy', 'paste'):
+                        modifiers.add(self.e.KEY_LEFTSHIFT)
+                    else:
+                        self.notify('This shortcut is unavailable in terminals')
+                        return
+            self.shortcut(getattr(self.e, key), modifiers)
+
+    def equalize(self):
+        """Balance sibling tiles recursively without changing layout or focus."""
+        def find(node, identity):
+            if node['id'] == identity:
+                return node
+            for child in node.get('nodes', []):
+                result = find(child, identity)
+                if result:
+                    return result
+        def focused(node):
+            return node.get('focused') or any(focused(c) for c in node.get('nodes', []) + node.get('floating_nodes', []))
+        def workspace(node):
+            if node.get('type') == 'workspace' and focused(node):
+                return node
+            for child in node.get('nodes', []):
+                result = workspace(child)
+                if result:
+                    return result
+        def groups(node):
+            children = node.get('nodes', [])
+            result = [node['id']] if len(children) > 1 and node.get('layout') in ('splith', 'splitv') else []
+            for child in children:
+                result.extend(groups(child))
+            return result
         try:
-            application = self.focused_application()
+            target = workspace(ipc('', 4))
+            if not target:
+                return
+            for identity in groups(target):
+                # Each resize redistributes over siblings. Re-read and converge;
+                # application minimum sizes can prevent an exact balance.
+                for _ in range(12):
+                    node = find(ipc('', 4), identity)
+                    if not node or len(node.get('nodes', [])) < 2:
+                        break
+                    dimension = 'width' if node['layout'] == 'splith' else 'height'
+                    children = node['nodes']
+                    size = sum(c['rect'][dimension] for c in children) // len(children)
+                    off = [c for c in children if abs(c['rect'][dimension] - size) > 2]
+                    if not off:
+                        break
+                    child = max(off, key=lambda c: abs(c['rect'][dimension] - size))
+                    if not self.command(f"[con_id={child['id']}] resize set {dimension} {size} px"):
+                        break
+                else:
+                    self.notify('Some tiles could not be equalized within their size limits')
         except (OSError, ValueError, EOFError, KeyError) as error:
-            log.warning('Cannot identify focused application: %s', error)
-            self.notify('Command skipped: cannot identify the focused application')
-            return
-        if application == 'terminal' or application == 'foot' and name in ('LEFT', 'RIGHT'):
-            self.notify('This command is unavailable in terminals')
-            return
-        modifiers = {self.e.KEY_LEFTCTRL}
-        if application == 'foot' or name == 'RIGHT':
-            modifiers.add(self.e.KEY_LEFTSHIFT)
-        self.shortcut({'UP': self.e.KEY_C, 'DOWN': self.e.KEY_V,
-                       'LEFT': self.e.KEY_Z, 'RIGHT': self.e.KEY_Z}[name], modifiers)
+            log.warning('Cannot equalize workspace: %s', error)
+            self.notify('Cannot equalize this workspace')
 
     def ungrab(self):
         self.reset()
@@ -392,7 +510,7 @@ class Mapper:
         (self.directory / 'mode').write_text(self.mode + '\n')
         log.info('Gamepad mode: %s', self.mode)
         label = 'Desktop navigation enabled' if self.mode == 'desktop' else 'Normal gamepad input enabled'
-        subprocess.run(['notify-send', '-a', 'minion', 'Gamepad controls', label], check=False)
+        self.notify(label)
 
     def command(self, command):
         try:
@@ -401,8 +519,10 @@ class Mapper:
             self.actions.append({'command': command, 'success': passed})
             if not passed:
                 log.warning('Sway refused %s: %s', command, result)
+            return passed
         except (OSError, ValueError, EOFError) as error:
             log.warning('Sway command failed: %s', error)
+            return False
 
     def workspace(self, step):
         current = next(w for w in ipc('', 1) if w['focused'])['num']
@@ -417,7 +537,6 @@ class Mapper:
     def button_gestures(self, pressed, released, now, active):
         """Defer individual actions to release; consume overlapping toggle buttons."""
         if not active or (self.directory / 'paused').exists():
-            self.clear_super()
             self.pending_buttons.clear()
             self.chord_since = None
             self.chord_consumed = self.chord_armed = False
@@ -425,10 +544,8 @@ class Mapper:
         combo = set(self.config['toggle_buttons'])
         desktop = self.permitted(active) and self.grabbed and self.ready
         eligible = pressed if desktop else pressed & combo if self.mode == 'passthrough' else set()
-        if self.config['chords'] or self.super_armed or self.command_gesture:
-            eligible = eligible - set(self.config['chord_faces'].values())
-            self.pending_buttons.difference_update(self.config['chord_faces'].values())
-        self.pending_buttons.update(eligible)
+        reserved = set(self.config['chord_faces'].values()) | {self.e.BTN_NORTH}
+        self.pending_buttons.update(eligible - reserved)
         held = combo & self.raw_keys
         if held == combo and combo <= self.pending_buttons and not self.chord_consumed:
             self.chord_since = now
@@ -446,24 +563,14 @@ class Mapper:
                     return
         if desktop:
             for button in sorted(released & self.pending_buttons):
-                if button in self.config['buttons']:
-                    key = self.config['buttons'][button]
-                    held_keys = set(self.keys)
-                    self.write_keys(held_keys | {key})
-                    self.write_keys(held_keys)
-                elif button == self.config['previous_bumper']:
-                    self.clear_super()
+                if self.legend_open() and self.config['actions'].get(button) not in ('legend', 'selection'):
+                    continue
+                if button == self.config['previous_bumper']:
                     self.workspace(-1)
                 elif button == self.config['next_bumper']:
-                    self.clear_super()
                     self.workspace(1)
                 elif button in self.config['actions']:
-                    action = self.config['actions'][button]
-                    if action == 'super':
-                        self.toggle_super()
-                    else:
-                        self.clear_super()
-                        self.command(ACTION_COMMANDS[action])
+                    self.dispatch(self.config['actions'][button])
         self.pending_buttons.difference_update(released)
 
     def frame(self, pressed, released, now, active):
@@ -474,8 +581,8 @@ class Mapper:
             value = self.axis(self.config[name], True)
             threshold = self.config['trigger_release' if self.triggers[index] else 'trigger_press']
             self.triggers[index] = value > threshold
-        desired = set()
-        if not self.config['chords'] and not self.super_armed and not self.command_gesture:
+        desired = {self.e.KEY_BACKSPACE} if self.e.BTN_NORTH in self.raw_keys else set()
+        if not self.config['chords']:
             for source, (negative, positive) in self.config['dpad'].items():
                 value = self.raw_axes.get(source, 0)
                 if value:
@@ -487,27 +594,23 @@ class Mapper:
         self.write_keys(desired)
         self.button_gestures(pressed, released, now, active)
         if self.permitted(active) and self.grabbed and self.ready:
-            self.typing_frame()
+            self.shortcut_frame()
 
-    def typing_frame(self):
+    def shortcut_frame(self):
         held = {name for name, code in self.config['chord_faces'].items() if code in self.raw_keys}
         horizontal, vertical = self.config['chord_axes']
-        for axis, negative, positive in ((horizontal, 'LEFT', 'RIGHT'), (vertical, 'UP', 'DOWN')):
-            value = self.raw_axes.get(axis, 0)
-            if value:
-                held.add(negative if value < 0 else positive)
-        if self.super_armed and held:
-            self.command_gesture = True
-        captured = self.command_gesture
+        if self.config['chords']:
+            for axis, negative, positive in ((horizontal, 'LEFT', 'RIGHT'), (vertical, 'UP', 'DOWN')):
+                value = self.raw_axes.get(axis, 0)
+                if value:
+                    held.add(negative if value < 0 else positive)
+        if held and not self.text_gesture.previous:
+            self.gesture_in_legend = self.legend_open()
+        captured = self.gesture_in_legend
         gesture = self.text_gesture.update(held)
         if not held:
-            self.command_gesture = False
+            self.gesture_in_legend = False
         if gesture is None:
-            return
-        if self.super_armed and len(gesture) == 1:
-            self.layer_command(next(iter(gesture)))
-            return
-        if (captured and not self.super_armed) or not self.config['chords']:
             return
         if len(gesture) == 1:
             name = next(iter(gesture))
@@ -516,12 +619,11 @@ class Mapper:
             else:
                 axis = horizontal if name in ('LEFT', 'RIGHT') else vertical
                 key = self.config['dpad'][axis][name in ('RIGHT', 'DOWN')]
-        else:
-            key = self.config['chords'].get(gesture)
-        if key is not None:
-            held_keys = set(self.keys)
-            self.write_keys(held_keys | {key})
-            self.write_keys(held_keys)
+            self.shortcut(key, self.keys & {self.e.KEY_LEFTSHIFT, self.e.KEY_LEFTCTRL})
+        elif not captured and not self.legend_open():
+            action = self.config['chords'].get(gesture)
+            if action:
+                self.dispatch(action)
 
     def tick(self, now, active):
         if not self.device:
@@ -547,6 +649,14 @@ class Mapper:
             magnitude = max(abs(x), abs(y))
             if magnitude <= self.config['stick_release']:
                 self.sticks[index] = None
+                if index == 1 and self.right_pending:
+                    self.right_mode, self.right_pending = self.right_pending, None
+                    self.publish_right_mode()
+                    if self.legend_open():
+                        self.close_legend()
+                        self.toggle_legend()
+                continue
+            if self.legend_open() or index == 1 and self.right_pending:
                 continue
             direction = ('left' if x < 0 else 'right') if abs(x) >= abs(y) else ('up' if y < 0 else 'down')
             fresh = direction != self.sticks[index] and magnitude >= self.config['stick_press']
@@ -558,7 +668,12 @@ class Mapper:
             self.next_repeat[index] = now + self.config['repeat_delay' if fresh else 'repeat_interval']
             if index == 0:
                 self.command(('move' if self.triggers[0] else 'focus') + ' ' + direction)
-            else:
+            elif self.right_mode == 'select':
+                modifiers = {self.e.KEY_LEFTSHIFT}
+                if self.triggers[1]:
+                    modifiers.add(self.e.KEY_LEFTCTRL)
+                self.shortcut(getattr(self.e, 'KEY_' + direction.upper()), modifiers)
+            elif not self.legend_open():
                 action = 'grow' if direction in ('right', 'down') else 'shrink'
                 dimension = 'width' if direction in ('left', 'right') else 'height'
                 self.command(f"resize {action} {dimension} {self.config['resize_step']} ppt")
@@ -568,7 +683,8 @@ class Mapper:
                 'device': self.device.path if self.device else None,
                 'device_name': self.device.name if self.device else None,
                 'grabbed': self.grabbed, 'ready': self.ready, 'keys': sorted(self.keys),
-                'super_armed': self.super_armed, 'super_active': self.super_active,
+                'right_stick_mode': self.right_mode, 'right_stick_pending': self.right_pending,
+                'legend_open': self.legend_open(),
                 'axis_ranges': self.ranges, 'actions': list(self.actions), 'reason': self.reason,
                 'unavailable_actions': self.unavailable_actions}
 
@@ -645,8 +761,7 @@ def main():
             raise SystemExit('A mapper is already running')
         output_keys = set(config['buttons'].values()) | {key for values in config['dpad'].values() for key in values}
         output_keys |= {evdev.ecodes.KEY_LEFTSHIFT, evdev.ecodes.KEY_LEFTCTRL, evdev.ecodes.KEY_LEFTMETA}
-        output_keys |= {evdev.ecodes.KEY_C, evdev.ecodes.KEY_V, evdev.ecodes.KEY_Z}
-        output_keys |= set(config['chords'].values())
+        output_keys |= {getattr(evdev.ecodes, name) for key, modifiers in KEY_ACTIONS.values() for name in (key, *modifiers)}
         with evdev.UInput({evdev.ecodes.EV_KEY: sorted(output_keys), evdev.ecodes.EV_REP: []},
                           name='Minion gamepad keyboard', phys='minion/gamepad-keyboard', vendor=0x1209, product=2) as keyboard:
             mapper = Mapper(config, keyboard, evdev.ecodes, directory)

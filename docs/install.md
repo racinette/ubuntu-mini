@@ -29,7 +29,7 @@ sudo sh ./install.sh --disk /dev/nvme0n1 --size 200G
 
 Automatic selection requires exactly one eligible disk. Use `--disk` if more than one qualifies. Read-only disks, removable/USB disks, mounted filesystems, active mappings and swap are excluded. Existing GPT is required; the helper does not initialize blank disks or convert MBR.
 
-The script prompts for hostname (default `koolaid`), username (default `andy`), account password and encryption passphrase. It prints the disk identity, original partition table and new allocation, then requires `INSTALL` before launching. `--check` performs only inventory and planning, without collecting secrets or changing files or disks.
+The script prompts for hostname (default `minion`), username (default `user`), account password and encryption passphrase. It prints the disk identity, original partition table and new allocation, then requires `INSTALL` before launching. `--check` performs only inventory and planning, without collecting secrets or changing files or disks.
 
 OpenSSH is installed with account-password login enabled. Supplying public keys through `--credentials-file` disables SSH password login; the account password still works locally and for `sudo`.
 

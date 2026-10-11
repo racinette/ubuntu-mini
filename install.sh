@@ -257,8 +257,8 @@ def credentials(path):
                 raise ValueError('Credentials file must be a root-owned regular file with mode 600')
             data = json.load(file)
     else:
-        data = dict(hostname=tty_input('Hostname [koolaid]: ') or 'koolaid',
-                    username=tty_input('Username [andy]: ') or 'andy')
+        data = dict(hostname=tty_input('Hostname [minion]: ') or 'minion',
+                    username=tty_input('Username [user]: ') or 'user')
         for field, prompt in (('login_password', 'Account password'), ('luks_passphrase', 'Encryption passphrase')):
             data[field] = getpass.getpass(prompt + ': ')
             if getpass.getpass('Repeat ' + prompt.lower() + ': ') != data[field]:

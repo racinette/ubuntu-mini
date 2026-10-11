@@ -337,7 +337,7 @@ def interactive(directory, cancel_only=False):
     # No pexpect transcript/logfile: the fixture passwords stay private.
     try:
         for prompt, answer in (
-            ('Hostname [koolaid]: ',creds['hostname']),('Username [andy]: ',creds['username']),
+            ('Hostname [minion]: ',creds['hostname']),('Username [user]: ',creds['username']),
             ('Account password: ',creds['login_password']),('Repeat account password: ',creds['login_password']),
             ('Encryption passphrase: ',creds['luks_passphrase']),('Repeat encryption passphrase: ',creds['luks_passphrase'])):
             child.expect_exact(prompt)

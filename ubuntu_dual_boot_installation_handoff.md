@@ -13,7 +13,7 @@ Build a **repeatable, preferably automated installation procedure** for **Ubuntu
 - Use **Ubuntu 24.04**, because compatibility with Ubuntu-specific development/build tooling (e.g., Chromium's Ubuntu-targeted instructions) matters. Do **not** solve the installer problem by silently switching to Debian or a different Ubuntu flavor.
 - Start from an **Ubuntu Server installation**, then apply the intended lightweight GUI setup through the existing installation scripts. Desktop choice, DAW, autocomplete, and other unrelated system tooling are **out of scope** for this handoff.
 - Automate enough that subsequent reinstalls do **not** require manually recreating partitions or improvising installer steps.
-- Hostname: `koolaid`; username: `andy`. Credentials and LUKS passphrase must be supplied **locally**, never pasted into public logs or committed to source control.
+- Default hostname: `minion`; default username: `user`. Credentials and LUKS passphrase must be supplied **locally**, never pasted into public logs or committed to source control.
 
 ## Actual disk state (observed, not proposed)
 
@@ -79,10 +79,10 @@ The disk itself is valid GPT, Linux supports two ESPs, and separate ESPs can be 
 
 ## Existing candidate autoinstall artifact — treat as unverified
 
-An earlier assistant generated `koolaid-autoinstall.yaml` (if provided to the new environment, inspect the actual contents). It is an **experimental candidate, not validated installation instructions**. Its proposed essentials:
+An earlier assistant generated an autoinstall YAML file (if provided to the new environment, inspect the actual contents). It is an **experimental candidate, not validated installation instructions**. Its proposed essentials, using neutral example names here:
 
 - Cloud-init `#cloud-config` → `autoinstall: { version: 1, ... }`.
-- Hostname `koolaid`, username `andy`, password hash placeholder.
+- Hostname `minion`, username `user`, password hash placeholder.
 - Curtin storage `version: 2`; disk `path: /dev/nvme0n1`, `ptable: gpt`, `preserve: true`.
 - Seven explicitly represented partitions, each `preserve: true`, using the exact byte offsets/sizes derived from the sectors above.
 - Windows p1–p4 receive **no format, mount, or wipe actions**.

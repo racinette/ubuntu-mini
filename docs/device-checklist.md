@@ -146,6 +146,7 @@ Conda/Miniforge is optional and is not part of default installation. Local devel
 
 Configure a subscription privately using [proxy setup](proxy.md), only if proxy access is wanted. A fresh installation leaves the service disabled until explicitly enabled.
 
+- [ ] `manage.py list` shows the subscription's server names; interactive `select` or `select NUMBER` saves the intended server. After restart, verify that server is used. Reboot/setup reruns retain the choice; `select --auto` restores automatic selection after restart.
 - [ ] The subscription fetch and `manage.py test` succeed after configuration. Confirm the expected TUN or explicit-proxy mode; an explicit-proxy test alone does not establish system-wide capture.
 - [ ] With TUN enabled, Firefox, ordinary terminal requests and coding agents work without application proxy settings. Confirm DNS, local/private network access and the expected public egress route.
 - [ ] Stop the service and confirm direct connectivity/DNS return; start it again and check recovery. The bar tracks service state, while actual requests establish connectivity.

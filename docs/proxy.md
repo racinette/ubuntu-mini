@@ -21,7 +21,9 @@ sudo python3 setup/proxy/manage.py test
 
 For component development or a focused repair, `sudo python3 setup/proxy/provision.py` invokes the same proxy installer directly. Normal installation and updates use `setup.sh` without a proxy flag.
 
-The service routes public destinations through a subscription server selected by latency checks, while local/private networks and multicast bypass the tunnel. Servers are checked every five minutes. It captures DNS traffic and uses Mihomo's resolver. TUN mode requires Ubuntu's standard `systemd-resolved` service and the `127.0.0.53` stub in `/etc/resolv.conf`. Startup adds a temporary `~.` DNS routing domain on `minion-proxy`; the settings disappear when that interface is removed. Existing NetworkManager connections and Netplan files are not rewritten. HTTPS subscriptions are refreshed hourly with the `minion-proxy/1.0` user agent; the endpoint must return raw or base64-encoded server URIs for that agent. A browser landing page, HAPP-encrypted link or full JSON/YAML configuration is not accepted by this helper. Mihomo handles the server URI formats itself.
+If third-party downloads require the proxy, run `sudo python3 setup/proxy/provision.py` before the full setup, then configure, select a server if needed, enable/start the service and test it using the commands below. Only then run `sudo ./setup.sh`. The proxy installer itself needs access to its pinned GitHub release; this sequence assumes that download and the subscription endpoint are reachable directly.
+
+The service routes public destinations through a subscription server selected by latency checks by default, while local/private networks and multicast bypass the tunnel. Automatic mode checks servers every five minutes; a pinned selection stays on the chosen server. It captures DNS traffic and uses Mihomo's resolver. TUN mode requires Ubuntu's standard `systemd-resolved` service and the `127.0.0.53` stub in `/etc/resolv.conf`. Startup adds a temporary `~.` DNS routing domain on `minion-proxy`; the settings disappear when that interface is removed. Existing NetworkManager connections and Netplan files are not rewritten. HTTPS subscriptions are refreshed hourly with the `minion-proxy/1.0` user agent; the endpoint must return raw or base64-encoded server URIs for that agent. A browser landing page, HAPP-encrypted link or full JSON/YAML configuration is not accepted by this helper. Mihomo handles the server URI formats itself.
 
 Some providers require device registration. The helper creates one random, stable device ID under `/var/lib/minion/proxy/device-id` and sends the documented `x-hwid` and Linux device headers on both initial fetch and automatic refresh. Reruns reuse this identity. Provider device limits still apply: if all slots are occupied, remove an unused device through your provider before retrying. Missing-device and device-limit refusal headers, and all-placeholder subscriptions, are rejected before replacing the working configuration. Keep the device-ID file with your private proxy backup to retain registration across reinstalls.
 
@@ -33,7 +35,32 @@ sudo install -o root -g root -m 600 /PRIVATE/PATH/device-id /var/lib/minion/prox
 
 The retained test identity for this checkout is in ignored `.local/proxy-qa/live/device-id`. Stop the test client before transferring the registration. An existing configured Mini should retain its own identity.
 
-The local HTTP/SOCKS listener binds only to `127.0.0.1:7890`. There is no exposed dashboard or control API. The subscription URL, server cache and runtime state live under root-only `/var/lib/minion/proxy/`. The service's umask keeps new cache files private, and its launcher redacts the subscription URL from core output before sending it to the journal. Logs can still contain connection destinations; treat diagnostic reports as private.
+The local HTTP/SOCKS listener binds only to `127.0.0.1:7890`. There is no exposed dashboard or network control API. The subscription URL, server cache and runtime state live under root-only `/var/lib/minion/proxy/`. The service's umask keeps new cache files private, and its launcher redacts the subscription URL from core output before sending it to the journal. Logs can still contain connection destinations; treat diagnostic reports as private.
+
+## Choose a subscription server
+
+After `configure`, list the cached servers and choose by number:
+
+```bash
+sudo python3 setup/proxy/manage.py list
+sudo python3 setup/proxy/manage.py select 3
+sudo systemctl restart minion-proxy.service
+sudo python3 setup/proxy/manage.py test
+```
+
+Replace `3` with the number from your list. Running `select` without an argument displays the current list and prompts for a choice. You can also pass an exact name in quotes: `sudo python3 setup/proxy/manage.py select "SERVER NAME"`. Names can contain spaces, emoji or punctuation; no regular-expression escaping is needed. `list` marks the saved choice, which takes effect after the service restart. Restart starts a stopped service too; use `sudo systemctl enable minion-proxy.service` separately if it should start at boot.
+
+Both commands use the cached subscription and work without internet access or a running proxy service. A short-lived Mihomo instance parses the cache through a Unix socket inside a private temporary directory, then exits. It opens no network proxy/control listeners and changes no routes or DNS settings. The helper displays names only, without server URIs or subscription credentials.
+
+Numbers can change when the subscription refreshes. Selection is saved by exact name, survives refreshes and ordinary setup reruns, and never switches to another server automatically. If that name disappears from the subscription, public traffic is rejected until you choose another server or restore automatic mode. Local/private network bypass rules still apply. Running `configure` again regenerates the configuration and returns to automatic selection.
+
+To return to automatic latency-based selection:
+
+```bash
+sudo python3 setup/proxy/manage.py select --auto
+sudo systemctl restart minion-proxy.service
+sudo python3 setup/proxy/manage.py test
+```
 
 ## Test with an explicit proxy first
 

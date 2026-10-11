@@ -14,6 +14,7 @@ python3 tests/check-status-bar.py
 python3 tests/check-install-plan.py
 python3 tests/check-install-launch.py
 python3 tests/check-proxy.py
+python3 tests/check-proxy-selection.py
 python3 tests/check-hhd-artifacts.py
 python3 tests/check-coding-clis.py
 python3 tests/check-development.py
@@ -28,6 +29,8 @@ The HHD artifact check refuses corrupted downloads and altered cache entries, ch
 The coding CLI check verifies that installers and initial version checks drop root privileges, use the selected user's home and groups, and exclude root credentials/settings from their environment. It also checks that existing commands are retained without execution, failed downloads are cleaned up before shell execution, missing installed commands fail setup, interactive Bash sets PATH without duplication and preflight is read-only. The setup-layout check includes these tools in ordinary provisioning and source staging. These checks do not download releases or start model sessions.
 
 The development check verifies user privilege/environment isolation, immediate latest-version installation for missing defaults, retention of selected mise/Rust/Python versions, refusal of conflicting Docker runtimes/repositories and read-only preflight. It downloads no runtimes and changes no host services.
+
+The proxy selection check verifies selection by number, exact name or prompt, returning to automatic mode, private configuration, terminal-safe output and preservation on invalid choices or failed validation. With `python3 tests/check-proxy-selection.py --mihomo /PATH/TO/NATIVE/MIHOMO`, it also exercises the real engine against synthetic URI/base64/VMess subscriptions. It checks exact Unicode/emoji/punctuation matching, rejection when a pinned node disappears and temporary-process cleanup. The native check uses private Unix sockets and unreachable loopback fixture endpoints; it needs no subscription account, network downloads, routes or system services.
 
 ## Optional proxy container test
 

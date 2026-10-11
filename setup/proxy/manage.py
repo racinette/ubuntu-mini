@@ -3,9 +3,11 @@
 import argparse
 import base64
 import getpass
+import http.client
 import json
 import os
 from pathlib import Path
+import re
 import signal
 import socket
 import stat
@@ -143,9 +145,10 @@ def write_private(path, content):
         Path(name).unlink(missing_ok=True)
 
 
-def validate(config, directory=STATE):
+def validate(config, directory=None):
+    directory = STATE if directory is None else directory
     result = subprocess.run([str(BINARY), '-t', '-d', str(directory), '-f', str(config)],
-                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=30)
     if result.returncode:
         raise ProxyError('Mihomo rejected the configuration; diagnostic output withheld to protect credentials')
 
@@ -172,6 +175,132 @@ def load_config():
         return json.loads((STATE / 'config.json').read_text())
     except (OSError, ValueError):
         raise ProxyError('From the repository, run sudo python3 setup/proxy/manage.py configure first') from None
+
+
+def server_pattern(name):
+    # Mihomo treats triple backticks as multiple filter expressions. Escape
+    # backticks too so a server name always produces one literal RE2 match.
+    return '^' + re.escape(name).replace('`', r'\x60') + '$'
+
+
+def cached_servers():
+    """Ask an isolated, offline Mihomo instance to parse the cached provider.
+
+    No URI reimplementation, running service or third-party Python dependencies
+    are needed. Only a Unix socket inside a private temporary directory opens;
+    there are no proxy listeners, DNS listeners, TUN routes or HTTP providers.
+    """
+    try:
+        with (STATE / 'providers/subscription.txt').open('rb') as source:
+            payload = source.read(MAX_SUBSCRIPTION + 1)
+    except OSError:
+        raise ProxyError('No cached subscription; run configure first') from None
+    if len(payload) > MAX_SUBSCRIPTION:
+        raise ProxyError('Cached subscription exceeds the 4 MiB limit')
+    with tempfile.TemporaryDirectory(prefix='.list-', dir=STATE) as temporary:
+        scratch = Path(temporary)
+        write_private(scratch / 'subscription.txt', payload)
+        config = {
+            'external-controller': '', 'external-controller-unix': 'control.sock',
+            'log-level': 'silent', 'mode': 'rule',
+            'dns': {'enable': False}, 'tun': {'enable': False},
+            'proxy-providers': {'subscription': {'type': 'file', 'path': './subscription.txt'}},
+            'rules': ['MATCH,DIRECT'],
+        }
+        write_private(scratch / 'config.json', json.dumps(config).encode())
+        env = {key: value for key, value in os.environ.items() if not key.startswith('CLASH_')}
+        child = subprocess.Popen([str(BINARY), '-d', str(scratch), '-f', str(scratch / 'config.json')],
+                                 env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            deadline = time.monotonic() + 15
+            while child.poll() is None:
+                connection = http.client.HTTPConnection('localhost', timeout=1)
+                try:
+                    connection.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                    connection.sock.settimeout(1)
+                    connection.sock.connect(str(scratch / 'control.sock'))
+                    connection.request('GET', '/providers/proxies/subscription')
+                    response = connection.getresponse()
+                    data = response.read(2 * MAX_SUBSCRIPTION + 1)
+                    if response.status == 200 and len(data) <= 2 * MAX_SUBSCRIPTION:
+                        names = [item['name'] for item in json.loads(data)['proxies']]
+                        if names and all(isinstance(name, str) and name for name in names):
+                            if len(names) != len(set(names)):
+                                raise ProxyError('Subscription contains duplicate server names')
+                            return names
+                except (OSError, ValueError, KeyError, http.client.HTTPException):
+                    pass
+                finally:
+                    connection.close()
+                if time.monotonic() >= deadline:
+                    break
+                time.sleep(0.1)
+            raise ProxyError('Could not read servers from the cached subscription with Mihomo')
+        finally:
+            if child.poll() is None:
+                child.terminate()
+            try:
+                child.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                child.kill()
+                child.wait()
+
+
+def proxy_group(config):
+    groups = [group for group in config['proxy-groups'] if group['name'] == 'PROXY']
+    if len(groups) != 1:
+        raise ProxyError('Expected one managed PROXY group in the configuration')
+    return groups[0]
+
+
+def show_servers(config, names):
+    group = proxy_group(config)
+    automatic = group['type'] == 'url-test' and not group.get('filter')
+    print('Saved selection: automatic (latency)' if automatic else 'Saved selection: pinned/filter active')
+    for number, name in enumerate(names, 1):
+        selected = group.get('filter') == server_pattern(name)
+        # Quote display names to prevent embedded terminal controls from running.
+        print(f'{number:3}. {json.dumps(name, ensure_ascii=False)}' + (' [selected]' if selected else ''))
+    print('Numbers refer to this cached list and can change after subscription refresh.')
+
+
+def save_config(config):
+    with tempfile.TemporaryDirectory(prefix='.update-', dir=STATE) as temporary:
+        path = Path(temporary) / 'config.json'
+        # Mihomo reads JSON through its YAML parser, which rejects JSON's
+        # surrogate-pair escapes for emoji. Write actual UTF-8 names instead.
+        content = (json.dumps(config, indent=2, ensure_ascii=False) + '\n').encode()
+        write_private(path, content)
+        validate(path)
+        write_private(STATE / 'config.json', content)
+
+
+def select_server(server=None, automatic=False):
+    config = load_config()
+    group = proxy_group(config)
+    if automatic:
+        replacement = configuration('', 'proxy', '')['proxy-groups'][0]
+    else:
+        names = cached_servers()
+        if server is None:
+            show_servers(config, names)
+            server = input('Server number or exact name: ').strip()
+        if server.isascii() and server.isdecimal():
+            number = int(server)
+            if not 1 <= number <= len(names):
+                raise ProxyError('Server number out of range; run list to see available servers')
+            name = names[number - 1]
+        elif server in names:
+            name = server
+        else:
+            raise ProxyError('Server not found; run list to see available servers')
+        replacement = {'name': 'PROXY', 'type': 'select', 'use': ['subscription'],
+                       'filter': server_pattern(name), 'empty-fallback': 'REJECT'}
+    group.clear()
+    group.update(replacement)
+    save_config(config)
+    print('Saved selection: ' + ('automatic (latency)' if automatic else json.dumps(name, ensure_ascii=False)))
+    print('Activate with: sudo systemctl restart ' + UNIT)
 
 
 def supervise():
@@ -268,6 +397,10 @@ def main():
     setup = sub.add_parser('configure', help='Privately enter and validate an HTTPS subscription')
     setup.add_argument('--subscription-file', type=Path, help='Root-owned mode-600 file containing only the URL')
     setup.add_argument('--mode', choices=('proxy', 'tun'), default='tun')
+    sub.add_parser('list', help='List server names/numbers from the cached subscription (works offline)')
+    selection = sub.add_parser('select', help='Save a server choice; restart the service separately to activate')
+    selection.add_argument('server', nargs='?', help='Server number or exact name; omit to choose interactively')
+    selection.add_argument('--auto', action='store_true', help='Restore automatic latency-based selection')
     mode = sub.add_parser('mode', help='Change mode; restart the service separately to activate')
     mode.add_argument('mode', choices=('proxy', 'tun'))
     sub.add_parser('validate', help='Validate the existing private configuration')
@@ -276,6 +409,8 @@ def main():
     sub.add_parser('run', help='Service entry point with subscription URL redaction')
     sub.add_parser('test', help='Test HTTPS using the localhost proxy listener')
     args = parser.parse_args()
+    if args.command == 'select' and args.auto and args.server is not None:
+        parser.error('Use select SERVER or select --auto, not both')
     if os.geteuid() != 0:
         parser.error('Run with sudo')
     STATE.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -284,15 +419,15 @@ def main():
         if args.command == 'configure':
             url = private_file(args.subscription_file) if args.subscription_file else getpass.getpass('Subscription URL (hidden): ').strip()
             configure(url, args.mode)
+        elif args.command == 'list':
+            config = load_config()
+            show_servers(config, cached_servers())
+        elif args.command == 'select':
+            select_server(args.server, args.auto)
         elif args.command == 'mode':
             config = load_config()
             config['tun']['enable'] = args.mode == 'tun'
-            with tempfile.TemporaryDirectory(prefix='.mode-', dir=STATE) as temporary:
-                path = Path(temporary) / 'config.json'
-                content = (json.dumps(config, indent=2) + '\n').encode()
-                write_private(path, content)
-                validate(path)
-                write_private(STATE / 'config.json', content)
+            save_config(config)
             print('Mode: ' + args.mode + '. Activate with: sudo systemctl restart ' + UNIT)
         elif args.command == 'validate':
             load_config()

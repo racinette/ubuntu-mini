@@ -2,6 +2,8 @@
 """Configure and supervise the optional private Mihomo proxy service."""
 import argparse
 import base64
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import contextmanager
 import getpass
 import http.client
 import json
@@ -25,6 +27,7 @@ BINARY = Path('/usr/local/lib/minion-proxy/mihomo')
 UNIT = 'minion-proxy.service'
 USER_AGENT = 'minion-proxy/1.0'
 MAX_SUBSCRIPTION = 4 * 1024 * 1024
+CHECK_URL = 'https://www.gstatic.com/generate_204'
 LAN = ['127.0.0.0/8', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16',
        '169.254.0.0/16', '224.0.0.0/4', '::1/128', 'fc00::/7', 'fe80::/10', 'ff00::/8']
 
@@ -178,17 +181,49 @@ def load_config():
 
 
 def server_pattern(name):
-    # Mihomo treats triple backticks as multiple filter expressions. Escape
-    # backticks too so a server name always produces one literal RE2 match.
+    # Escape backtick filter separators too, producing one literal match.
     return '^' + re.escape(name).replace('`', r'\x60') + '$'
 
 
-def cached_servers():
-    """Ask an isolated, offline Mihomo instance to parse the cached provider.
+def controller_request(path, request_path, timeout=1):
+    connection = http.client.HTTPConnection('localhost', timeout=timeout)
+    try:
+        connection.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        connection.sock.settimeout(timeout)
+        connection.sock.connect(str(path))
+        connection.request('GET', request_path)
+        response = connection.getresponse()
+        data = response.read(2 * MAX_SUBSCRIPTION + 1)
+        if len(data) > 2 * MAX_SUBSCRIPTION:
+            raise ProxyError('Mihomo control response exceeded the size limit')
+        return response.status, json.loads(data)
+    finally:
+        connection.close()
 
-    No URI reimplementation, running service or third-party Python dependencies
-    are needed. Only a Unix socket inside a private temporary directory opens;
-    there are no proxy listeners, DNS listeners, TUN routes or HTTP providers.
+
+def check_interface(config):
+    if config.get('interface-name'):
+        return config['interface-name']
+    if not Path('/sys/class/net/minion-proxy').is_dir():
+        return None
+    # Bind checks to the real uplink rather than checking every candidate
+    # through the currently selected TUN proxy. Its routes use a policy table;
+    # Ubuntu's physical default route remains in the main table.
+    result = subprocess.run(['ip', '-j', 'route', 'show', 'table', 'main', 'default'],
+                            capture_output=True, text=True, timeout=5)
+    routes = json.loads(result.stdout) if result.returncode == 0 else []
+    routes = [route for route in routes if route.get('dev') not in (None, 'minion-proxy', 'lo')]
+    if not routes:
+        raise ProxyError('Could not find the uplink for checks; use list --no-check or stop the proxy first')
+    return min(routes, key=lambda route: route.get('metric', 0))['dev']
+
+
+@contextmanager
+def cached_engine(check=False):
+    """Parse/check the cached provider in an isolated Mihomo instance.
+
+    Only a Unix control socket in a private directory opens. No proxy/DNS
+    listeners, TUN routes or HTTP subscription refreshes are created.
     """
     try:
         with (STATE / 'providers/subscription.txt').open('rb') as source:
@@ -207,35 +242,39 @@ def cached_servers():
             'proxy-providers': {'subscription': {'type': 'file', 'path': './subscription.txt'}},
             'rules': ['MATCH,DIRECT'],
         }
-        write_private(scratch / 'config.json', json.dumps(config).encode())
+        if check:
+            installed = load_config()
+            interface = check_interface(installed)
+            if interface:
+                config['interface-name'] = interface
+            # Resolve server hostnames directly using the installed resolver
+            # settings, independently of system DNS routed into an active TUN.
+            config['dns'] = dict(installed['dns'], enable=True, listen='',
+                                 **{'respect-rules': False, 'enhanced-mode': 'redir-host'})
+            config['tls'] = {'custom-certifactes': installed.get('tls', {}).get('custom-certifactes', [])}
+        write_private(scratch / 'config.json', json.dumps(config, ensure_ascii=False).encode())
         env = {key: value for key, value in os.environ.items() if not key.startswith('CLASH_')}
         child = subprocess.Popen([str(BINARY), '-d', str(scratch), '-f', str(scratch / 'config.json')],
                                  env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         try:
             deadline = time.monotonic() + 15
             while child.poll() is None:
-                connection = http.client.HTTPConnection('localhost', timeout=1)
                 try:
-                    connection.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-                    connection.sock.settimeout(1)
-                    connection.sock.connect(str(scratch / 'control.sock'))
-                    connection.request('GET', '/providers/proxies/subscription')
-                    response = connection.getresponse()
-                    data = response.read(2 * MAX_SUBSCRIPTION + 1)
-                    if response.status == 200 and len(data) <= 2 * MAX_SUBSCRIPTION:
-                        names = [item['name'] for item in json.loads(data)['proxies']]
+                    status, data = controller_request(scratch / 'control.sock', '/providers/proxies/subscription')
+                    if status == 200:
+                        names = [item['name'] for item in data['proxies']]
                         if names and all(isinstance(name, str) and name for name in names):
                             if len(names) != len(set(names)):
                                 raise ProxyError('Subscription contains duplicate server names')
-                            return names
+                            break
                 except (OSError, ValueError, KeyError, http.client.HTTPException):
                     pass
-                finally:
-                    connection.close()
                 if time.monotonic() >= deadline:
-                    break
+                    raise ProxyError('Timed out reading servers from the cached subscription')
                 time.sleep(0.1)
-            raise ProxyError('Could not read servers from the cached subscription with Mihomo')
+            else:
+                raise ProxyError('Could not read servers from the cached subscription with Mihomo')
+            yield names, scratch / 'control.sock'
         finally:
             if child.poll() is None:
                 child.terminate()
@@ -246,6 +285,54 @@ def cached_servers():
                 child.wait()
 
 
+def cached_servers():
+    with cached_engine() as (names, _):
+        return names
+
+
+def check_server(control, name, timeout, url):
+    path = '/providers/proxies/subscription/' + urllib.parse.quote(name, safe='')
+    query = urllib.parse.urlencode({'url': url, 'timeout': timeout * 1000, 'expected': '200-399'})
+    try:
+        status, data = controller_request(control, path + '/healthcheck?' + query, timeout + 2)
+        if status == 504:
+            return 'TIMEOUT'
+        if status == 200 and isinstance(data.get('delay'), int) and data['delay'] > 0:
+            # URLTest can return a delay even for an unexpected HTTP status.
+            # Its per-URL alive state records whether the status was acceptable.
+            status, node = controller_request(control, path)
+            if status == 200 and node.get('extra', {}).get(url, {}).get('alive') is True:
+                return f"OK {data['delay']} ms"
+        return 'FAILED'
+    except (TimeoutError, socket.timeout):
+        return 'TIMEOUT'
+    except (OSError, ValueError, KeyError, http.client.HTTPException):
+        return 'FAILED'
+
+
+def list_servers(check=True, timeout=5, url=CHECK_URL):
+    config = load_config()
+    if not check:
+        show_servers(config, cached_servers())
+        return
+    with cached_engine(check=True) as (names, control):
+        print(f'Checking {len(names)} servers through HTTPS: {url} ({timeout}s timeout, up to 8 at once)', flush=True)
+        results = {}
+        pool = ThreadPoolExecutor(max_workers=8)
+        try:
+            pending = {pool.submit(check_server, control, name, timeout, url): name for name in names}
+            for count, future in enumerate(as_completed(pending), 1):
+                results[pending[future]] = future.result()
+                if count % 8 == 0 and count < len(names):
+                    print(f'Checked {count}/{len(names)}...', flush=True)
+        finally:
+            pool.shutdown(wait=True, cancel_futures=True)
+        show_servers(config, names, results)
+        passed = sum(result.startswith('OK ') for result in results.values())
+        print(f'{passed}/{len(names)} servers passed the HTTPS check.')
+        print('Results apply to this HTTPS destination now; they do not test TUN capture or every website.')
+
+
 def proxy_group(config):
     groups = [group for group in config['proxy-groups'] if group['name'] == 'PROXY']
     if len(groups) != 1:
@@ -253,14 +340,21 @@ def proxy_group(config):
     return groups[0]
 
 
-def show_servers(config, names):
+def show_servers(config, names, results=None):
     group = proxy_group(config)
     automatic = group['type'] == 'url-test' and not group.get('filter')
     print('Saved selection: automatic (latency)' if automatic else 'Saved selection: pinned/filter active')
-    for number, name in enumerate(names, 1):
+    rows = list(enumerate(names, 1))
+    if results is not None:
+        # Retain the cached-list numbers so sorting never changes select NUMBER.
+        rows.sort(key=lambda row: int(results[row[1]].split()[1])
+                  if results[row[1]].startswith('OK ') else float('inf'))
+        print('Ordered by HTTPS response latency (lowest first); failed checks follow.')
+    for number, name in rows:
         selected = group.get('filter') == server_pattern(name)
         # Quote display names to prevent embedded terminal controls from running.
-        print(f'{number:3}. {json.dumps(name, ensure_ascii=False)}' + (' [selected]' if selected else ''))
+        status = f' [{results[name]}]' if results is not None else ''
+        print(f'{number:3}. {json.dumps(name, ensure_ascii=False)}' + status + (' [selected]' if selected else ''))
     print('Numbers refer to this cached list and can change after subscription refresh.')
 
 
@@ -275,7 +369,25 @@ def save_config(config):
         write_private(STATE / 'config.json', content)
 
 
-def select_server(server=None, automatic=False):
+def match_server(server, names):
+    if server.isascii() and server.isdecimal():
+        number = int(server)
+        if not 1 <= number <= len(names):
+            raise ProxyError('Server number out of range; run list to see available servers')
+        return names[number - 1]
+    if server in names:
+        return server
+    matches = [(number, name) for number, name in enumerate(names, 1)
+               if server and server.casefold() in name.casefold()]
+    if not matches:
+        raise ProxyError('Server not found; run list to see available servers')
+    if len(matches) > 1:
+        choices = '\n'.join(f'{number:3}. {json.dumps(name, ensure_ascii=False)}' for number, name in matches)
+        raise ProxyError('Substring matches multiple servers; choose a number or a more specific substring:\n' + choices)
+    return matches[0][1]
+
+
+def select_server(server=None, automatic=False, restart=True):
     config = load_config()
     group = proxy_group(config)
     if automatic:
@@ -284,23 +396,24 @@ def select_server(server=None, automatic=False):
         names = cached_servers()
         if server is None:
             show_servers(config, names)
-            server = input('Server number or exact name: ').strip()
-        if server.isascii() and server.isdecimal():
-            number = int(server)
-            if not 1 <= number <= len(names):
-                raise ProxyError('Server number out of range; run list to see available servers')
-            name = names[number - 1]
-        elif server in names:
-            name = server
-        else:
-            raise ProxyError('Server not found; run list to see available servers')
+            server = input('Server number, exact name or unique substring: ').strip()
+        name = match_server(server, names)
         replacement = {'name': 'PROXY', 'type': 'select', 'use': ['subscription'],
                        'filter': server_pattern(name), 'empty-fallback': 'REJECT'}
     group.clear()
     group.update(replacement)
     save_config(config)
     print('Saved selection: ' + ('automatic (latency)' if automatic else json.dumps(name, ensure_ascii=False)))
-    print('Activate with: sudo systemctl restart ' + UNIT)
+    if restart:
+        try:
+            result = subprocess.run(['systemctl', 'restart', UNIT], capture_output=True, timeout=60)
+        except (OSError, subprocess.TimeoutExpired):
+            raise ProxyError('Selection saved, but service restart could not complete; check sudo journalctl -u ' + UNIT) from None
+        if result.returncode:
+            raise ProxyError('Selection saved, but service restart failed; check sudo journalctl -u ' + UNIT)
+        print('Proxy service restarted. Run sudo python3 setup/proxy/manage.py test to check connectivity.')
+    else:
+        print('Saved only. Activate with: sudo systemctl restart ' + UNIT)
 
 
 def supervise():
@@ -390,6 +503,23 @@ def test_connection():
         os.environ.update(previous)
 
 
+def check_timeout(value):
+    try:
+        seconds = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError('Timeout must be a whole number of seconds from 1 to 30') from None
+    if not 1 <= seconds <= 30:
+        raise argparse.ArgumentTypeError('Timeout must be from 1 to 30 seconds')
+    return seconds
+
+
+def check_url(value):
+    try:
+        return validate_url(value)
+    except ProxyError:
+        raise argparse.ArgumentTypeError('Check URL must use HTTPS without credentials, whitespace or a fragment') from None
+
+
 def main():
     os.umask(0o077)
     parser = argparse.ArgumentParser(description=__doc__)
@@ -397,10 +527,15 @@ def main():
     setup = sub.add_parser('configure', help='Privately enter and validate an HTTPS subscription')
     setup.add_argument('--subscription-file', type=Path, help='Root-owned mode-600 file containing only the URL')
     setup.add_argument('--mode', choices=('proxy', 'tun'), default='tun')
-    sub.add_parser('list', help='List server names/numbers from the cached subscription (works offline)')
-    selection = sub.add_parser('select', help='Save a server choice; restart the service separately to activate')
-    selection.add_argument('server', nargs='?', help='Server number or exact name; omit to choose interactively')
+    listing = sub.add_parser('list', help='List cached servers with HTTPS connectivity checks')
+    listing.add_argument('--all', '--no-check', dest='no_check', action='store_true',
+                         help='Original unchecked list of all cached names/numbers; works offline')
+    listing.add_argument('--timeout', type=check_timeout, default=5, help='Per-server timeout in seconds (1–30; default: 5)')
+    listing.add_argument('--url', type=check_url, default=CHECK_URL, help='HTTPS destination to check through each server')
+    selection = sub.add_parser('select', help='Save a server choice and restart the proxy service')
+    selection.add_argument('server', nargs='?', help='Number, exact name or unique case-insensitive substring; omit to choose interactively')
     selection.add_argument('--auto', action='store_true', help='Restore automatic latency-based selection')
+    selection.add_argument('--no-restart', action='store_true', help='Only save the selection; keep the service as it is')
     mode = sub.add_parser('mode', help='Change mode; restart the service separately to activate')
     mode.add_argument('mode', choices=('proxy', 'tun'))
     sub.add_parser('validate', help='Validate the existing private configuration')
@@ -420,10 +555,9 @@ def main():
             url = private_file(args.subscription_file) if args.subscription_file else getpass.getpass('Subscription URL (hidden): ').strip()
             configure(url, args.mode)
         elif args.command == 'list':
-            config = load_config()
-            show_servers(config, cached_servers())
+            list_servers(not args.no_check, args.timeout, args.url)
         elif args.command == 'select':
-            select_server(args.server, args.auto)
+            select_server(args.server, args.auto, not args.no_restart)
         elif args.command == 'mode':
             config = load_config()
             config['tun']['enable'] = args.mode == 'tun'

@@ -4,14 +4,20 @@ import argparse
 import base64
 import contextlib
 import http.client
+import http.server
 import importlib.util
 import io
 import json
 from pathlib import Path
 import socket
+import socketserver
+import select
+import ssl
 import subprocess
 import tempfile
+import threading
 import time
+from types import SimpleNamespace
 import urllib.parse
 from unittest.mock import patch
 
@@ -26,6 +32,96 @@ def subscription(names):
     # Unreachable loopback endpoints: these fixtures never need a provider account.
     return '\n'.join('vless://11111111-1111-1111-1111-111111111111@127.0.0.1:9'
                      '?security=none&type=tcp#' + urllib.parse.quote(name) for name in names).encode()
+
+
+def check_https(binary, state):
+    """Check real TLS through a working CONNECT proxy, a stalled one and a dead one."""
+    certificate, key = state / 'certificate.pem', state / 'key.pem'
+    subprocess.run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
+                    '-subj', '/CN=127.0.0.1', '-addext', 'subjectAltName=IP:127.0.0.1',
+                    '-keyout', str(key), '-out', str(certificate)],
+                   check=True, capture_output=True, timeout=30)
+    key.chmod(0o600)
+
+    class HTTPS(http.server.BaseHTTPRequestHandler):
+        def do_HEAD(self):
+            time.sleep(0.02)  # Keep the measured delay above the API's 0ms failure threshold.
+            self.send_response(204 if self.path == '/ok' else 503)
+            self.end_headers()
+        def log_message(self, *args): pass
+
+    stopping = threading.Event()
+
+    class Connect(socketserver.StreamRequestHandler):
+        def handle(self):
+            self.connection.settimeout(3)
+            try:
+                line = self.rfile.readline(8192)
+                assert line.startswith(b'CONNECT ')
+                while self.rfile.readline(8192).strip():
+                    pass
+                if self.server.stall:
+                    stopping.wait(3)
+                    return
+                with socket.create_connection(('127.0.0.1', https.server_port), timeout=3) as upstream:
+                    self.wfile.write(b'HTTP/1.1 200 Connection established\r\n\r\n')
+                    self.wfile.flush()
+                    while not stopping.is_set():
+                        ready, _, _ = select.select([self.connection, upstream], [], [], 0.2)
+                        for source in ready:
+                            data = source.recv(65536)
+                            if not data:
+                                return
+                            (upstream if source is self.connection else self.connection).sendall(data)
+            except (OSError, AssertionError):
+                pass
+
+    class Server(socketserver.ThreadingTCPServer):
+        daemon_threads = True
+
+    https = http.server.ThreadingHTTPServer(('127.0.0.1', 0), HTTPS)
+    tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    tls.load_cert_chain(certificate, key)
+    https.socket = tls.wrap_socket(https.socket, server_side=True)
+    working, stalled = Server(('127.0.0.1', 0), Connect), Server(('127.0.0.1', 0), Connect)
+    working.stall, stalled.stall = False, True
+    dead = socket.socket()
+    dead.bind(('127.0.0.1', 0))  # Reserved port with no listener: reliably refuses TCP.
+    for server in (https, working, stalled):
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        names = ['Working 🇯🇵 / (HTTPS)', 'Stalled', 'Unreachable']
+        proxies = [{'name': name, 'type': 'http', 'server': '127.0.0.1', 'port': port}
+                   for name, port in zip(names, (working.server_address[1], stalled.server_address[1], dead.getsockname()[1]))]
+        proxy.write_private(state / 'providers/subscription.txt', json.dumps({'proxies': proxies}, ensure_ascii=False).encode())
+        url = f'https://127.0.0.1:{https.server_port}/ok'
+        # Trust the ephemeral test CA in this fixture's private config only.
+        installed = proxy.load_config()
+        installed['tls'] = {'custom-certifactes': [certificate.read_text()]}
+        proxy.write_private(state / 'config.json', json.dumps(installed, ensure_ascii=False).encode())
+        with proxy.cached_engine(check=True) as (actual, control):
+            assert actual == names
+            assert proxy.check_server(control, names[0], 2, url).startswith('OK ')
+            assert proxy.check_server(control, names[1], 1, url) == 'TIMEOUT'
+            assert proxy.check_server(control, names[2], 1, url) in ('FAILED', 'TIMEOUT')
+            assert proxy.check_server(control, names[0], 2, url.replace('/ok', '/bad')) == 'FAILED'
+        before = (state / 'config.json').read_bytes()
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            proxy.list_servers(timeout=1, url=url)
+        assert '[OK ' in output.getvalue() and '[TIMEOUT]' in output.getvalue()
+        assert before == (state / 'config.json').read_bytes()
+        assert not list(state.glob('.list-*'))
+        # A reachable proxy with an untrusted destination certificate must fail.
+        installed['tls'] = {}
+        proxy.write_private(state / 'config.json', json.dumps(installed).encode())
+        with proxy.cached_engine(check=True) as (_, control):
+            assert proxy.check_server(control, names[0], 2, url) == 'FAILED'
+    finally:
+        stopping.set()
+        dead.close()
+        for server in (working, stalled, https):
+            server.shutdown()
+            server.server_close()
 
 
 @contextlib.contextmanager
@@ -83,9 +179,12 @@ def main():
         def reset():
             proxy.write_private(state / 'config.json', json.dumps(original).encode())
         with patch.object(proxy, 'STATE', state), patch.object(proxy, 'cached_servers', return_value=NAMES), \
-             patch.object(proxy, 'validate') as validate, contextlib.redirect_stdout(io.StringIO()) as output:
+             patch.object(proxy, 'validate') as validate, \
+             patch.object(proxy.subprocess, 'run', return_value=SimpleNamespace(returncode=0)) as service, \
+             contextlib.redirect_stdout(io.StringIO()) as output:
             reset()
             proxy.select_server('2')
+            service.assert_called_once_with(['systemctl', 'restart', proxy.UNIT], capture_output=True, timeout=60)
             selected = proxy.load_config()
             group = proxy.proxy_group(selected)
             assert group['filter'] == proxy.server_pattern(NAMES[1]) and group['empty-fallback'] == 'REJECT'
@@ -99,6 +198,11 @@ def main():
                 proxy.show_servers(proxy.load_config(), NAMES)
             assert '\x1b' not in output.getvalue() and 'private-token' not in output.getvalue()
             assert '[selected]' in output.getvalue()
+            proxy.select_server('ALPHA (1)')
+            assert proxy.proxy_group(proxy.load_config())['filter'] == proxy.server_pattern(NAMES[0])
+            calls = service.call_count
+            proxy.select_server('日本', restart=False)
+            assert service.call_count == calls
             before = (state / 'config.json').read_bytes()
             for invalid in ('0', '9999', 'does not exist', ''):
                 try:
@@ -108,6 +212,17 @@ def main():
                 else:
                     raise AssertionError('Invalid selection accepted')
                 assert (state / 'config.json').read_bytes() == before
+                assert service.call_count == calls
+            with patch.object(proxy, 'cached_servers', return_value=['EU 1', 'EU 2', 'EU']):
+                proxy.select_server('EU', restart=False)  # Exact match wins over substrings.
+                before = (state / 'config.json').read_bytes()
+                try:
+                    proxy.select_server('eu')
+                except proxy.ProxyError as error:
+                    assert 'multiple servers' in str(error) and 'EU 1' in str(error)
+                else:
+                    raise AssertionError('Ambiguous substring accepted')
+                assert (state / 'config.json').read_bytes() == before and service.call_count == calls
             validate.side_effect = proxy.ProxyError('Invalid fixture configuration')
             try:
                 proxy.select_server('1')
@@ -117,6 +232,15 @@ def main():
                 raise AssertionError('Invalid configuration accepted')
             assert (state / 'config.json').read_bytes() == before
             validate.side_effect = None
+            service.return_value = SimpleNamespace(returncode=1)
+            try:
+                proxy.select_server('1')
+            except proxy.ProxyError as error:
+                assert 'Selection saved' in str(error) and 'restart failed' in str(error)
+            else:
+                raise AssertionError('Restart failure reported as success')
+            assert proxy.proxy_group(proxy.load_config())['filter'] == proxy.server_pattern(NAMES[0])
+            service.return_value = SimpleNamespace(returncode=0)
             with patch('builtins.input', return_value='3'):
                 proxy.select_server()
             assert proxy.proxy_group(proxy.load_config())['filter'] == proxy.server_pattern(NAMES[2])
@@ -124,11 +248,58 @@ def main():
                 proxy.select_server(automatic=True)
             assert proxy.load_config() == original
             # Exercise argument parsing and return codes without root or host services.
-            with patch.object(proxy.os, 'geteuid', return_value=0), patch('sys.argv', ['manage.py', 'list']):
+            with patch.object(proxy.os, 'geteuid', return_value=0), patch('sys.argv', ['manage.py', 'list', '--no-check']):
+                assert proxy.main() == 0
+            with patch.object(proxy.os, 'geteuid', return_value=0), patch('sys.argv', ['manage.py', 'list', '--all']):
                 assert proxy.main() == 0
             with patch.object(proxy.os, 'geteuid', return_value=0), patch('sys.argv', ['manage.py', 'select', '1']):
                 assert proxy.main() == 0
-        print('Passed: selection by number/name/prompt, auto, output escaping, validation failure retention and private config.')
+            calls = service.call_count
+            with patch.object(proxy.os, 'geteuid', return_value=0), patch('sys.argv', ['manage.py', 'select', '日本', '--no-restart']):
+                assert proxy.main() == 0 and service.call_count == calls
+        control = state / 'mock.sock'
+        url = proxy.CHECK_URL
+        with patch.object(proxy, 'controller_request', side_effect=[
+            (200, {'delay': 42}), (200, {'extra': {url: {'alive': True}}})]) as request:
+            assert proxy.check_server(control, '日本 / name?', 5, url) == 'OK 42 ms'
+            assert '%2F' in request.call_args_list[0].args[1] and 'expected=200-399' in request.call_args_list[0].args[1]
+        for response, expected in (((504, {}), 'TIMEOUT'), ((503, {}), 'FAILED')):
+            with patch.object(proxy, 'controller_request', return_value=response):
+                assert proxy.check_server(control, 'name', 5, url) == expected
+        with patch.object(proxy, 'controller_request', side_effect=TimeoutError):
+            assert proxy.check_server(control, 'name', 5, url) == 'TIMEOUT'
+        with patch.object(proxy, 'controller_request', side_effect=[
+            (200, {'delay': 42}), (200, {'extra': {url: {'alive': False}}})]):
+            assert proxy.check_server(control, 'name', 5, url) == 'FAILED'
+        @contextlib.contextmanager
+        def fake_engine(check=False):
+            assert check
+            yield NAMES, control
+        with patch.object(proxy, 'STATE', state), patch.object(proxy, 'cached_engine', fake_engine), \
+             patch.object(proxy, 'check_server', side_effect=lambda sock, name, timeout, url: 'OK 42 ms' if name == NAMES[0] else 'TIMEOUT'), \
+             contextlib.redirect_stdout(io.StringIO()) as output:
+            before = (state / 'config.json').read_bytes()
+            proxy.list_servers()
+            assert '[OK 42 ms]' in output.getvalue() and '[TIMEOUT]' in output.getvalue()
+            assert (state / 'config.json').read_bytes() == before
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            proxy.show_servers(original, NAMES, dict(zip(NAMES, ['TIMEOUT', 'OK 100 ms', 'FAILED', 'OK 10 ms'])))
+        rows = [line for line in output.getvalue().splitlines() if line.lstrip()[:1].isdigit()]
+        assert [int(line.split('.')[0]) for line in rows] == [4, 2, 1, 3], rows
+        routes = [{'dev': 'minion-proxy'}, {'dev': 'eth0', 'metric': 200}, {'dev': 'wlp1s0', 'metric': 100}]
+        with patch.object(proxy.Path, 'is_dir', return_value=True), \
+             patch.object(proxy.subprocess, 'run', return_value=SimpleNamespace(returncode=0, stdout=json.dumps(routes))):
+            assert proxy.check_interface({}) == 'wlp1s0'
+            assert proxy.check_interface({'interface-name': 'eth0'}) == 'eth0'
+        with patch.object(proxy.Path, 'is_dir', return_value=True), \
+             patch.object(proxy.subprocess, 'run', return_value=SimpleNamespace(returncode=0, stdout='[]')):
+            try:
+                proxy.check_interface({})
+            except proxy.ProxyError:
+                pass
+            else:
+                raise AssertionError('Checks allowed active TUN without a physical route')
+        print('Passed: number/name/substring/prompt selection, ambiguity refusal, default restart/save-only, failure retention and checker status handling.')
 
         if args.mihomo:
             binary = args.mihomo.resolve()
@@ -146,7 +317,7 @@ def main():
                 reset()
                 with contextlib.redirect_stdout(io.StringIO()):
                     for name in names:
-                        proxy.select_server(name)
+                        proxy.select_server(name, restart=False)
                         probe = proxy.load_config()
                         # No tunnel/listeners/HTTP provider in the real engine probe.
                         probe['tun']['enable'] = False
@@ -161,8 +332,9 @@ def main():
                     with engine(binary, state, probe) as query:
                         group = query('/proxies/PROXY')
                         assert group['all'] == ['REJECT'] and group['now'] == 'REJECT', group
-                    proxy.select_server(automatic=True)
+                    proxy.select_server(automatic=True, restart=False)
                 assert proxy.load_config() == original
+                check_https(binary, state)
                 before = (state / 'config.json').read_bytes()
                 proxy.write_private(state / 'providers/subscription.txt', b'invalid subscription')
                 try:
@@ -173,7 +345,7 @@ def main():
                     raise AssertionError('Invalid cached subscription accepted')
                 assert before == (state / 'config.json').read_bytes()
                 assert not list(state.glob('.list-*'))
-            print('Passed with real Mihomo: URI/base64/VMess listing, exact Unicode/regex/backtick selection, missing-node rejection and cleanup.')
+            print('Passed with real Mihomo: URI/base64/VMess listing, Unicode selection, HTTPS success/stall/refusal/bad-status checks and cleanup.')
 
 
 if __name__ == '__main__':

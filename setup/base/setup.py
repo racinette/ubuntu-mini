@@ -77,24 +77,26 @@ def preflight(args):
         asset_url = assets.as_uri()
     else:
         asset_url = None
-        print('Online setup: Ubuntu repositories, Snap Store and verified upstream shell downloads.', flush=True)
+        print('Online setup: Ubuntu repositories, Snap Store and verified upstream shell/proxy downloads.', flush=True)
     return user, asset_url
 
 
 def backup_configuration(path, user):
     paths = [Path(name) for name in (
-        '/etc/greetd', '/etc/mini-os', '/etc/netplan', '/etc/pam.d/greetd',
+        '/etc/greetd', '/etc/minion', '/etc/netplan', '/etc/pam.d/greetd',
         '/etc/pam.d/greetd-greeter', '/etc/systemd/system/greetd.service.d',
         '/etc/xdg/xdg-desktop-portal/sway-portals.conf',
-        '/etc/systemd/user/mini-os-session.target', '/etc/systemd/user/mako.service.d',
+        '/etc/systemd/user/minion-session.target', '/etc/systemd/user/mako.service.d',
         '/etc/systemd/user/xdg-desktop-portal.service.d',
         '/etc/systemd/user/xdg-desktop-portal-gtk.service.d',
         '/etc/systemd/user/xdg-desktop-portal-wlr.service.d',
-        '/etc/udev/rules.d/60-mini-os-gamepad-uinput.rules',
-        '/etc/modules-load.d/mini-os-gamepad.conf',
-        '/usr/local/share/mini-os/bashrc.bash')]
-    paths.extend(Path('/etc/systemd/user').glob('mini-os-*.service'))
-    paths.extend(Path('/usr/local/bin').glob('mini-os-*'))
+        '/etc/udev/rules.d/60-minion-gamepad-uinput.rules',
+        '/etc/modules-load.d/minion-gamepad.conf',
+        '/etc/systemd/system/minion-proxy.service',
+        '/usr/local/lib/minion-proxy', '/var/lib/minion/proxy',
+        '/usr/local/share/minion/bashrc.bash')]
+    paths.extend(Path('/etc/systemd/user').glob('minion-*.service'))
+    paths.extend(Path('/usr/local/bin').glob('minion-*'))
     paths.append(Path(user.pw_dir) / '.bashrc')
     with tarfile.open(path, 'w:gz', dereference=False) as archive:
         for source in paths:
@@ -121,9 +123,10 @@ def main():
         raise SystemExit(str(error)) from error
     print(f'Setup target: {user.pw_name}. Existing Ubuntu APT sources will be used.', flush=True)
     if args.check:
+        subprocess.run([sys.executable, ROOT / 'proxy/provision.py', '--check'], check=True)
         print('Checks passed. No changes made. Run sudo ./setup.sh with the same options to apply.', flush=True)
         return
-    state = Path('/var/lib/mini-os/setup')
+    state = Path('/var/lib/minion/setup')
     state.mkdir(parents=True, exist_ok=True, mode=0o700)
     state.chmod(0o700)
     with (state / 'setup.lock').open('w') as lock:
@@ -136,7 +139,7 @@ def main():
         run_dir.mkdir(mode=0o700)
         backup_configuration(run_dir / 'configuration-before.tar.gz', user)
         report = {'username': user.pw_name, 'started_at_utc': stamp, 'passed': False,
-                  'source_sha256': {str(p.relative_to(ROOT.parent)): digest(p) for folder in ('base', 'desktop', 'shell')
+                  'source_sha256': {str(p.relative_to(ROOT.parent)): digest(p) for folder in ('base', 'desktop', 'shell', 'proxy')
                                     for p in sorted((ROOT / folder).iterdir()) if p.is_file()},
                   'steps': [], 'reboot_required': True}
         with (run_dir / 'setup.log').open('w', buffering=1) as log:
@@ -166,6 +169,7 @@ def main():
                 run(sys.executable, ROOT / 'shell/provision.py', user.pw_name, *cache_options)
                 run('systemctl', 'start', 'snapd.socket')
                 run(sys.executable, ROOT / 'desktop/browser.py', *cache_options)
+                run(sys.executable, ROOT / 'proxy/provision.py')
                 report['passed'] = True
                 (state / 'last-success.json').write_text(json.dumps({'run': str(run_dir)}, indent=2) + '\n')
             except Exception as error:

@@ -1,6 +1,6 @@
-# ubuntu-mini
+# Minion
 
-Ubuntu installation and desktop setup for the GPD WIN Mini.
+Minion is an Ubuntu installation and desktop setup project for the GPD WIN Mini. The repository is currently named `ubuntu-mini`.
 
 Install Ubuntu 24.04 Server amd64, then run `setup.sh` to configure Sway, Firefox, networking, desktop services and Bash with ble.sh and local Atuin history. The optional standalone [installation helper](docs/install.md) runs from the Server USB shell and instructs the official installer to use only unallocated GPT space. Hardware behavior still needs validation on the WIN Mini.
 
@@ -25,11 +25,12 @@ Clone as your normal user and run setup through `sudo`. The repository contains 
 | `setup/base/` | Setup coordinator and kernel/firmware package list |
 | `setup/desktop/` | Desktop provisioning, services, gamepad mapper and configuration |
 | `setup/shell/` | Shell provisioning, verified download manifest and user defaults |
+| `setup/proxy/` | Verified Mihomo service and repo-based subscription management |
 | `tests/` | Host checks, disposable VM control, local mirror and acceptance tests |
 | `tests/fixtures/` | Synthetic controller, browser pages and shell/input fixtures |
 | `docs/` | Setup, controls, test instructions and remaining acceptance checks |
 
-Installed desktop commands and configuration directories retain their `mini-os` names so setup reruns continue to use existing personal settings.
+Installed commands, services, configuration and state use the `minion` name. Pre-1.0 layout changes target clean installations; setup does not migrate older layouts.
 
 Only `setup.sh` and `setup/` are needed for post-install device setup. `install.sh` is a standalone file used earlier in the live USB environment. Tests run separately and are not installed by setup. `tests/vm.py` supports manual VM installation; `tests/test-install-vm.py` tests the optional installer helper on disposable virtual disks.
 
@@ -37,6 +38,7 @@ Only `setup.sh` and `setup/` are needed for post-install device setup. `install.
 - [Gamepad chord typing layout](docs/gamepad-chord-layout.md)
 - [Run tests and inspect validation results](docs/testing.md)
 - [Reuse downloads through the local mirror](docs/local-mirror.md)
+- [Configure and enable the proxy service](docs/proxy.md)
 - [Remaining validation and hardware checks](docs/validation-plan.md)
 
 ISO images, VM disks, firmware variables, credentials, mirror content and test reports stay under ignored local paths. Documentation links into `.local/` refer to private evidence unavailable in a fresh clone. Retained VM results describe the source revision tested; restructuring the repository does not update installed VM sources.

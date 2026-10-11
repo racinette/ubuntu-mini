@@ -15,11 +15,11 @@ import struct
 import subprocess
 import time
 
-log = logging.getLogger('mini-os-gamepad')
+log = logging.getLogger('minion-gamepad')
 
 ACTION_COMMANDS = {
     'terminal': 'exec foot',
-    'window_picker': 'exec mini-os-window-picker',
+    'window_picker': 'exec minion-window-picker',
     'launcher': 'exec fuzzel --layer=overlay',
     'layout': 'layout toggle tabbed split',
     'fullscreen': 'fullscreen toggle',
@@ -74,7 +74,7 @@ class ReleaseGesture:
 
 
 def runtime():
-    path = Path(os.environ['XDG_RUNTIME_DIR']) / 'mini-os-gamepad'
+    path = Path(os.environ['XDG_RUNTIME_DIR']) / 'minion-gamepad'
     path.mkdir(mode=0o700, exist_ok=True)
     if path.is_symlink() or path.stat().st_uid != os.getuid():
         raise ValueError('Gamepad runtime directory must belong to the session user')
@@ -125,8 +125,8 @@ class Session:
 
 
 def configuration(path, codes):
-    config = json.loads(Path('/etc/mini-os/gamepad.json').read_text())
-    override = Path(path) if path else Path.home() / '.config/mini-os/gamepad.json'
+    config = json.loads(Path('/etc/minion/gamepad.json').read_text())
+    override = Path(path) if path else Path.home() / '.config/minion/gamepad.json'
     if override.exists():
         changes = json.loads(override.read_text())
         if not isinstance(changes, dict) or set(changes) - set(config):
@@ -277,7 +277,7 @@ class Mapper:
     def notify(self, label):
         log.info(label)
         try:
-            subprocess.run(['notify-send', '-a', 'ubuntu-mini', '-t', '2500',
+            subprocess.run(['notify-send', '-a', 'minion', '-t', '2500',
                             'Gamepad commands', label], check=False, timeout=2)
         except (OSError, subprocess.TimeoutExpired) as error:
             log.warning('Gamepad notification failed: %s', error)
@@ -392,7 +392,7 @@ class Mapper:
         (self.directory / 'mode').write_text(self.mode + '\n')
         log.info('Gamepad mode: %s', self.mode)
         label = 'Desktop navigation enabled' if self.mode == 'desktop' else 'Normal gamepad input enabled'
-        subprocess.run(['notify-send', '-a', 'ubuntu-mini', 'Gamepad controls', label], check=False)
+        subprocess.run(['notify-send', '-a', 'minion', 'Gamepad controls', label], check=False)
 
     def command(self, command):
         try:
@@ -648,7 +648,7 @@ def main():
         output_keys |= {evdev.ecodes.KEY_C, evdev.ecodes.KEY_V, evdev.ecodes.KEY_Z}
         output_keys |= set(config['chords'].values())
         with evdev.UInput({evdev.ecodes.EV_KEY: sorted(output_keys), evdev.ecodes.EV_REP: []},
-                          name='ubuntu-mini gamepad keyboard', phys='mini-os/gamepad-keyboard', vendor=0x1209, product=2) as keyboard:
+                          name='Minion gamepad keyboard', phys='minion/gamepad-keyboard', vendor=0x1209, product=2) as keyboard:
             mapper = Mapper(config, keyboard, evdev.ecodes, directory)
             server = socket.socket(socket.AF_UNIX)
             path = directory / 'control.sock'

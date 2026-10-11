@@ -12,6 +12,6 @@ try:
     tty.setraw(fd)
     if not select.select([fd], [], [], 300)[0]: raise TimeoutError('No key received')
     data = __import__('os').read(fd, 256)
-    Path.home().joinpath('mini-os-key-bytes.json').write_text(json.dumps(list(data)) + '\n')
+    Path.home().joinpath('minion-key-bytes.json').write_text(json.dumps(list(data)) + '\n')
 finally:
     termios.tcsetattr(fd, termios.TCSANOW, previous)

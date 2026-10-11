@@ -32,7 +32,7 @@ if transport.scheme == 'file':
     if transport.netloc not in ('', 'localhost'):
         raise SystemExit('Local artifacts require a local file URL')
     local_assets = Path(urllib.request.url2pathname(transport.path))
-with tempfile.TemporaryDirectory(prefix='mini-os-browser-') as scratch:
+with tempfile.TemporaryDirectory(prefix='minion-browser-') as scratch:
     root = local_assets if local_assets is not None else Path(scratch)
     for item in pending:
         for kind in ('assert', 'snap'):

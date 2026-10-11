@@ -27,11 +27,11 @@ def load_setup():
 
 def main():
     sources = setup_sources()
-    assert len(sources) == 22
+    assert len(sources) == 26
     assert all(p.is_file() for p in sources)
     assert all(p == PROJECT / 'setup.sh' or p.is_relative_to(PROJECT / 'setup') for p in sources)
-    assert {p.name for p in sources}.isdisjoint({'first-boot.py', 'mini-os-first-boot.service'})
-    with tempfile.TemporaryDirectory(prefix='mini-os-layout-test-') as temporary:
+    assert {p.name for p in sources}.isdisjoint({'first-boot.py', 'minion-first-boot.service'})
+    with tempfile.TemporaryDirectory(prefix='minion-layout-test-') as temporary:
         directory = Path(temporary)
         clone = directory / 'clone'
         for source in sources:
@@ -41,17 +41,18 @@ def main():
         result = subprocess.run([str(clone / 'setup.sh'), '--help'], cwd=directory,
                                 text=True, capture_output=True, check=True)
         assert '--check' in result.stdout and '--asset-dir' in result.stdout
+        assert '--proxy' not in result.stdout
 
         guest = directory / 'guest-state'
         guest.mkdir()
         (guest / 'state.json').write_text(json.dumps({'ssh_port': 2222}))
         copies = []
         with patch('session.ssh', return_value=''), patch('session.subprocess.run', side_effect=lambda cmd, **kw: copies.append(cmd)):
-            staged = stage_setup(guest, '/home/vmuser/mini-os-test', include_gitignore=True)
-        assert len(staged) == 23 and len(copies) == 23
-        assert {cmd[-1].removeprefix('vmuser@127.0.0.1:/home/vmuser/mini-os-test/') for cmd in copies} == {
+            staged = stage_setup(guest, '/home/vmuser/minion-test', include_gitignore=True)
+        assert len(staged) == 27 and len(copies) == 27
+        assert {cmd[-1].removeprefix('vmuser@127.0.0.1:/home/vmuser/minion-test/') for cmd in copies} == {
             str(p.relative_to(PROJECT)) for p in staged}
-        for invalid in ('/etc/mini-os', '/home/vmuser/../root', 'relative/path'):
+        for invalid in ('/etc/minion', '/home/vmuser/../root', 'relative/path'):
             try:
                 stage_setup(guest, invalid)
             except ValueError:
@@ -64,11 +65,19 @@ def main():
         commands = []
 
         def target_path(value):
-            return state if str(value) == '/var/lib/mini-os/setup' else Path(value)
+            return state if str(value) == '/var/lib/minion/setup' else Path(value)
 
         def fake_process(command, **kwargs):
             commands.append(command)
             return SimpleNamespace(stdout=io.StringIO(''), wait=lambda: 0)
+
+        with patch.object(setup, 'Path', side_effect=target_path), \
+             patch.object(setup, 'preflight', return_value=(SimpleNamespace(pw_name='fixture'), None)), \
+             patch.object(setup.subprocess, 'run') as check_run, \
+             patch.object(sys, 'argv', ['setup.sh', '--check']), contextlib.redirect_stdout(io.StringIO()):
+            setup.main()
+        check_run.assert_called_once_with([sys.executable, PROJECT / 'setup/proxy/provision.py', '--check'], check=True)
+        assert not state.exists()
 
         with patch.object(setup, 'Path', side_effect=target_path), \
              patch.object(setup, 'preflight', return_value=(SimpleNamespace(pw_name='fixture'), None)), \
@@ -84,7 +93,7 @@ def main():
         assert all(experiment.digest(PROJECT / name) == checksum for name, checksum in report['source_sha256'].items())
         scripts = [cmd[1] for cmd in commands if cmd[0] == sys.executable]
         assert scripts == [str(PROJECT / 'setup' / name) for name in (
-            'desktop/provision.py', 'shell/provision.py', 'desktop/browser.py')]
+            'desktop/provision.py', 'shell/provision.py', 'desktop/browser.py', 'proxy/provision.py')]
 
         vm = directory / 'vm'
         vm.mkdir()
@@ -129,7 +138,7 @@ def main():
                 pass
             else:
                 raise AssertionError('Non-fixture VM path accepted')
-    print('Passed: relocated entry point, 22 setup sources, guest staging, coordinator hashes/paths and manual Secure Boot VM commands.')
+    print('Passed: relocated entry point, setup source staging, coordinator hashes/paths and manual Secure Boot VM commands.')
 
 
 if __name__ == '__main__':

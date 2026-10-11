@@ -36,9 +36,9 @@ def main():
                         'vmuser@127.0.0.1:' + target], check=True, capture_output=True)
 
     if args.prepare:
-        target = '/home/vmuser/mini-os-controller-setup'
+        target = '/home/vmuser/minion-controller-setup'
         stage_setup(directory, target)
-        snapshot_command = "sha256sum /home/vmuser/.bashrc /home/vmuser/.config/foot/foot.ini /home/vmuser/.config/atuin/config.toml; if test ! -f /home/vmuser/.config/mini-os/gamepad.json; then true; else sha256sum /home/vmuser/.config/mini-os/gamepad.json; fi; sfdisk --json /dev/vda"
+        snapshot_command = "sha256sum /home/vmuser/.bashrc /home/vmuser/.config/foot/foot.ini /home/vmuser/.config/atuin/config.toml; if test ! -f /home/vmuser/.config/minion/gamepad.json; then true; else sha256sum /home/vmuser/.config/minion/gamepad.json; fi; sfdisk --json /dev/vda"
         before = root(snapshot_command)
         mirror = json.loads((experiment.PROJECT / '.local/mirror/server.json').read_text())['guest_url']
         output = root(target + '/setup.sh --asset-url ' + shlex.quote(mirror + '/assets'))
@@ -47,7 +47,7 @@ def main():
         result = json.loads(root('python3 -c ' + shlex.quote('''
 import json
 from pathlib import Path
-run=Path(json.loads(Path('/var/lib/mini-os/setup/last-success.json').read_text())['run'])
+run=Path(json.loads(Path('/var/lib/minion/setup/last-success.json').read_text())['run'])
 print((run/'result.json').read_text())
 ''')))
         source_matches = all(experiment.digest(experiment.PROJECT / name) == checksum for name, checksum in result['source_sha256'].items())
@@ -66,7 +66,7 @@ print((run/'result.json').read_text())
         if release is not None:
             request.update(release=release, delay=delay)
         code = '''import json,socket
-s=socket.socket(socket.AF_UNIX);s.connect('/run/mini-os-gamepad-test/control.sock')
+s=socket.socket(socket.AF_UNIX);s.connect('/run/minion-gamepad-test/control.sock')
 s.sendall((%r+'\\n').encode());print(s.makefile().readline())
 ''' % json.dumps(request)
         result = json.loads(root('python3 -c ' + shlex.quote(code)))
@@ -78,7 +78,7 @@ s.sendall((%r+'\\n').encode());print(s.makefile().readline())
         return control('pulse', [[kind, code, value]], [[kind, code, 0]], delay)
 
     def status():
-        return json.loads(graphical(directory, 'mini-os-gamepad --status'))
+        return json.loads(graphical(directory, 'minion-gamepad --status'))
 
     def wait(function, predicate, label, seconds=10):
         deadline = time.monotonic() + seconds
@@ -105,7 +105,7 @@ print(urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8765/comma
 import evdev,json
 for path in evdev.list_devices():
  d=evdev.InputDevice(path)
- if d.name=='ubuntu-mini gamepad keyboard':
+ if d.name=='Minion gamepad keyboard':
   print(json.dumps(d.active_keys()));break
 else:raise ValueError('Mapped keyboard is missing')
 ''')))
@@ -133,18 +133,18 @@ else:raise ValueError('Mapped keyboard is missing')
         if not json.loads((directory / 'gamepad-setup-report.json').read_text())['passed']:
             raise ValueError('Run --prepare and authenticate into Sway first')
         wait(status, lambda s: s['session_active'], 'Mapper has no active local session')
-        ssh(directory, 'mkdir -p ~/mini-os-gamepad-fixture')
+        ssh(directory, 'mkdir -p ~/minion-gamepad-fixture')
         for name in ('virtual-gamepad.py', 'gamepad-mapping-http.py', 'gamepad-mapping-test.html'):
-            copy(experiment.PROJECT / 'tests/fixtures' / name, '/home/vmuser/mini-os-gamepad-fixture/' + name)
-        root('modprobe joydev; systemd-run --quiet --unit=mini-os-virtual-gamepad python3 /home/vmuser/mini-os-gamepad-fixture/virtual-gamepad.py /run/mini-os-gamepad-test')
+            copy(experiment.PROJECT / 'tests/fixtures' / name, '/home/vmuser/minion-gamepad-fixture/' + name)
+        root('modprobe joydev; systemd-run --quiet --unit=minion-virtual-gamepad python3 /home/vmuser/minion-gamepad-fixture/virtual-gamepad.py /run/minion-gamepad-test')
         daemon_started = True
-        root('for attempt in $(seq 1 30); do test ! -S /run/mini-os-gamepad-test/control.sock || exit 0; sleep .1; done; exit 1')
+        root('for attempt in $(seq 1 30); do test ! -S /run/minion-gamepad-test/control.sock || exit 0; sleep .1; done; exit 1')
         control('create')
         root('udevadm settle')
         attached = wait(status, lambda s: s['device'] and s['grabbed'] and s['ready'], 'Mapper did not acquire controller')
         report['initial_status'] = attached
         report['checks']['session_user_and_device_access'] = True
-        graphical(directory, 'systemctl --user stop mini-os-gamepad-http.service 2>/dev/null || true; systemd-run --user --quiet --unit=mini-os-gamepad-http python3 /home/vmuser/mini-os-gamepad-fixture/gamepad-mapping-http.py')
+        graphical(directory, 'systemctl --user stop minion-gamepad-http.service 2>/dev/null || true; systemd-run --user --quiet --unit=minion-gamepad-http python3 /home/vmuser/minion-gamepad-fixture/gamepad-mapping-http.py')
         graphical(directory, 'swaymsg "workspace number 1; exec firefox --new-window http://127.0.0.1:8765/"')
         wait(tree, lambda nodes: any(n['app_id'] == 'firefox_firefox' for n in nodes), 'Firefox window missing', 30)
         graphical(directory, 'swaymsg "[app_id=firefox_firefox] focus; [app_id=firefox_firefox] fullscreen enable"')
@@ -362,12 +362,12 @@ else:raise ValueError('Mapped keyboard is missing')
         print('Application keys passed: 48 typing chords with Shift, release-only arrows, trigger holds and editing combinations.', flush=True)
         capture(monitor, directory, 'mapped-controller-browser')
 
-        graphical(directory, 'swaymsg "[app_id=firefox_firefox] fullscreen disable; workspace number 2; layout splith; exec foot --app-id=mini-os-map-left --title=Controller-left /bin/sleep infinity"')
-        wait(tree, lambda nodes: any(n['app_id'] == 'mini-os-map-left' for n in nodes), 'First Foot window missing')
-        graphical(directory, 'swaymsg "exec foot --app-id=mini-os-map-right --title=Controller-right /bin/sleep infinity"')
-        wait(tree, lambda nodes: any(n['app_id'] == 'mini-os-map-right' for n in nodes), 'Second Foot window missing')
+        graphical(directory, 'swaymsg "[app_id=firefox_firefox] fullscreen disable; workspace number 2; layout splith; exec foot --app-id=minion-map-left --title=Controller-left /bin/sleep infinity"')
+        wait(tree, lambda nodes: any(n['app_id'] == 'minion-map-left' for n in nodes), 'First Foot window missing')
+        graphical(directory, 'swaymsg "exec foot --app-id=minion-map-right --title=Controller-right /bin/sleep infinity"')
+        wait(tree, lambda nodes: any(n['app_id'] == 'minion-map-right' for n in nodes), 'Second Foot window missing')
         pulse(3, 0, -32768)
-        focus = wait(tree, lambda nodes: any(n['app_id'] == 'mini-os-map-left' and n['focused'] for n in nodes), 'Left stick did not change window focus')
+        focus = wait(tree, lambda nodes: any(n['app_id'] == 'minion-map-left' and n['focused'] for n in nodes), 'Left stick did not change window focus')
         report['focus_windows'] = [{'app_id': n['app_id'], 'focused': n['focused'], 'rect': n['rect']} for n in focus]
         action_count = len(status()['actions'])
         pulse(3, 0, 32767, 1.1)
@@ -382,19 +382,19 @@ else:raise ValueError('Mapped keyboard is missing')
         control('emit', [[3, 0, 0], [3, 1, 0]])
         report['checks']['stick_repeat_and_deadzone'] = True
         report['stick_repeat_actions'] = repeated_actions
-        graphical(directory, 'swaymsg "[app_id=mini-os-map-right] focus"')
-        before_move = next(n for n in tree() if n['app_id'] == 'mini-os-map-right')['rect']
+        graphical(directory, 'swaymsg "[app_id=minion-map-right] focus"')
+        before_move = next(n for n in tree() if n['app_id'] == 'minion-map-right')['rect']
         control('emit', [[3, 2, 255]])
         wait(keyboard_keys, lambda keys: keys == [42], 'Shift hold missing before window move')
         pulse(3, 0, -32768)
-        after_move = wait(tree, lambda nodes: next(n for n in nodes if n['app_id'] == 'mini-os-map-right')['rect']['x'] < before_move['x'], 'Shift+stick did not move the window')
+        after_move = wait(tree, lambda nodes: next(n for n in nodes if n['app_id'] == 'minion-map-right')['rect']['x'] < before_move['x'], 'Shift+stick did not move the window')
         control('emit', [[3, 2, 0]])
         wait(keyboard_keys, lambda keys: not keys, 'Shift remained held after move')
-        before_resize = next(n for n in after_move if n['app_id'] == 'mini-os-map-right')['rect']
+        before_resize = next(n for n in after_move if n['app_id'] == 'minion-map-right')['rect']
         pulse(3, 3, 32767)
-        resized = wait(tree, lambda nodes: next(n for n in nodes if n['app_id'] == 'mini-os-map-right')['rect']['width'] > before_resize['width'], 'Right stick did not resize the window')
+        resized = wait(tree, lambda nodes: next(n for n in nodes if n['app_id'] == 'minion-map-right')['rect']['width'] > before_resize['width'], 'Right stick did not resize the window')
         report['window_move_and_resize'] = {'before_move': before_move, 'after_move': before_resize,
-                                         'after_resize': next(n for n in resized if n['app_id'] == 'mini-os-map-right')['rect']}
+                                         'after_resize': next(n for n in resized if n['app_id'] == 'minion-map-right')['rect']}
         control('emit', [[1, 310, 1]])
         time.sleep(1.1)
         if focused_workspace() != 2:
@@ -411,7 +411,7 @@ else:raise ValueError('Mapped keyboard is missing')
         control('emit', [[3, 2, 255]])
         wait(keyboard_keys, lambda keys: keys == [42], 'Shift hold missing before workspace move')
         control('emit', [[1, 311, 0]])
-        sent = wait(tree, lambda nodes: any(n['app_id'] == 'mini-os-map-right' and n['workspace'] == '3' for n in nodes), 'Shift+bumper did not send the window to a workspace')
+        sent = wait(tree, lambda nodes: any(n['app_id'] == 'minion-map-right' and n['workspace'] == '3' for n in nodes), 'Shift+bumper did not send the window to a workspace')
         control('emit', [[3, 2, 0]])
         report['checks']['focus_move_resize_and_workspace_clicks'] = True
         report['checks']['bumper_release_and_late_modifier'] = True
@@ -544,7 +544,7 @@ else:raise ValueError('Mapped keyboard is missing')
         capture(monitor, directory, 'mapped-window-picker')
         pulse(1, 304)
         wait(picker_processes, lambda values: not values, 'A did not accept the selected window')
-        chosen = wait(tree, lambda nodes: any(n['app_id'] == 'mini-os-map-right' and n['focused'] for n in nodes), 'Picker did not focus the selected window across workspaces')
+        chosen = wait(tree, lambda nodes: any(n['app_id'] == 'minion-map-right' and n['focused'] for n in nodes), 'Picker did not focus the selected window across workspaces')
         if focused_workspace() != 3:
             raise ValueError('Picker did not switch to the selected window workspace')
         selected_id = next(n['id'] for n in chosen if n['focused'])
@@ -583,7 +583,7 @@ else:raise ValueError('Mapped keyboard is missing')
         wait(keyboard_keys, lambda keys: keys == [29], 'Ctrl missing before passthrough')
         pulse(1, 317)
         wait(status, lambda s: s['super_armed'], 'Super missing before passthrough')
-        graphical(directory, 'mini-os-gamepad --toggle')
+        graphical(directory, 'minion-gamepad --toggle')
         wait(status, lambda s: s['mode'] == 'passthrough' and not s['grabbed'] and not s['keys'] and not s['super_armed'], 'Passthrough did not clear modifiers or release source grab')
         wait(keyboard_keys, lambda keys: not keys, 'Ctrl remained held in passthrough')
         control('emit', [[3, 5, 0]])
@@ -623,7 +623,7 @@ else:raise ValueError('Mapped keyboard is missing')
         wait(keyboard_keys, lambda keys: keys == [42], 'Shift missing before lock')
         pulse(1, 317)
         wait(status, lambda s: s['super_armed'], 'Super missing before lock')
-        graphical(directory, 'mini-os-lock')
+        graphical(directory, 'minion-lock')
         wait(status, lambda s: s['paused'] and not s['grabbed'] and not s['keys'] and not s['super_armed'], 'Lock did not pause and clear modifiers')
         wait(keyboard_keys, lambda keys: not keys, 'Shift remained held behind lock')
         pulse(1, 304)
@@ -652,14 +652,14 @@ else:raise ValueError('Mapped keyboard is missing')
         wait(keyboard_keys, lambda keys: keys == [29], 'Ctrl missing before service restart')
         pulse(1, 317)
         wait(status, lambda s: s['super_armed'], 'Super missing before service restart')
-        graphical(directory, 'systemctl --user restart mini-os-gamepad.service')
+        graphical(directory, 'systemctl --user restart minion-gamepad.service')
         wait(status, lambda s: not s['keys'] and not s['ready'] and not s['super_armed'], 'Service restart retained modifiers')
         wait(keyboard_keys, lambda keys: not keys, 'New keyboard started with Ctrl held')
         control('emit', [[3, 5, 0]])
         wait(status, lambda s: s['ready'], 'Mapping did not resume after neutral return')
         report['checks']['service_restart_waits_for_neutral'] = True
         report['final_status'] = status()
-        report['service_state'] = graphical(directory, 'systemctl --user is-active mini-os-gamepad.service')
+        report['service_state'] = graphical(directory, 'systemctl --user is-active minion-gamepad.service')
         report['passed'] = all(report['checks'].values())
         print('Lifecycle passed: disconnect, raw passthrough, controller chord, lock/unlock and service restart.', flush=True)
     except Exception as error:
@@ -669,7 +669,7 @@ else:raise ValueError('Mapped keyboard is missing')
         if daemon_started:
             try:
                 control('stop')
-                root('for attempt in $(seq 1 30); do test -e /run/mini-os-gamepad-test || exit 0; sleep .1; done; exit 1')
+                root('for attempt in $(seq 1 30); do test -e /run/minion-gamepad-test || exit 0; sleep .1; done; exit 1')
                 report['fixture_removed'] = True
             except Exception as error:
                 report['cleanup_error'] = str(error)

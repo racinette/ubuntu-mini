@@ -1,0 +1,10 @@
+[Unit]
+Description=minion authenticated screen lock
+PartOf=minion-session.target
+After=graphical-session.target
+
+[Service]
+Type=forking
+ExecStartPre=/usr/local/bin/minion-gamepad --pause
+ExecStart=/usr/bin/swaylock --daemonize --color 151820
+ExecStopPost=/usr/local/bin/minion-gamepad --resume

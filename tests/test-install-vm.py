@@ -41,7 +41,7 @@ def prepare():
     command('/usr/bin/qemu-img', 'create', '-f', 'qcow2', directory / 'disk.qcow2', '48G')
     vm.initialize_firmware(directory, True)
     command('ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-f', directory / 'ssh-key')
-    credentials = dict(username='vmuser', hostname='ubuntu-mini-vm',
+    credentials = dict(username='vmuser', hostname='minion-vm',
                        login_password=secrets.token_hex(12), luks_passphrase=secrets.token_hex(16),
                        ssh_authorized_keys=[(directory / 'ssh-key.pub').read_text().strip()])
     (directory / 'credentials.json').write_text(json.dumps(credentials, indent=2) + '\n')
@@ -61,7 +61,7 @@ def launch(directory, boot=False):
             '-drive', f'if=pflash,format=raw,unit=1,file={directory}/OVMF_VARS.fd',
             '-global', 'driver=cfi.pflash01,property=secure,value=on',
             '-drive', f'if=none,id=fixture,format=qcow2,file={directory}/disk.qcow2',
-            '-device', 'virtio-blk-pci,drive=fixture,serial=MINIOS-INSTALL-TEST',
+            '-device', 'virtio-blk-pci,drive=fixture,serial=MINION-INSTALL',
             '-device', 'VGA', '-monitor', 'none',
             '-chardev', f'socket,id=serial,path={directory}/serial.sock,server=on,wait=off,logfile={directory}/{phase}-serial.log',
             '-serial', 'chardev:serial', '-qmp', f'unix:{directory}/qmp.sock,server=on,wait=off',
@@ -117,7 +117,7 @@ def stage(directory):
 def fixture(directory):
     script = r'''import hashlib,json,subprocess
 def run(*a,**kw): return subprocess.run(a,check=True,text=True,stdout=subprocess.PIPE,**kw).stdout
-assert run('lsblk','-dn','-o','SERIAL','/dev/vda').strip()=='MINIOS-INSTALL-TEST'
+assert run('lsblk','-dn','-o','SERIAL','/dev/vda').strip()=='MINION-INSTALL'
 assert subprocess.run(['sfdisk','--json','/dev/vda'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode!=0
 layout=''' + repr('label: gpt\nunit: sectors\n\n/dev/vda1: start=2048, size=204800, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, name="preserved-efi"\n/dev/vda2: start=206848, size=32768, type=E3C9E316-0B5C-4DB8-817D-F92DF00215AE, name="reserved"\n/dev/vda3: start=239616, size=8388608, type=EBD0A0A2-B9E5-4433-87C0-68B6B72699C7, name="existing-data"\n/dev/vda4: start=98564096, size=2097152, type=DE94BBA4-06D1-4D40-A16A-BFD50179D6AC, name="recovery-at-end", attrs="RequiredPartition GUID:63"\n') + r'''
 run('sfdisk','/dev/vda',input=layout)
@@ -147,7 +147,7 @@ def reclaim(directory):
     assert result.returncode != 0 and 'Insufficient contiguous free space' in result.stderr
     script = '''import json,subprocess\ndef run(*a): return subprocess.check_output(a,text=True)\n'''
     script += 'baseline=' + repr(baseline) + '\n'
-    script += '''assert run('lsblk','-dn','-o','SERIAL','/dev/vda').strip()=='MINIOS-INSTALL-TEST'
+    script += '''assert run('lsblk','-dn','-o','SERIAL','/dev/vda').strip()=='MINION-INSTALL'
 table=json.loads(run('sfdisk','--json','/dev/vda'))['partitiontable']
 assert len(table['partitions'])==7
 tree=json.loads(run('lsblk','--json','-o','TYPE,MOUNTPOINTS','/dev/vda'))['blockdevices']
@@ -158,8 +158,7 @@ assert all(n['type'] in ('disk','part') and not any(n.get('mountpoints') or []) 
 for p in baseline['table']['partitions']:
  assert p in table['partitions']
  assert run('sha256sum',p['node']).split()[0]==baseline['hashes'][p['node']]
-assert [p['name'] for p in table['partitions'][4:]] in ([
- 'mini-os-efi','mini-os-boot','mini-os-root'], ['ubuntu-mini-efi','ubuntu-mini-boot','ubuntu-mini-root'])
+assert [p['name'] for p in table['partitions'][4:]] == ['minion-efi','minion-boot','minion-root']
 run('sfdisk','--delete','/dev/vda','5','6','7')
 run('udevadm','settle')
 assert json.loads(run('sfdisk','--json','/dev/vda'))['partitiontable']==baseline['table']
@@ -194,7 +193,7 @@ def install(directory, size):
 def status(directory):
     result = ssh(directory, 'sudo sh /tmp/install.sh --status; '
                  'sudo cat /run/subiquity/server-state; '
-                 'sudo journalctl -u ubuntu-mini-install --no-pager -n 6; '
+                 'sudo journalctl -u minion-install --no-pager -n 6; '
                  'sudo tail -n 12 /var/log/installer/curtin-install.log; '
                  'if test "$(sudo cat /run/subiquity/server-state)" = ERROR; then '
                  'sudo journalctl --no-pager --grep="Installation refused/failed|FileNotFoundError|KeyError" -n 10; fi; '
@@ -207,10 +206,10 @@ def reset_preflight(directory):
     result = ssh(directory, 'sudo sfdisk --json /dev/vda')
     table = result.stdout
     assert len(json.loads(table)['partitiontable']['partitions']) == 4
-    ssh(directory, 'sudo systemctl stop ubuntu-mini-install.service', check=False)
-    ssh(directory, 'if ! test -d /run/subiquity; then sudo mv /run/ubuntu-mini-install/previous-session /run/subiquity; fi')
-    ssh(directory, 'sudo rm -rf /run/ubuntu-mini-install; sudo rm -f /autoinstall.yaml')
-    ssh(directory, 'sudo systemctl reset-failed ubuntu-mini-install.service; '
+    ssh(directory, 'sudo systemctl stop minion-install.service', check=False)
+    ssh(directory, 'if ! test -d /run/subiquity; then sudo mv /run/minion-install/previous-session /run/subiquity; fi')
+    ssh(directory, 'sudo rm -rf /run/minion-install; sudo rm -f /autoinstall.yaml')
+    ssh(directory, 'sudo systemctl reset-failed minion-install.service; '
         'sudo systemctl start snap.subiquity.subiquity-server.service snap.subiquity.subiquity-service.service', check=False)
     print('Removed failed preflight configuration in the disposable VM; no partitions were created')
 
@@ -222,7 +221,7 @@ def finish(directory):
         'PY3OR2_PYTHON=/snap/subiquity/current/usr/bin/python3.10 '
         'PYTHONPATH=/snap/subiquity/current/lib/python3.10/site-packages '
         'PATH=/snap/subiquity/current/bin:/usr/sbin:/usr/bin:/sbin:/bin '
-        'sh /tmp/install.sh --finish-plan /run/ubuntu-mini-install/plan.json', check=False)
+        'sh /tmp/install.sh --finish-plan /run/minion-install/plan.json', check=False)
     print(result.stdout)
     if result.returncode:
         print(result.stderr)
@@ -351,7 +350,7 @@ def interactive(directory, cancel_only=False):
         child.close()
     if cancel_only:
         assert ssh(directory, 'sudo sfdisk --json /dev/vda').stdout == before
-        assert ssh(directory, 'test ! -e /run/ubuntu-mini-install && test ! -e /autoinstall.yaml', check=False).returncode == 0
+        assert ssh(directory, 'test ! -e /run/minion-install && test ! -e /autoinstall.yaml', check=False).returncode == 0
         print('Real terminal prompts reached confirmation; cancellation left disk and installation state untouched')
     else:
         (directory/'interactive.json').write_text(json.dumps(dict(started=True,confirmation='INSTALL'))+'\n')
@@ -378,7 +377,7 @@ def console_install(directory, size):
     finally:
         client.close()
     for _ in range(45):
-        result = ssh(directory, 'sudo cat /run/ubuntu-mini-install/status.json', check=False)
+        result = ssh(directory, 'sudo cat /run/minion-install/status.json', check=False)
         if result.returncode == 0:
             record = json.loads(result.stdout)
             if record['stage'] == 'failed':
@@ -387,9 +386,9 @@ def console_install(directory, size):
                 print('Installer launched from the actual live console; progress is on tty3')
                 report = dict(started_at=started_at, helper_sha256=vm.digest(vm.PROJECT/'install.sh'),
                     console_cgroup=ssh(directory, 'cat /tmp/console-cgroup.txt').stdout.strip(),
-                    worker_cgroup=ssh(directory, 'sudo systemctl show ubuntu-mini-install -p ControlGroup --value').stdout.strip(),
+                    worker_cgroup=ssh(directory, 'sudo systemctl show minion-install -p ControlGroup --value').stdout.strip(),
                     progress_console=json.loads(ssh(directory,
-                        'sudo cat /run/ubuntu-mini-install/plan.json').stdout)['progress_console'], status=record)
+                        'sudo cat /run/minion-install/plan.json').stdout)['progress_console'], status=record)
                 assert report['worker_cgroup'] and report['worker_cgroup'] not in report['console_cgroup']
                 assert report['progress_console'] == 3
                 (directory / 'console-launch-report.json').write_text(json.dumps(report, indent=2)+'\n')
@@ -401,14 +400,14 @@ def console_install(directory, size):
 
 def check_viewer(directory):
     assert ssh(directory, 'cat /sys/class/tty/tty0/active').stdout.strip() == 'tty3'
-    assert ssh(directory, 'systemctl is-active ubuntu-mini-install-console').stdout.strip() == 'active'
+    assert ssh(directory, 'systemctl is-active minion-install-console').stdout.strip() == 'active'
     client = Monitor(directory / 'qmp.sock')
     try:
         client.execute('screendump', {'filename': str(directory/'progress-before-close.ppm')})
         key(client, ['ctrl', 'c'])
         time.sleep(1)
-        assert ssh(directory, 'systemctl is-active ubuntu-mini-install').stdout.strip() == 'active'
-        assert ssh(directory, 'systemctl is-active ubuntu-mini-install-console', check=False).stdout.strip() == 'inactive'
+        assert ssh(directory, 'systemctl is-active minion-install').stdout.strip() == 'active'
+        assert ssh(directory, 'systemctl is-active minion-install-console', check=False).stdout.strip() == 'inactive'
         client.execute('screendump', {'filename': str(directory/'progress-closed.ppm')})
         key(client, ['ctrl', 'alt', 'f2'])
         time.sleep(1)
@@ -416,7 +415,7 @@ def check_viewer(directory):
         time.sleep(1)
         type_text(client, 'sudo sh /tmp/install.sh --follow\n')
         time.sleep(2)
-        assert ssh(directory, 'systemctl is-active ubuntu-mini-install').stdout.strip() == 'active'
+        assert ssh(directory, 'systemctl is-active minion-install').stdout.strip() == 'active'
         client.execute('screendump', {'filename': str(directory/'progress-reconnected.ppm')})
     finally:
         client.close()
@@ -452,7 +451,7 @@ for directory in ('/var/log/installer','/etc/cloud'):
 efi=run('efibootmgr','-v')
 assert ('HD(5,GPT,'+table['partitions'][4]['uuid']).lower() in efi.lower()
 assert re.search(r'^BootCurrent: (\\w+)',efi,re.M).group(1)==re.search(r'^BootOrder: (\\w+)',efi,re.M).group(1)
-plan=json.loads(Path('/var/log/installer/ubuntu-mini-storage-plan.json').read_text())
+plan=json.loads(Path('/var/log/installer/minion-storage-plan.json').read_text())
 print(json.dumps(dict(passed=True,whole_existing_partition_hashes_unchanged=True,
  original_gpt_entries_preserved=True,secure_boot=True,kernel_lockdown=lockdown,
  plaintext_secrets_absent_from_installed_logs=True,

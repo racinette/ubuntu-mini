@@ -5,7 +5,7 @@ from pathlib import Path
 import types
 
 source = Path(__file__).resolve().parents[1] / 'install.sh'
-payload = source.read_text().split("<<'MINI_OS_INSTALL_PYTHON'\n", 1)[1].rsplit('\nMINI_OS_INSTALL_PYTHON', 1)[0]
+payload = source.read_text().split("<<'MINION_INSTALL_PYTHON'\n", 1)[1].rsplit('\nMINION_INSTALL_PYTHON', 1)[0]
 installer = types.ModuleType('installer')
 exec(compile(payload, str(source), 'exec'), installer.__dict__)
 G = installer.GIB

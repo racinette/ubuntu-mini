@@ -12,9 +12,25 @@ python3 tests/check-browser-download-mode.py
 python3 tests/check-chord-recognizer.py
 python3 tests/check-install-plan.py
 python3 tests/check-install-launch.py
+python3 tests/check-proxy.py
 ```
 
 The setup check verifies the root entry point, source staging and coordinator paths without installing packages. The browser check isolates Snap command selection and existing-browser retention. The chord check feeds independent Xbox face codes through all 960 press/release orders, both normally and with one-shot Super, and checks late Shift/Ctrl combinations, release-only arming, cancellation, single-use behavior, modifier ordering, invalid/reserved/rolling gestures, lifecycle cleanup and held-arrow compatibility. It creates no host input device and reads Linux key codes from `/usr/include/linux/input-event-codes.h`.
+
+## Optional proxy container test
+
+With Podman running, create a private file containing only your HTTPS subscription URL. Keep it outside Git and use mode 600. This test registers one device with the provider; reuse the saved `device-id` file on later runs rather than consuming additional device slots.
+
+```bash
+python3 tests/test-proxy-container.py --subscription-file /PRIVATE/PATH/subscription-url
+# Repeat with the device-id path printed in the private report directory:
+python3 tests/test-proxy-container.py --subscription-file /PRIVATE/PATH/subscription-url \
+  --device-id-file /PRIVATE/PATH/device-id
+```
+
+The harness builds a disposable Ubuntu 24.04 image, runs systemd in a privileged container with its own network namespace, downloads the pinned binary, and exercises real subscription requests and HTTPS connections. It checks read-only preflight, private files, disabled initial activation, configuration retention, uninterrupted reruns, TUN capture, DNS, LAN bypass, boot activation, stop cleanup and URL redaction. It mounts no host directories and removes its container afterward. Reports and raw logs remain private under ignored `.local/proxy-qa/`.
+
+Use `--platform linux/arm64` for a native ARM64 Linux container on an Apple Silicon Podman machine. Use `--skip-tun` to test HTTP/SOCKS mode when cross-architecture syscall emulation cannot run TUN or systemd-resolved. A passing report with TUN skipped does not establish system-wide capture. The test exercises the component installer directly, without installing a whole desktop; the host setup-layout check verifies that ordinary `setup.sh` and its read-only preflight include the proxy component. It also checks that no global management command is installed and that the enabled boot service works without its source checkout. The test image uses a fixture resolver configuration; it does not change the host's DNS.
 
 ## VM host requirements
 
@@ -83,7 +99,7 @@ VM_DIR=.local/vm/storage-server-EXAMPLE
 python3 tests/vm.py launch "$VM_DIR" install --window
 ```
 
-Preparation creates a blank 80 GiB virtual disk, private firmware variables, an SSH key and `credentials.json`. Read that private file locally and use its account password and disk passphrase during manual Ubuntu installation. Set the hostname to `ubuntu-mini-vm`, the account to `vmuser`, choose encryption, and install OpenSSH. Use the local archive mirror URL from [mirror instructions](local-mirror.md). The launcher supplies no Autoinstall configuration and does not choose partitions.
+Preparation creates a blank 80 GiB virtual disk, private firmware variables, an SSH key and `credentials.json`. Read that private file locally and use its account password and disk passphrase during manual Ubuntu installation. Set the hostname to `minion-vm`, the account to `vmuser`, choose encryption, and install OpenSSH. Use the local archive mirror URL from [mirror instructions](local-mirror.md). The launcher supplies no Autoinstall configuration and does not choose partitions.
 
 After installation, boot without the ISO using `launch ... boot --window`. In the guest, add the host fixture's `ssh-key.pub` contents to `/home/vmuser/.ssh/authorized_keys`; set the directory to mode 700 and the file to 600. Use `tests/vm.py ssh "$VM_DIR" vmuser 'true'` to verify access. Guest SSH uses a loopback port recorded in `state.json`.
 
@@ -91,7 +107,7 @@ Cold-boot tests require disk unlock and login prompts on the serial console. Ins
 
 ```bash
 sudo mkdir -p /etc/default/grub.d
-sudo tee /etc/default/grub.d/99-ubuntu-mini-vm.cfg >/dev/null <<'CONFIG'
+sudo tee /etc/default/grub.d/99-minion-vm.cfg >/dev/null <<'CONFIG'
 GRUB_CMDLINE_LINUX="$GRUB_CMDLINE_LINUX console=tty0 console=ttyS0,115200n8"
 CONFIG
 sudo update-grub
@@ -117,12 +133,12 @@ python3 tests/check-post-install-setup.py "$VM_DIR"
 Before graphical checks, add fixture-only settings inside the guest:
 
 ```bash
-sudo tee /etc/mini-os/vm-environment >/dev/null <<'CONFIG'
+sudo tee /etc/minion/vm-environment >/dev/null <<'CONFIG'
 export WLR_RENDERER=pixman
 export WLR_NO_HARDWARE_CURSORS=1
 CONFIG
 mkdir -p ~/.config/sway
-cat > ~/.config/sway/mini-os.conf <<'CONFIG'
+cat > ~/.config/sway/minion.conf <<'CONFIG'
 input type:keyboard {
     xkb_layout us,ru
     xkb_options grp:alt_shift_toggle
@@ -175,6 +191,16 @@ python3 tests/check-gamepad-mapping.py "$VM_DIR"
 The synthetic controller is created inside the guest. Mapping tests exercise real Firefox input, all assigned chords with normal/Shift output, constituent suppression, late modifiers, Sway focus/move/resize/workspaces, picker/launcher, passthrough, reconnect, lock, inactive-console and restart behavior. The test removes its controller and HTTP service afterward. Physical trigger axes, adjacent presses and comfort remain device checks.
 
 ## Recorded results and current limits
+
+On 2026-10-11, the project codename and internal names changed to Minion, while repository URLs and the clone directory remained `ubuntu-mini`. This layout targets fresh installations and includes no migration from earlier names. Setup layout, browser download mode, installer planning, proxy preservation/supervision, Linux installer handoff and gamepad chord checks passed. Python and shell syntax checks passed. Isolated Ubuntu provisioning checks confirmed the generated command paths, session dependencies, device/network configuration and Bash include; real Sway 1.9 accepted the generated configuration and read the renamed personal include. Package/device commands and shell artifact installation were mocked in this layout check. [Private layout report](../.local/rename-qa/minion-layout-report.json).
+
+The renamed proxy also passed the complete native ARM64 container test, including live subscription retrieval, explicit HTTPS proxy egress, TUN routing/DNS, configuration retention, startup without the source checkout and direct connectivity restoration after stop. [Private Minion proxy report](../.local/proxy-qa/container-1vk4jel9/report.json). A full OS installation, desktop login and physical handheld checks were not repeated for the rename. Earlier reports below predate the Minion names.
+
+On 2026-10-11, proxy installation was included in ordinary setup and management moved to repo-based `setup/proxy/manage.py`, with a root-owned runtime copy used by systemd. Host checks passed default installation/preflight integration, source staging, configuration preservation and service supervision. Both the [updated amd64 explicit-proxy test](../.local/proxy-qa/container-c2iyxl7t/report.json) and [updated native ARM64 TUN test](../.local/proxy-qa/container-0c8lmvly/report.json) passed real component installation, retained state, service lifecycle and boot with the source checkout unavailable. Native routing/DNS/cleanup passed again. One earlier native run failed a live HTTPS probe; the complete repeat passed without code changes. A full desktop provisioning run was not repeated for this revision.
+
+On 2026-10-11, the optional Mihomo component fetched a real HWID-protected subscription and passed native ARM64 Ubuntu 24.04 container checks for verified installation, HTTPS proxy egress, retained configuration/device registration across reruns, no service restart on installation rerun, ordinary HTTPS through TUN, DNS capture, private-network bypass, service activation after container reboot, tunnel removal, restored public routing/direct egress/DNS after stop, and subscription URL redaction. [Private native Linux report](../.local/proxy-qa/container-7hd90s_u/report.json). The amd64 coordinator and pinned amd64 core also passed installation/preflight, private configuration, real HTTPS proxy egress, uninterrupted reruns, enabled boot startup, stop/direct-egress restoration and URL redaction in explicit-proxy mode. [Private amd64 report](../.local/proxy-qa/container-tl9g7x8r/report.json). Host refusal/preservation/supervision checks, setup layout and Python syntax checks passed.
+
+No IPv6 uplink was available, so IPv6 connectivity remains unverified. The amd64 core under emulation failed a TUN route syscall; native ARM64 routing tests do not verify the handheld's amd64 kernel, Wi-Fi changes, suspend/resume or physical LAN access. Provider device slots and endpoint availability also remain external dependencies.
 
 On 2026-10-09, the L3 layer gained release-only command singles: X/Y/A/B close/toggle layout/open terminal/cancel, and Up/Down/Left/Right copy/paste/undo/redo. Host frame checks passed all eight singles, Foot versus GUI clipboard modifiers, blocked terminal undo/redo, unknown-focus rejection, trigger restoration, in-progress cancellation and lifecycle cleanup. All 960 normal and 960 Super chord orders still passed, including late modifiers and no-chords compatibility. The setup-layout and Python syntax checks passed. An isolated headless Ubuntu Sway 1.9 session identified a real GUI client, toggled tiled→tabbed→tiled and closed only the focused test window; all three IPC commands succeeded. These checks used cached software with zero downloads. [Private command-layer report](../.local/desktop-qa/command-layer-report.json). The VM harness includes the new commands and real browser clipboard/editing cases, but has not been rerun. Real Foot clipboard behavior and physical controller comfort remain device QA.
 

@@ -12,7 +12,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 SOURCE = Path(__file__).resolve().parents[1] / 'install.sh'
-PAYLOAD = SOURCE.read_text().split("<<'MINI_OS_INSTALL_PYTHON'\n", 1)[1].rsplit('\nMINI_OS_INSTALL_PYTHON', 1)[0]
+PAYLOAD = SOURCE.read_text().split("<<'MINION_INSTALL_PYTHON'\n", 1)[1].rsplit('\nMINION_INSTALL_PYTHON', 1)[0]
 installer = types.ModuleType('installer')
 exec(compile(PAYLOAD, str(SOURCE), 'exec'), installer.__dict__)
 
@@ -30,7 +30,7 @@ def main():
     with patch.dict(os.environ, {'SUDO_TTY':'/dev/tty3'}):
         assert installer.progress_console(False) == 4
         assert installer.progress_console(True) is None
-    with tempfile.TemporaryDirectory(prefix='ubuntu-mini-launch-test-') as temporary:
+    with tempfile.TemporaryDirectory(prefix='minion-launch-test-') as temporary:
         root = Path(temporary)
         work = root / 'work'
         configuration = root / 'autoinstall.yaml'
@@ -49,8 +49,7 @@ def main():
                     '/run/subiquity': state,
                     '/run/subiquity/server-state': state / 'server-state',
                     '/proc/cmdline': root / 'cmdline',
-                    '/var/log/installer/curtin-install.log': root / 'curtin.log',
-                    '/run/mini-os-install': root / 'old-work'}.get(str(value), Path(value))
+                    '/var/log/installer/curtin-install.log': root / 'curtin.log'}.get(str(value), Path(value))
 
         (root / 'cmdline').write_text('quiet')
 
@@ -79,9 +78,9 @@ def main():
         assert 'private-account' not in configuration.read_text()
         units = [c for c in commands if c[0] == 'systemd-run']
         assert len(units) == 2 and '--follow' in units[0] and '--launch' in units[1]
-        assert '--unit=ubuntu-mini-install-console' in units[0]
+        assert '--unit=minion-install-console' in units[0]
         assert '--property=TTYPath=/dev/tty3' in units[0]
-        assert '--unit=ubuntu-mini-install' in units[1]
+        assert '--unit=minion-install' in units[1]
 
         # Simulate the original service killing its own shell during handoff.
         # The worker has already inherited all input and can still install.

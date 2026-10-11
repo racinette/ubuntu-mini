@@ -73,7 +73,7 @@ def prepare(secure_boot=False):
     run('ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-f', directory / 'ssh-key')
     (directory / 'fixture.json').write_text(json.dumps({
         'kind': 'manual-ubuntu-server', 'iso_sha256': ISO_SHA256,
-        'hostname': 'ubuntu-mini-vm', 'username': 'vmuser'}, indent=2) + '\n')
+        'hostname': 'minion-vm', 'username': 'vmuser'}, indent=2) + '\n')
     print(directory)
 
 
@@ -146,7 +146,7 @@ def launch(directory, stage, audio=False, window=False, setup_assets=False):
         '-drive', f"if=pflash,format=raw,unit=1,file={directory / 'OVMF_VARS.fd'}"]
     command = ["/usr/bin/qemu-system-x86_64", "-machine", "q35,accel=kvm" + (",smm=on" if secure_boot else ""), "-cpu", "host", "-m", "6144", "-smp", "4"] + flash + [
                "-drive", f"if=none,id=fixture,format=qcow2,file={directory / 'disk.qcow2'}",
-               "-device", "virtio-blk-pci,drive=fixture,serial=MINIOS-FIXTURE-001",
+               "-device", "virtio-blk-pci,drive=fixture,serial=MINION-FIXTURE",
                "-device", "VGA", "-display", "gtk" if window else "none", "-monitor", "none",
                "-chardev", f"socket,id=serial,path={directory / 'serial.sock'},server=on,wait=off,logfile={directory / (stage + '-serial.log')}",
                "-serial", "chardev:serial",
@@ -155,7 +155,7 @@ def launch(directory, stage, audio=False, window=False, setup_assets=False):
     if secure_boot:
         command.extend(['-global', 'driver=cfi.pflash01,property=secure,value=on'])
     if window:
-        command.extend(['-name', 'ubuntu-mini preview'])
+        command.extend(['-name', 'minion preview'])
     if audio:
         command.extend(['-audiodev', f'wav,id=audio,path={directory / "audio.wav"}',
                         '-device', 'ich9-intel-hda', '-device', 'hda-duplex,audiodev=audio'])

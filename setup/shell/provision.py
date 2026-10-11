@@ -22,7 +22,7 @@ home = Path(user.pw_dir)
 (home / '.config').mkdir(exist_ok=True)
 os.chown(home / '.config', user.pw_uid, user.pw_gid)
 artifacts = json.loads(HERE.joinpath('artifacts.json').read_text())
-with tempfile.TemporaryDirectory(prefix='mini-os-shell-') as scratch:
+with tempfile.TemporaryDirectory(prefix='minion-shell-') as scratch:
     root = Path(scratch)
     for name, artifact in artifacts.items():
         archive = root / artifact['filename']
@@ -38,8 +38,8 @@ with tempfile.TemporaryDirectory(prefix='mini-os-shell-') as scratch:
     source = root / 'atuin-x86_64-unknown-linux-musl/atuin'
     subprocess.run(['install', '-m', '755', source, '/usr/local/bin/atuin'], check=True)
     subprocess.run(['bash', root / 'ble-nightly/ble.sh', '--install', '/usr/local/share'], check=True)
-Path('/usr/local/share/mini-os').mkdir(parents=True, exist_ok=True)
-Path('/usr/local/share/mini-os/bashrc.bash').write_text(HERE.joinpath('bashrc.bash').read_text())
+Path('/usr/local/share/minion').mkdir(parents=True, exist_ok=True)
+Path('/usr/local/share/minion/bashrc.bash').write_text(HERE.joinpath('bashrc.bash').read_text())
 # Retain user-edited configuration on rerun, while refreshing the owned integration.
 for relative, source in [('.config/atuin/config.toml', 'config.toml'), ('.config/foot/foot.ini', 'foot.ini')]:
     target = home / relative
@@ -51,9 +51,9 @@ for relative, source in [('.config/atuin/config.toml', 'config.toml'), ('.config
     os.chown(target.parent, user.pw_uid, user.pw_gid)
 bashrc = home / '.bashrc'
 text = bashrc.read_text() if bashrc.exists() else ''
-line = 'source /usr/local/share/mini-os/bashrc.bash'
+line = 'source /usr/local/share/minion/bashrc.bash'
 if line not in text.splitlines():
-    bashrc.write_text(text.rstrip() + '\n\n# ubuntu-mini interactive Bash\n' + line + '\n')
+    bashrc.write_text(text.rstrip() + '\n\n# Minion interactive Bash\n' + line + '\n')
     os.chown(bashrc, user.pw_uid, user.pw_gid)
     bashrc.chmod(0o644)
 print('Pinned shell integration installed for ' + args.username)

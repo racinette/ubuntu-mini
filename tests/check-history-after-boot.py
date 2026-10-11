@@ -20,18 +20,18 @@ def main():
         raise ValueError('A passing offline history test is required before reboot')
     expected = 'echo ' + history['marker']
     fixture = Path(__file__).with_name('fixtures') / 'shell-test.bash'
-    ssh(directory, 'cat > ~/mini-os-shell-test.bash', fixture.read_text())
-    graphical(directory, 'swaymsg "[app_id=mini-os-edit] kill" || true')
-    ssh(directory, 'rm -f ~/mini-os-shell-startup.txt ~/mini-os-edit-result.txt')
-    graphical(directory, 'swaymsg exec "foot --app-id=mini-os-edit bash --rcfile /home/vmuser/mini-os-shell-test.bash -i"')
+    ssh(directory, 'cat > ~/minion-shell-test.bash', fixture.read_text())
+    graphical(directory, 'swaymsg "[app_id=minion-edit] kill" || true')
+    ssh(directory, 'rm -f ~/minion-shell-startup.txt ~/minion-edit-result.txt')
+    graphical(directory, 'swaymsg exec "foot --app-id=minion-edit bash --rcfile /home/vmuser/minion-shell-test.bash -i"')
     for _ in range(30):
-        startup = ssh(directory, 'test ! -f ~/mini-os-shell-startup.txt || cat ~/mini-os-shell-startup.txt').splitlines()
+        startup = ssh(directory, 'test ! -f ~/minion-shell-startup.txt || cat ~/minion-shell-startup.txt').splitlines()
         if len(startup) == 2:
             break
         time.sleep(.5)
     else:
         raise TimeoutError('Fresh Foot shell did not load')
-    graphical(directory, 'swaymsg "[app_id=mini-os-edit] focus"; swaymsg "[app_id=mini-os-edit] fullscreen enable"; swaymsg "input type:keyboard xkb_switch_layout 0"')
+    graphical(directory, 'swaymsg "[app_id=minion-edit] focus"; swaymsg "[app_id=minion-edit] fullscreen enable"; swaymsg "input type:keyboard xkb_switch_layout 0"')
     monitor = Monitor(directory / 'qmp.sock')
     try:
         type_text(monitor, expected[:-3])
@@ -39,7 +39,7 @@ def main():
         key(monitor, ['right'])
         key(monitor, ['ctrl', 'f12'])
         time.sleep(1)
-        actual = ssh(directory, 'cat ~/mini-os-edit-result.txt')
+        actual = ssh(directory, 'cat ~/minion-edit-result.txt')
         capture(monitor, directory, 'history-after-maintenance-boot')
         key(monitor, ['ctrl', 'a'])
         key(monitor, ['ctrl', 'k'])

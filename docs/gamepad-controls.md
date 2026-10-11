@@ -33,7 +33,7 @@ The face buttons are keyboard keys, so applications determine their behavior. Fo
 
 ## L3 commands and one-shot Super
 
-Tap and release **L3**, then press and release one control from this table. Each command exits the layer. A brief notification shows the legend; arming alone emits no keyboard key and does not affect the physical keyboard. `mini-os-gamepad --status` reports `super_armed` while the layer is waiting.
+Tap and release **L3**, then press and release one control from this table. Each command exits the layer. A brief notification shows the legend; arming alone emits no keyboard key and does not affect the physical keyboard. `minion-gamepad --status` reports `super_armed` while the layer is waiting.
 
 | After tapping L3 | Command |
 | --- | --- |
@@ -69,31 +69,31 @@ Hold **Start + Select together for at least 0.75 seconds, then release both**, o
 The same commands work from a terminal in the graphical session:
 
 ```bash
-mini-os-gamepad --toggle
-mini-os-gamepad --status
+minion-gamepad --toggle
+minion-gamepad --status
 ```
 
 The selected mode survives a service restart while the user's runtime directory exists. A cold boot starts in desktop mode. After reconnecting, resuming the session or restarting the service, release buttons and return sticks/triggers to neutral before navigation resumes. Disconnecting or leaving the active desktop releases held keys. The configured lock command pauses mapping before showing the password lock and resumes it after unlock.
 
 ## Personal profile
 
-The repository default is [setup/desktop/gamepad.json](../setup/desktop/gamepad.json). Setup installs it as `/etc/mini-os/gamepad.json`. Create a personal copy as your normal desktop user:
+The repository default is [setup/desktop/gamepad.json](../setup/desktop/gamepad.json). Setup installs it as `/etc/minion/gamepad.json`. Create a personal copy as your normal desktop user:
 
 ```bash
-mkdir -p ~/.config/mini-os
-test -e ~/.config/mini-os/gamepad.json || cp /etc/mini-os/gamepad.json ~/.config/mini-os/gamepad.json
-# Edit ~/.config/mini-os/gamepad.json, then apply it:
-systemctl --user restart mini-os-gamepad.service
-mini-os-gamepad --status
+mkdir -p ~/.config/minion
+test -e ~/.config/minion/gamepad.json || cp /etc/minion/gamepad.json ~/.config/minion/gamepad.json
+# Edit ~/.config/minion/gamepad.json, then apply it:
+systemctl --user restart minion-gamepad.service
+minion-gamepad --status
 ```
 
 Setup reruns preserve this personal file. Its top-level settings override the default; a nested object replaces that entire object. Copying the complete default makes button edits straightforward. You can adjust workspace numbers, axis/button symbols, thresholds, repeat timing and resize increments. The `actions` object assigns desktop actions (`terminal`, `window_picker`, `launcher`, `layout`, `fullscreen`, `super`) to button symbols; set it to `{}` to disable these extra actions. The default assigns `super` to `BTN_THUMBL` (L3); personal action maps retain their own assignments. The `chords` object maps combinations to ordinary Linux keyboard codes; set it to `{}` to disable typing chords and restore held D-pad arrows/repeat. `chord_axes` lists the horizontal and vertical D-pad axes. Profiles copied before these settings were added inherit them from the current default.
 
-The mapper automatically chooses one accessible controller with all configured controls. If several controllers match, it waits for an explicit selector. Set `device` to an exact name, or integer USB vendor/product IDs, for example `{"name": "Your controller's exact name"}`. Status reports the selected name, axis ranges, grab state and recent Sway commands. Inspect failures with `journalctl --user -u mini-os-gamepad.service -b`.
+The mapper automatically chooses one accessible controller with all configured controls. If several controllers match, it waits for an explicit selector. Set `device` to an exact name, or integer USB vendor/product IDs, for example `{"name": "Your controller's exact name"}`. Status reports the selected name, axis ranges, grab state and recent Sway commands. Inspect failures with `journalctl --user -u minion-gamepad.service -b`.
 
 ## Implementation and tested scope
 
-[mini-os-gamepad](../setup/desktop/mini-os-gamepad) is a Python service running as the logged-in user. It reads Linux evdev controller events, emits keys through a virtual keyboard using [python-evdev/uinput](https://python-evdev.readthedocs.io/en/latest/tutorial.html), and sends window/workspace commands directly to Sway's IPC socket. Setup installs `python3-evdev` from Ubuntu. The source repository contains no controller binary or downloaded driver.
+[minion-gamepad](../setup/desktop/minion-gamepad) is a Python service running as the logged-in user. It reads Linux evdev controller events, emits keys through a virtual keyboard using [python-evdev/uinput](https://python-evdev.readthedocs.io/en/latest/tutorial.html), and sends window/workspace commands directly to Sway's IPC socket. Setup installs `python3-evdev` from Ubuntu. The source repository contains no controller binary or downloaded driver.
 
 Setup loads the packaged `uinput` module and grants its device access to the active local user through a `uaccess` rule, following the pattern used by [AntiMicroX](https://github.com/AntiMicroX/antimicrox/blob/master/other/60-antimicrox-uinput.rules). It does not add the account to the input group. Controller access uses the existing session permissions.
 

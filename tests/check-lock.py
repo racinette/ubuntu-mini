@@ -19,8 +19,8 @@ try:
     if ssh(directory, 'pgrep -x swaylock || true').strip():
         raise ValueError('Begin this test with the session unlocked')
     # Pause the timer BEFORE locking; stopping its cgroup while locked kills the locker.
-    ssh(directory, 'systemctl --user stop mini-os-idle.service')
-    graphical(directory, 'swaymsg "input type:keyboard xkb_switch_layout 0"; swaymsg "exec mini-os-lock"')
+    ssh(directory, 'systemctl --user stop minion-idle.service')
+    graphical(directory, 'swaymsg "input type:keyboard xkb_switch_layout 0"; swaymsg "exec minion-lock"')
     time.sleep(1)
     if not ssh(directory, 'pgrep -x swaylock || true').strip(): raise ValueError('Locker did not start')
     report['locker_started'] = True
@@ -35,7 +35,7 @@ try:
     time.sleep(3)
     if ssh(directory, 'pgrep -x swaylock || true').strip(): raise ValueError('Correct password did not unlock')
     report['correct_password_unlocked'] = True
-    graphical(directory, 'swaymsg "[app_id=mini-os-edit] focus"')
+    graphical(directory, 'swaymsg "[app_id=minion-edit] focus"')
     capture(monitor, directory, 'screen-unlocked')
     report['passed'] = True
 except Exception as error:

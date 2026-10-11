@@ -21,7 +21,7 @@ def windows(node):
         result.extend(windows(child))
     return result
 try:
-    graphical(directory, 'swaymsg "[app_id=mini-os-edit] fullscreen disable"; swaymsg "input type:keyboard xkb_switch_layout 0"')
+    graphical(directory, 'swaymsg "[app_id=minion-edit] fullscreen disable"; swaymsg "input type:keyboard xkb_switch_layout 0"')
     tree = json.loads(graphical(directory, 'swaymsg -t get_tree'))
     if not any(n.get('app_id') == 'firefox_firefox' for n in windows(tree)):
         key(monitor, ['meta_l', 'b'])
@@ -40,7 +40,7 @@ try:
         type_text(monitor, mirror + '/assets/desktop-test.html\n')
         time.sleep(3)
         tree = json.loads(graphical(directory, 'swaymsg -t get_tree'))
-        if any(n['id'] == browser_id and 'ubuntu-mini desktop test' in (n.get('name') or '') for n in windows(tree)):
+        if any(n['id'] == browser_id and 'minion desktop test' in (n.get('name') or '') for n in windows(tree)):
             break
     else:
         raise ValueError('Firefox startup did not reach the local fixture page')

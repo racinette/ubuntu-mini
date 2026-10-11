@@ -14,15 +14,15 @@ args = p.parse_args()
 directory = experiment.select_directory(args.directory)
 report = {}
 monitor = Monitor(directory / 'qmp.sock')
-marker = 'MINI_OS_OFFLINE_HISTORY_' + str(int(time.time()))
+marker = 'MINION_OFFLINE_HISTORY_' + str(int(time.time()))
 try:
     tree = json.loads(graphical(directory, 'swaymsg -t get_tree'))
     def contains_fixture(node):
-        return node.get('app_id') == 'mini-os-edit' or any(contains_fixture(n)
+        return node.get('app_id') == 'minion-edit' or any(contains_fixture(n)
             for n in node.get('nodes', []) + node.get('floating_nodes', []))
     if not contains_fixture(tree):
         raise ValueError('Run check-shell-editing.py first to open the interactive Foot fixture')
-    graphical(directory, 'swaymsg "[app_id=mini-os-edit] focus"; swaymsg "input type:keyboard xkb_switch_layout 0"')
+    graphical(directory, 'swaymsg "[app_id=minion-edit] focus"; swaymsg "input type:keyboard xkb_switch_layout 0"')
     if ssh(directory, 'pgrep -x swaylock || true').strip(): raise ValueError('Unlock before testing')
     monitor.execute('set_link', {'name': 'net0', 'up': False})
     report['network_disconnected'] = True
@@ -30,9 +30,9 @@ try:
     key(monitor, ['ctrl', 'k'])
     type_text(monitor, 'echo ' + marker + '\n')
     time.sleep(2)
-    type_text(monitor, "atuin search --cmd-only --search-mode prefix 'echo " + marker + "' > /home/vmuser/mini-os-offline-search.txt\n")
+    type_text(monitor, "atuin search --cmd-only --search-mode prefix 'echo " + marker + "' > /home/vmuser/minion-offline-search.txt\n")
     time.sleep(2)
-    type_text(monitor, 'atuin doctor > /home/vmuser/mini-os-doctor-interactive.txt 2>&1\n')
+    type_text(monitor, 'atuin doctor > /home/vmuser/minion-doctor-interactive.txt 2>&1\n')
     time.sleep(2)
     capture(monitor, directory, 'offline-history')
 finally:
@@ -46,11 +46,11 @@ for _ in range(30):
         time.sleep(1)
 else:
     raise TimeoutError('SSH did not recover after restoring the VM link')
-result = ssh(directory, 'cat ~/mini-os-offline-search.txt')
+result = ssh(directory, 'cat ~/minion-offline-search.txt')
 report['marker'] = marker
 report['search_result'] = result.strip()
 report['offline_record_and_search_passed'] = result.strip() == 'echo ' + marker
-doctor = ssh(directory, 'cat ~/mini-os-doctor-interactive.txt')
+doctor = ssh(directory, 'cat ~/minion-doctor-interactive.txt')
 (directory / 'atuin-doctor-interactive.txt').write_text(doctor)
 report['interactive_doctor_detected_blesh'] = '"blesh"' in doctor and '"atuin"' in doctor
 report['doctor_sqlite_diagnostic_warning'] = 'database schema is locked' in doctor

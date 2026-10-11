@@ -1,0 +1,24 @@
+[Unit]
+Description=Minion Mihomo proxy
+Wants=network-online.target systemd-resolved.service
+After=network-online.target systemd-resolved.service
+ConditionPathExists=/var/lib/minion/proxy/config.json
+
+[Service]
+Type=simple
+UMask=0077
+ExecStartPre=/usr/bin/python3 /usr/local/lib/minion-proxy/manage.py validate
+ExecStart=/usr/bin/python3 /usr/local/lib/minion-proxy/manage.py run
+ExecStartPost=/usr/bin/python3 /usr/local/lib/minion-proxy/manage.py activate-dns
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+LimitNOFILE=1048576
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/minion/proxy
+
+[Install]
+WantedBy=multi-user.target

@@ -19,19 +19,19 @@ try:
     if ssh(directory, 'pgrep -x swaylock || true').strip():
         raise ValueError('Unlock the graphical session before testing editor input')
     fixture = Path(__file__).with_name('fixtures') / 'shell-test.bash'
-    ssh(directory, 'cat > ~/mini-os-shell-test.bash', fixture.read_text())
-    graphical(directory, 'swaymsg "[app_id=mini-os-edit] kill" || true')
-    ssh(directory, 'rm -f ~/mini-os-shell-startup.txt')
-    graphical(directory, 'swaymsg exec "foot --app-id=mini-os-edit bash --rcfile /home/vmuser/mini-os-shell-test.bash -i"')
+    ssh(directory, 'cat > ~/minion-shell-test.bash', fixture.read_text())
+    graphical(directory, 'swaymsg "[app_id=minion-edit] kill" || true')
+    ssh(directory, 'rm -f ~/minion-shell-startup.txt')
+    graphical(directory, 'swaymsg exec "foot --app-id=minion-edit bash --rcfile /home/vmuser/minion-shell-test.bash -i"')
     for _ in range(30):
-        if ssh(directory, 'test ! -f ~/mini-os-shell-startup.txt || cat ~/mini-os-shell-startup.txt').strip():
+        if ssh(directory, 'test ! -f ~/minion-shell-startup.txt || cat ~/minion-shell-startup.txt').strip():
             break
         time.sleep(.5)
     else:
         raise ValueError('Fresh Foot test shell did not start')
-    graphical(directory, 'swaymsg "[app_id=mini-os-edit] focus"; swaymsg "[app_id=mini-os-edit] fullscreen enable"; swaymsg "input type:keyboard xkb_switch_layout 0"')
+    graphical(directory, 'swaymsg "[app_id=minion-edit] focus"; swaymsg "[app_id=minion-edit] fullscreen enable"; swaymsg "input type:keyboard xkb_switch_layout 0"')
     # Focus the fresh fixture shell with US selected.
-    startup = ssh(directory, 'cat ~/mini-os-shell-startup.txt').splitlines()
+    startup = ssh(directory, 'cat ~/minion-shell-startup.txt').splitlines()
     if len(startup) != 2 or not startup[0].startswith('0.4') or startup[1] != 'true':
         raise ValueError('Fresh interactive shell did not load both integrations')
     report['startup'] = startup
@@ -50,10 +50,10 @@ try:
         type_text(monitor, text)
         key(monitor, keys)
         time.sleep(0.5)
-        ssh(directory, 'rm -f ~/mini-os-edit-result.txt')
+        ssh(directory, 'rm -f ~/minion-edit-result.txt')
         key(monitor, ['ctrl', 'f12'])
         time.sleep(1)
-        actual = ssh(directory, 'cat ~/mini-os-edit-result.txt')
+        actual = ssh(directory, 'cat ~/minion-edit-result.txt')
         report['cases'].append({'name': name, 'input': text, 'expected': expected, 'actual': actual, 'passed': actual == expected})
         if actual != expected: raise ValueError('Unexpected editing result: ' + name)
     key(monitor, ['ctrl', 'a'])
@@ -62,18 +62,18 @@ try:
     key(monitor, ['alt', 'shift'])
     type_text(monitor, 'ghbdtn')
     key(monitor, ['backspace'])
-    ssh(directory, 'rm -f ~/mini-os-edit-result.txt')
+    ssh(directory, 'rm -f ~/minion-edit-result.txt')
     key(monitor, ['ctrl', 'f12'])
     time.sleep(1)
-    actual = ssh(directory, 'cat ~/mini-os-edit-result.txt')
+    actual = ssh(directory, 'cat ~/minion-edit-result.txt')
     report['russian_backspace'] = actual
     if actual != 'приве': raise ValueError('Russian input/backspace did not change actual text')
     time.sleep(1)
     key(monitor, ['ctrl', 'backspace'])
-    ssh(directory, 'rm -f ~/mini-os-edit-result.txt')
+    ssh(directory, 'rm -f ~/minion-edit-result.txt')
     key(monitor, ['ctrl', 'f12'])
     time.sleep(1)
-    actual = ssh(directory, 'cat ~/mini-os-edit-result.txt')
+    actual = ssh(directory, 'cat ~/minion-edit-result.txt')
     if actual != '': raise ValueError('Russian Ctrl+Backspace did not delete the word')
     report['russian_ctrl_backspace'] = True
     key(monitor, ['alt', 'shift'])

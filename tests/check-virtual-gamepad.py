@@ -33,7 +33,7 @@ def main():
         if events is not None:
             request['events'] = events
         code = '''import json,socket
-s=socket.socket(socket.AF_UNIX);s.connect('/run/mini-os-gamepad-test/control.sock')
+s=socket.socket(socket.AF_UNIX);s.connect('/run/minion-gamepad-test/control.sock')
 s.sendall((%r+'\\n').encode());print(s.makefile().readline())
 ''' % json.dumps(request)
         result = json.loads(root('python3 -c ' + shlex.quote(code)))
@@ -72,17 +72,17 @@ s.sendall((%r+'\\n').encode());print(s.makefile().readline())
     try:
         if not ssh(directory, 'pgrep -x sway || true').strip():
             raise ValueError('Authenticate into the graphical session before this test')
-        ssh(directory, 'mkdir -p ~/mini-os-gamepad-fixture')
+        ssh(directory, 'mkdir -p ~/minion-gamepad-fixture')
         for filename in ('virtual-gamepad.py', 'gamepad-http.py', 'gamepad-test.html'):
             subprocess.run(['scp', '-i', str(directory / 'ssh-key'), '-P', str(state['ssh_port']),
                             '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=accept-new',
                             '-o', 'UserKnownHostsFile=' + str(directory / 'known_hosts'),
                             str(experiment.PROJECT / 'tests/fixtures' / filename),
-                            'vmuser@127.0.0.1:mini-os-gamepad-fixture/' + filename], check=True, capture_output=True)
-        root('modprobe uinput; modprobe joydev; systemd-run --quiet --unit=mini-os-virtual-gamepad python3 /home/vmuser/mini-os-gamepad-fixture/virtual-gamepad.py /run/mini-os-gamepad-test')
+                            'vmuser@127.0.0.1:minion-gamepad-fixture/' + filename], check=True, capture_output=True)
+        root('modprobe uinput; modprobe joydev; systemd-run --quiet --unit=minion-virtual-gamepad python3 /home/vmuser/minion-gamepad-fixture/virtual-gamepad.py /run/minion-gamepad-test')
         daemon_started = True
-        root('for attempt in $(seq 1 30); do test ! -S /run/mini-os-gamepad-test/control.sock || exit 0; sleep .1; done; exit 1')
-        graphical(directory, 'systemctl --user stop mini-os-gamepad-http.service 2>/dev/null || true; systemd-run --user --quiet --unit=mini-os-gamepad-http python3 /home/vmuser/mini-os-gamepad-fixture/gamepad-http.py')
+        root('for attempt in $(seq 1 30); do test ! -S /run/minion-gamepad-test/control.sock || exit 0; sleep .1; done; exit 1')
+        graphical(directory, 'systemctl --user stop minion-gamepad-http.service 2>/dev/null || true; systemd-run --user --quiet --unit=minion-gamepad-http python3 /home/vmuser/minion-gamepad-fixture/gamepad-http.py')
         created = control('create')
         root('udevadm settle')
         sysname = created['sysname']
@@ -169,7 +169,7 @@ print(json.dumps({{'name':(p/'name').read_text().strip(),'nodes':nodes,
         if daemon_started:
             try:
                 control('stop')
-                root('for attempt in $(seq 1 30); do test -e /run/mini-os-gamepad-test || exit 0; sleep .1; done; exit 1')
+                root('for attempt in $(seq 1 30); do test -e /run/minion-gamepad-test || exit 0; sleep .1; done; exit 1')
                 report['fixture_removed'] = True
             except Exception as error:
                 report['cleanup_error'] = str(error)

@@ -18,7 +18,7 @@ args = parser.parse_args()
 def write(path, text, mode=0o644):
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    temporary = target.with_name(target.name + '.mini-os.tmp')
+    temporary = target.with_name(target.name + '.minion.tmp')
     temporary.write_text(text)
     temporary.chmod(mode)
     temporary.replace(target)
@@ -52,26 +52,26 @@ finally:
 # Our no-recommends install includes them explicitly; they grant video-group
 # writes to screen backlights. New group membership takes effect next login.
 run('usermod', '-a', '-G', 'video', user.pw_name)
-for name in ('mini-os-session', 'mini-os-session-ready', 'mini-os-lock', 'mini-os-status', 'mini-os-gamepad', 'mini-os-window-picker'):
+for name in ('minion-session', 'minion-session-ready', 'minion-lock', 'minion-status', 'minion-gamepad', 'minion-window-picker'):
     write('/usr/local/bin/' + name, HERE.joinpath(name).read_text(), 0o755)
-write('/etc/mini-os/sway.conf', HERE.joinpath('sway.conf').read_text())
-write('/etc/mini-os/gamepad.json', HERE.joinpath('gamepad.json').read_text())
+write('/etc/minion/sway.conf', HERE.joinpath('sway.conf').read_text())
+write('/etc/minion/gamepad.json', HERE.joinpath('gamepad.json').read_text())
 # logind grants uinput access to the active local user, as used by common mappers.
 # Do not grant access to all keyboards or add the user to the input group.
-write('/etc/udev/rules.d/60-mini-os-gamepad-uinput.rules',
+write('/etc/udev/rules.d/60-minion-gamepad-uinput.rules',
       'SUBSYSTEM=="misc", KERNEL=="uinput", OPTIONS+="static_node=uinput", TAG+="uaccess"\n')
-write('/etc/modules-load.d/mini-os-gamepad.conf', 'uinput\n')
+write('/etc/modules-load.d/minion-gamepad.conf', 'uinput\n')
 run('modprobe', 'uinput')
 run('udevadm', 'control', '--reload-rules')
 run('udevadm', 'trigger', '--action=add', '--subsystem-match=backlight')
 run('udevadm', 'trigger', '--action=add', '--subsystem-match=misc', '--sysname-match=uinput')
 run('udevadm', 'settle')
-for name in ('mini-os-gamepad', 'mini-os-screen-lock'):
+for name in ('minion-gamepad', 'minion-screen-lock'):
     write('/etc/systemd/user/' + name + '.service', HERE.joinpath(name + '.service').read_text())
 write('/etc/greetd/config.toml', '''[terminal]
 vt = 1
 [default_session]
-command = "agreety --cmd /usr/local/bin/mini-os-session"
+command = "agreety --cmd /usr/local/bin/minion-session"
 user = "_greetd"
 ''')
 write('/etc/systemd/system/greetd.service.d/tty.conf', '''[Unit]
@@ -97,33 +97,31 @@ default=gtk
 org.freedesktop.impl.portal.ScreenCast=wlr
 org.freedesktop.impl.portal.Screenshot=wlr
 ''')
-write('/etc/systemd/user/mini-os-session.target', '''[Unit]
-Description=ubuntu-mini graphical session services
+write('/etc/systemd/user/minion-session.target', '''[Unit]
+Description=Minion graphical session services
 BindsTo=graphical-session.target
 After=graphical-session.target
-Wants=mako.service mini-os-polkit.service mini-os-idle.service mini-os-network-applet.service mini-os-bluetooth-applet.service mini-os-gamepad.service
+Wants=mako.service minion-polkit.service minion-idle.service minion-network-applet.service minion-bluetooth-applet.service minion-gamepad.service
 ''')
 write('/etc/systemd/user/mako.service.d/session.conf', '''[Unit]
-PartOf=mini-os-session.target
+PartOf=minion-session.target
 After=graphical-session.target
 ''')
 for portal in ('xdg-desktop-portal', 'xdg-desktop-portal-gtk', 'xdg-desktop-portal-wlr'):
     write('/etc/systemd/user/' + portal + '.service.d/session.conf', '''[Unit]
-PartOf=mini-os-session.target
+PartOf=minion-session.target
 After=graphical-session.target
 ''')
-# Retire the experimental duplicate unit; use Mako's packaged D-Bus service.
-Path('/etc/systemd/user/mini-os-notifications.service').unlink(missing_ok=True)
 services = {
     'polkit': '/usr/libexec/polkit-mate-authentication-agent-1',
-    'idle': "/usr/bin/swayidle -w timeout 300 'mini-os-lock' timeout 600 'swaymsg output * power off' resume 'swaymsg output * power on' before-sleep 'mini-os-lock'",
+    'idle': "/usr/bin/swayidle -w timeout 300 'minion-lock' timeout 600 'swaymsg output * power off' resume 'swaymsg output * power on' before-sleep 'minion-lock'",
     'network-applet': '/usr/bin/nm-applet',
     'bluetooth-applet': '/usr/bin/blueman-applet',
 }
 for name, command in services.items():
-    write('/etc/systemd/user/mini-os-' + name + '.service', f'''[Unit]
-Description=ubuntu-mini {name}
-PartOf=mini-os-session.target
+    write('/etc/systemd/user/minion-' + name + '.service', f'''[Unit]
+Description=Minion {name}
+PartOf=minion-session.target
 After=graphical-session.target
 [Service]
 ExecStart={command}
@@ -131,7 +129,7 @@ Restart=on-failure
 RestartSec=3
 ''')
 # Merge the renderer through Netplan; retain existing interface matches/DHCP.
-write('/etc/netplan/90-mini-os-renderer.yaml', 'network:\n  version: 2\n  renderer: NetworkManager\n', 0o600)
+write('/etc/netplan/90-minion-renderer.yaml', 'network:\n  version: 2\n  renderer: NetworkManager\n', 0o600)
 run('netplan', 'generate')
 # A Server installation leaves networkd enabled. Restarting that unused backend
 # during upgrades removed the VM's address while NM still showed 'connected'.

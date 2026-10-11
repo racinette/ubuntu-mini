@@ -44,6 +44,8 @@ sudo ./setup.sh --asset-url http://10.0.2.2:43385/assets
 
 APT still uses the guest's configured package repositories. Setup verifies shell/browser checksums and Snap assertions. Some tests instead launch with `--setup-assets` to expose the fixed host cache as a read-only 9p directory.
 
+The proxy component currently downloads its pinned Mihomo release directly from upstream, including when a shell/browser cache is selected. It skips that download when the installed binary already matches its manifest. The setup cache does not yet cover proxy artifacts.
+
 For a single reviewed artifact:
 
 ```bash

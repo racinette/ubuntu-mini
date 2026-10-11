@@ -46,9 +46,9 @@ print(json.dumps({'gpt':json.loads(subprocess.check_output(['sfdisk','--json','/
                 if time.monotonic() >= deadline:
                     raise
                 time.sleep(2)
-        root('apt-get update >/tmp/mini-os-git-apt.log; DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git >>/tmp/mini-os-git-apt.log')
-        origin = '/home/vmuser/mini-os-source-origin'
-        clone = '/home/vmuser/mini-os-source-clone'
+        root('apt-get update >/tmp/minion-git-apt.log; DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git >>/tmp/minion-git-apt.log')
+        origin = '/home/vmuser/minion-source-origin'
+        clone = '/home/vmuser/minion-source-clone'
         ssh(directory, f'test ! -e {origin}; test ! -e {clone}')
         sources = stage_setup(directory, origin, include_gitignore=True)
         output = ssh(directory, f'cd {origin}; git init -q; git add .; git -c user.name="VM fixture" -c user.email="fixture@example.invalid" commit -qm "Source setup fixture"; git clone -q {origin} {clone}; cd {clone}; git ls-files')
@@ -67,7 +67,7 @@ print(json.dumps({'gpt':json.loads(subprocess.check_output(['sfdisk','--json','/
         result = json.loads(root('python3 -c ' + shlex.quote('''
 import json
 from pathlib import Path
-run=Path(json.loads(Path('/var/lib/mini-os/setup/last-success.json').read_text())['run'])
+run=Path(json.loads(Path('/var/lib/minion/setup/last-success.json').read_text())['run'])
 print((run/'result.json').read_text())
 ''')))
         report['setup_result'] = result

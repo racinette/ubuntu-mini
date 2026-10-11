@@ -46,7 +46,7 @@ class Handler(BaseHTTPRequestHandler):
     def respond(self, head):
         path = unquote(urlsplit(self.path).path)
         if path == "/health":
-            data = b"mini-os local mirror ready\n"
+            data = b"minion local mirror ready\n"
             self.send_response(200)
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
@@ -61,7 +61,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self.send_response(200)
             self.send_header("Content-Length", str(target.stat().st_size))
-            self.send_header("X-Mini-OS-Cache", "HIT")
+            self.send_header("X-Minion-Cache", "HIT")
             self.end_headers()
             if not head:
                 with target.open("rb") as file:
@@ -93,7 +93,7 @@ class Handler(BaseHTTPRequestHandler):
                             self.send_header("Content-Type", "application/octet-stream")
                             if response.headers.get("Content-Length"):
                                 self.send_header("Content-Length", response.headers["Content-Length"])
-                            self.send_header("X-Mini-OS-Cache", "MISS")
+                            self.send_header("X-Minion-Cache", "MISS")
                             self.end_headers()
                             headers_sent = True
                             connected = True
@@ -121,7 +121,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "application/octet-stream")
             self.send_header("Content-Length", str(size))
-            self.send_header("X-Mini-OS-Cache", "HIT" if cache_hit else "MISS")
+            self.send_header("X-Minion-Cache", "HIT" if cache_hit else "MISS")
             self.end_headers()
             if not head:
                 with target.open("rb") as file:

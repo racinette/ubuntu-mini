@@ -15,7 +15,7 @@ PROJECT = Path(__file__).resolve().parents[1]
 # put BTN_X at BTN_NORTH (0x133), and BTN_Y at BTN_WEST (0x134).
 # Keep this fixture independent of FACE_NAMES and the loaded configuration.
 XBOX_FACE_CODES = {'A': 0x130, 'B': 0x131, 'X': 0x133, 'Y': 0x134}
-loader = importlib.machinery.SourceFileLoader('mapper', str(PROJECT / 'setup/desktop/mini-os-gamepad'))
+loader = importlib.machinery.SourceFileLoader('mapper', str(PROJECT / 'setup/desktop/minion-gamepad'))
 spec = importlib.util.spec_from_loader(loader.name, loader)
 mapper = importlib.util.module_from_spec(spec)
 loader.exec_module(mapper)
@@ -38,11 +38,11 @@ def main():
     constants = {name: int(value, 0) for name, value in re.findall(
         r'^#define\s+((?:KEY|BTN|ABS|EV)_\w+)\s+(0x[\da-fA-F]+|\d+)\b', header, re.M)}
     codes = SimpleNamespace(**constants, ecodes=constants)
-    with tempfile.TemporaryDirectory(prefix='mini-os-chord-test-') as temporary:
+    with tempfile.TemporaryDirectory(prefix='minion-chord-test-') as temporary:
         directory = Path(temporary)
 
         def path(value):
-            return PROJECT / 'setup/desktop/gamepad.json' if str(value) == '/etc/mini-os/gamepad.json' else Path(value)
+            return PROJECT / 'setup/desktop/gamepad.json' if str(value) == '/etc/minion/gamepad.json' else Path(value)
 
         with patch.object(mapper, 'Path', side_effect=path):
             config = mapper.configuration(directory / 'no-personal-profile.json', codes)

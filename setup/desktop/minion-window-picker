@@ -25,7 +25,7 @@ def windows(node, workspace=''):
 def main():
     if os.geteuid() == 0 or not os.environ.get('SWAYSOCK'):
         raise SystemExit('Run the window picker inside your normal Sway session')
-    lock_path = Path(os.environ['XDG_RUNTIME_DIR']) / 'mini-os-window-picker.lock'
+    lock_path = Path(os.environ['XDG_RUNTIME_DIR']) / 'minion-window-picker.lock'
     with lock_path.open('w') as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)

@@ -2,7 +2,7 @@
 # Standalone live-USB installer. Keep the Python payload in this file so it
 # can also be downloaded without cloning the repository.
 set -eu
-exec python3 - "$0" "$@" <<'MINI_OS_INSTALL_PYTHON'
+exec python3 - "$0" "$@" <<'MINION_INSTALL_PYTHON'
 import argparse
 import getpass
 import hashlib
@@ -25,8 +25,8 @@ GIB = 1024**3
 ESP = 'C12A7328-F81F-11D2-BA4B-00A0C93EC93B'
 LINUX = '0FC63DAF-8483-4772-8E79-3D69D8477DE4'
 MINIMUM = 16 * GIB
-WORK = Path('/run/ubuntu-mini-install')
-UNIT = 'ubuntu-mini-install'
+WORK = Path('/run/minion-install')
+UNIT = 'minion-install'
 SUPPORTED = '24.04.5'
 
 
@@ -107,7 +107,7 @@ def make_plan(table, requested=None):
         raise ValueError('Not enough unused GPT partition slots')
     new = []
     for number, name, length, ptype in zip(numbers,
-            ('ubuntu-mini-efi', 'ubuntu-mini-boot', 'ubuntu-mini-root'),
+            ('minion-efi', 'minion-boot', 'minion-root'),
             (GIB, 2 * GIB, allocation - 3 * GIB), (ESP, LINUX, LINUX)):
         new.append(dict(number=number, name=name, offset=start, size=length, type=ptype))
         start += length
@@ -286,14 +286,14 @@ def progress(stage, message):
     temporary.write_text(json.dumps(value) + '\n')
     temporary.chmod(0o600)
     temporary.replace(WORK / 'status.json')
-    print(f'ubuntu-mini: {stage}: {message}', flush=True)
+    print(f'minion: {stage}: {message}', flush=True)
 
 
 def status_record():
     try:
         return json.loads((WORK / 'status.json').read_text())
     except (OSError, ValueError):
-        return dict(stage='not-started', message='No ubuntu-mini installation status is available.')
+        return dict(stage='not-started', message='No minion installation status is available.')
 
 
 def service_properties():
@@ -305,7 +305,7 @@ def service_properties():
 
 def show_status():
     record = status_record()
-    print(f'ubuntu-mini: {record["stage"]}: {record["message"]}', flush=True)
+    print(f'minion: {record["stage"]}: {record["message"]}', flush=True)
     for key, value in service_properties().items():
         print(f'{key}={value}', flush=True)
     state = Path('/run/subiquity/server-state')
@@ -316,7 +316,7 @@ def show_status():
 
 
 def follow_progress():
-    print('ubuntu-mini installation progress\n'
+    print('minion installation progress\n'
           'Ctrl+C leaves this viewer; installation continues.\n'
           'From another console: sudo sh ./install.sh --status or --follow\n'
           'Keep the USB inserted until the automatic reboot.\n', flush=True)
@@ -410,7 +410,7 @@ def launch_worker():
             if value == 'ERROR':
                 raise ValueError('Ubuntu installer reported ERROR; inspect /var/log/installer/ and the service log')
             if time.monotonic() - heartbeat >= 15:
-                print('ubuntu-mini: installer process is running; state: ' + value, flush=True)
+                print('minion: installer process is running; state: ' + value, flush=True)
                 heartbeat = time.monotonic()
             time.sleep(1)
         if child.returncode or not (WORK / 'verification.json').exists():
@@ -498,8 +498,8 @@ def post_install(plan):
     (WORK / 'verification.json').write_text(verification)
     logs = Path('/target/var/log/installer')
     logs.mkdir(parents=True, exist_ok=True)
-    private_write(logs / 'ubuntu-mini-verification.json', verification)
-    private_write(logs / 'ubuntu-mini-storage-plan.json', json.dumps(plan, indent=2) + '\n')
+    private_write(logs / 'minion-verification.json', verification)
+    private_write(logs / 'minion-storage-plan.json', json.dumps(plan, indent=2) + '\n')
     # No passphrase/keyfile is copied into the target. The YAML carries only
     # the path to this temporary file, never its contents.
     (WORK / 'luks.key').unlink(missing_ok=True)
@@ -509,7 +509,7 @@ def post_install(plan):
 
 def start_install(args, plan, snap, data):
     import yaml
-    if WORK.exists() or Path('/run/mini-os-install').exists() or Path('/autoinstall.yaml').exists():
+    if WORK.exists() or Path('/autoinstall.yaml').exists():
         raise ValueError('An installation configuration already exists; boot a fresh live session')
     password_hash = run('openssl', 'passwd', '-6', '-stdin', input=data['login_password']).stdout.strip()
     plan['installer_version'] = SUPPORTED
@@ -530,7 +530,7 @@ def start_install(args, plan, snap, data):
         'packages': ['cryptsetup-initramfs', 'efibootmgr', 'mokutil'],
         'early-commands': [['sh', helper, '--verify-plan', str(WORK / 'plan.json')]],
         'late-commands': [['sh', helper, '--finish-plan', str(WORK / 'plan.json')]],
-        'error-commands': [['sh', '-c', 'rm -f /run/ubuntu-mini-install/luks.key']],
+        'error-commands': [['sh', '-c', 'rm -f /run/minion-install/luks.key']],
         'shutdown': 'reboot',
     })
     config['ssh'] = {'install-server': True, 'authorized-keys': data.get('ssh_authorized_keys', []),
@@ -591,7 +591,7 @@ asyncio.run(check())
 
 
 def main():
-    parser = argparse.ArgumentParser(prog='install.sh', description='ubuntu-mini: install encrypted Ubuntu Server into unallocated GPT space.')
+    parser = argparse.ArgumentParser(prog='install.sh', description='minion: install encrypted Ubuntu Server into unallocated GPT space.')
     parser.add_argument('--disk', help='Target disk; required if automatic selection is ambiguous')
     parser.add_argument('--size', type=size_bytes, help='Total allocation: 250G is GiB, 250GB is decimal; default largest free region')
     parser.add_argument('--check', action='store_true', help='Print a read-only storage plan; do not launch installation')
@@ -632,14 +632,13 @@ def main():
                 raise ValueError('Disk identity changed')
             verify_original(plan)
         return
-    if not args.check and (WORK.exists() or Path('/run/mini-os-install').exists()
-                           or Path('/autoinstall.yaml').exists()):
+    if not args.check and (WORK.exists() or Path('/autoinstall.yaml').exists()):
         raise ValueError('A previous installation configuration exists. Boot a fresh live USB session; '
                          'then use --check to inspect available space before retrying.')
     if not args.check:
-        print('ubuntu-mini: checking the live environment and installer state...', flush=True)
+        print('minion: checking the live environment and installer state...', flush=True)
     snap = None if args.check else live_environment()
-    print('ubuntu-mini: inspecting the disk and planning free-space allocation...', flush=True)
+    print('minion: inspecting the disk and planning free-space allocation...', flush=True)
     plan = inventory(args.disk, args.size)
     print(json.dumps(plan, indent=2), flush=True)
     if args.check:
@@ -649,10 +648,10 @@ def main():
         answer = tty_input(f'Create {plan["allocation"]/GIB:.2f} GiB of encrypted Ubuntu on {plan["disk"]}? Type INSTALL: ')
         if answer != 'INSTALL':
             raise ValueError('Installation cancelled; no disk changes made')
-    if WORK.exists() or Path('/run/mini-os-install').exists() or Path('/autoinstall.yaml').exists():
+    if WORK.exists() or Path('/autoinstall.yaml').exists():
         raise ValueError('An installation configuration already exists; boot a fresh live session')
     try:
-        print('ubuntu-mini: validating configuration before starting installation...', flush=True)
+        print('minion: validating configuration before starting installation...', flush=True)
         start_install(args, plan, snap, data)
     except Exception:
         # Leave the non-secret plan/logs available for diagnosis.
@@ -674,4 +673,4 @@ if __name__ == '__main__':
         if isinstance(error, subprocess.CalledProcessError) and error.stderr:
             print(error.stderr[-4000:], file=sys.stderr)
         sys.exit(1)
-MINI_OS_INSTALL_PYTHON
+MINION_INSTALL_PYTHON

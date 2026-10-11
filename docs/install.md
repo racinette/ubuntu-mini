@@ -35,7 +35,7 @@ OpenSSH is installed with account-password login enabled. Supplying public keys 
 
 ## Installer execution and logs
 
-The helper validates its generated configuration with the bundled Subiquity schema and stages the complete launcher before handing control to an independent `ubuntu-mini-install` service. That service stops the idle interactive installer, saves its session under `/run/ubuntu-mini-install/previous-session`, and launches a fresh server with Curtin storage version 2 explicitly selected. The handoff continues even if the original shell closes. Curtin creates partitions and installs the standard Ubuntu Server system from the USB. Existing partition entries are included as preserved objects, including entries physically after the new partitions.
+The helper validates its generated configuration with the bundled Subiquity schema and stages the complete launcher before handing control to an independent `minion-install` service. That service stops the idle interactive installer, saves its session under `/run/minion-install/previous-session`, and launches a fresh server with Curtin storage version 2 explicitly selected. The handoff continues even if the original shell closes. Curtin creates partitions and installs the standard Ubuntu Server system from the USB. Existing partition entries are included as preserved objects, including entries physically after the new partitions.
 
 Version 24.04.5 of Subiquity is required. Installer refresh is disabled to keep execution consistent with the tested version. The preflight refuses an installer that has already begun installation. Do not use the interactive storage screen while the helper is running.
 
@@ -46,14 +46,14 @@ Reconnect to progress or inspect status from another shell:
 ```bash
 sudo sh ./install.sh --follow
 sudo sh ./install.sh --status
-sudo journalctl -b -u ubuntu-mini-install --no-pager -n 30
+sudo journalctl -b -u minion-install --no-pager -n 30
 ```
 
 Ctrl+C leaves the viewer without stopping installation. The journal contains launch and service events; the viewer also reads `/var/log/installer/curtin-install.log`, because not all installer progress appears in the journal.
 
 The installer configures `crypttab`, filesystem mounts, initramfs and signed Ubuntu EFI boot files on the new ESP. It registers Ubuntu's boot entry and leaves other operating systems available through the firmware boot menu. It does not mount other ESPs or generate operating-system-specific GRUB menu entries.
 
-Successful installation triggers a reboot; remove the USB and unlock Ubuntu with the encryption passphrase. If the boot screen is blank, Ctrl+Alt+F1 can reveal the text unlock prompt. Installation verification and the storage plan are retained under `/var/log/installer/ubuntu-mini-*` on the installed system. If a step fails, inspect the logs and start a fresh USB session before retrying. A failure after disk writes may leave new partitions occupying the chosen region; inspect them and explicitly reclaim only the unwanted Ubuntu partitions before retrying. If the launch failed before partitioning, no reclamation is needed. The new version refuses leftover configuration from either the earlier helper or the current one; reboot into a fresh USB session and run `--check` before retrying.
+Successful installation triggers a reboot; remove the USB and unlock Ubuntu with the encryption passphrase. If the boot screen is blank, Ctrl+Alt+F1 can reveal the text unlock prompt. Installation verification and the storage plan are retained under `/var/log/installer/minion-*` on the installed system. If a step fails, inspect the logs and start a fresh USB session before retrying. A failure after disk writes may leave new partitions occupying the chosen region; inspect them and explicitly reclaim only the unwanted Ubuntu partitions before retrying. If the launch failed before partitioning, no reclamation is needed. The helper refuses an existing installation configuration; reboot into a fresh USB session and run `--check` before retrying.
 
 ## Local mirrors and unattended credentials
 

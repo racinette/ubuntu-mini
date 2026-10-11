@@ -62,7 +62,7 @@ try:
     print("Wrong LUKS passphrase was refused", flush=True)
     time.sleep(1)
     sock.sendall(credentials["luks_passphrase"].encode() + b"\n")
-    position = wait_for(['mini-os-vm login:'], position)
+    position = wait_for(['minion-vm login:'], position)
     report['correct_luks_passphrase_booted'] = True
     capture('user-login-prompt')
     print('Correct passphrase booted Ubuntu to a separate login prompt', flush=True)
@@ -70,9 +70,9 @@ try:
     position = wait_for(['Password:'], position)
     report['separate_user_password_prompt_observed'] = True
     sock.sendall(credentials['login_password'].encode() + b'\n')
-    wait_for(['vmuser@mini-os-vm:'], position)
-    sock.sendall(b"printf 'MINI_OS_CONSOLE_LOGIN_OK\\n'\n")
-    wait_for(['MINI_OS_CONSOLE_LOGIN_OK'], position)
+    wait_for(['vmuser@minion-vm:'], position)
+    sock.sendall(b"printf 'MINION_CONSOLE_LOGIN_OK\\n'\n")
+    wait_for(['MINION_CONSOLE_LOGIN_OK'], position)
     report['password_login_succeeded'] = True
     capture('console-login')
     sock.sendall(b'exit\n')

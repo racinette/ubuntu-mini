@@ -1,0 +1,18 @@
+[
+  "go",
+  "node",
+  "pnpm",
+  "npm:typescript",
+  "npm:typescript-language-server",
+  "npm:pyright",
+  "go:golang.org/x/tools/gopls",
+  "go:github.com/go-delve/delve/cmd/dlv",
+  "cmake",
+  "ninja",
+  "gh",
+  "git-lfs",
+  "shellcheck",
+  "shfmt",
+  "jq",
+  "aqua:neovim/neovim"
+]

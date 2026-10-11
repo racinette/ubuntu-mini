@@ -6,6 +6,15 @@ case ":$PATH:" in
 esac
 [[ ${MINION_SHELL_LOADED-} ]] && return
 MINION_SHELL_LOADED=1
+if [[ -d "$HOME/.cargo/bin" ]]; then
+  case ":$PATH:" in
+    *":$HOME/.cargo/bin:"*) ;;
+    *) export PATH="$HOME/.cargo/bin:$PATH" ;;
+  esac
+fi
+if command -v mise >/dev/null 2>&1; then
+  eval "$(mise activate bash)"
+fi
 source /usr/local/share/blesh/ble.sh --attach=none
 eval "$(/usr/local/bin/atuin init bash)"
 # Keep '?' ordinary shell input; this profile uses Atuin for local history.

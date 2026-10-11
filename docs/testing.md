@@ -16,6 +16,7 @@ python3 tests/check-install-launch.py
 python3 tests/check-proxy.py
 python3 tests/check-hhd-artifacts.py
 python3 tests/check-coding-clis.py
+python3 tests/check-development.py
 ```
 
 The setup check verifies the root entry point, source staging and coordinator paths without installing packages. The browser check isolates Snap command selection and existing-browser retention. The chord check feeds independent Xbox face codes through all 24 named shortcuts in 480 press/release orders, and checks immediate Backspace holds, fixed versus trigger-modified shortcuts, terminal guards, invalid/rolling gestures, selection/repeat/neutral transitions, persistent legend capture, profile validation, lifecycle cleanup and held-arrow compatibility with shortcuts disabled. It creates no host input device and reads Linux key codes from `/usr/include/linux/input-event-codes.h`.
@@ -25,6 +26,8 @@ The status bar check uses battery/hwmon fixtures and isolated command/API provid
 The HHD artifact check refuses corrupted downloads and altered cache entries, checks temporary-file cleanup, and verifies that matching cached releases need no network access. The setup-layout check includes default HHD installation, its read-only preflight and all component source hashes. Actual power controls require the [on-device checks](validation-plan.md#on-device-backlog).
 
 The coding CLI check verifies that installers and initial version checks drop root privileges, use the selected user's home and groups, and exclude root credentials/settings from their environment. It also checks that existing commands are retained without execution, failed downloads are cleaned up before shell execution, missing installed commands fail setup, interactive Bash sets PATH without duplication and preflight is read-only. The setup-layout check includes these tools in ordinary provisioning and source staging. These checks do not download releases or start model sessions.
+
+The development check verifies user privilege/environment isolation, immediate latest-version installation for missing defaults, retention of selected mise/Rust/Python versions, refusal of conflicting Docker runtimes/repositories and read-only preflight. It downloads no runtimes and changes no host services.
 
 ## Optional proxy container test
 
@@ -200,6 +203,12 @@ python3 tests/check-gamepad-mapping.py "$VM_DIR"
 The synthetic controller is created inside the guest. Mapping tests use a Firefox text-field fixture to exercise editing keys, immediate/held Backspace, shortcut editing, navigation and right-stick selection; no browser navigation shortcuts are assigned. They also check constituent suppression, Sway focus/move/resize/workspaces, window shortcuts, persistent legend, picker/launcher, passthrough, reconnect, lock, inactive console and restart behavior. Exhaustive shortcut orders and terminal guards are checked separately by the host checker. The test removes its controller and HTTP service afterward. Physical trigger axes, adjacent presses and comfort remain device checks.
 
 ## Recorded results and current limits
+
+On 2026-10-11, normal setup gained mise-managed Go, Node/npm, pnpm, TypeScript and supporting tools; rustup stable with its development components; uv-managed current CPython and Ruff; and Docker CE/Buildx/Compose from Docker's signed repository. Host checks passed target-user isolation, partial-download refusal, immediate latest installs, stable CPython selection excluding prereleases/free-threaded variants, retained defaults, repository/runtime conflict refusal, read-only preflight, source staging and syntax.
+
+A disposable native ARM64 Ubuntu 24.04 container installed all requested tools from upstream. Real Go, Rust and TypeScript compile/run checks passed, along with pnpm scripts, uv isolated dependency installation, pytest, Ruff, Pyright and a CMake/Ninja C++ build. Ubuntu's system Python remained 3.12. Automatic Node switching between global current and project Node 24 passed both plain interactive Bash and the actual Minion Bash/ble.sh/Atuin integration in a PTY. A newly populated mise config installed both runtime/tool batches successfully. Rerunning retained a deliberately selected Node 24 global default, custom Rust default, Python executable link, mise configuration, Docker configuration and daemon PID. A home Python pin also retained the user's selection while the newest stable interpreter remained installed. [Private development report](../.local/development-qa/report.json), [rerun report](../.local/development-qa/rerun-report.json).
+
+Docker Compose built a local image from the Go executable, ran it successfully without sudo as the selected user, and removed its service/network/image. Nested overlay mounts failed in this Podman environment; this check used a **QA-only vfs/legacy image-store configuration**, with no production Docker configuration override. These component tests ran on ARM64, not the handheld's amd64 hardware. Full desktop setup, native amd64 toolchains and Docker's default storage/network behavior on the WIN Mini still require a device check.
 
 On 2026-10-11, ordinary setup gained the official native Codex, Claude Code and Cursor Agent installers for the selected user, with Bash PATH integration and retention of existing executables without launching them. Host CLI isolation/failure/PATH checks, setup-layout checks and syntax checks passed. In Ubuntu 24.04 amd64 under QEMU, Codex 0.162.1 and Cursor Agent 2026.10.01-e373342 passed installation, unprivileged version/help commands, ownership, unchanged binaries/settings on rerun without download connectivity, and execution with the checkout unavailable. The test caught Cursor rewriting settings during `--version`; setup now skips execution of retained commands. [Private amd64 report](../.local/cli-qa/amd64-report.json).
 

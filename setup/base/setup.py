@@ -77,7 +77,7 @@ def preflight(args):
         asset_url = assets.as_uri()
     else:
         asset_url = None
-        print('Online setup: Ubuntu repositories, Snap Store, verified shell/proxy/HHD downloads and official coding CLI installers.', flush=True)
+        print('Online setup: Ubuntu/Docker repositories, Snap Store, verified shell/proxy/HHD downloads, current development toolchains and official coding CLI installers.', flush=True)
     return user, asset_url
 
 
@@ -95,7 +95,8 @@ def backup_configuration(path, user):
         '/etc/systemd/system/minion-proxy.service',
         '/etc/systemd/system/minion-hhd.service', '/etc/hhd',
         '/usr/local/lib/minion-proxy', '/var/lib/minion/proxy',
-        '/usr/local/share/minion/bashrc.bash')]
+        '/usr/local/share/minion/bashrc.bash',
+        '/etc/apt/sources.list.d/docker.sources', '/etc/apt/keyrings/docker.asc')]
     paths.extend(Path('/etc/systemd/user').glob('minion-*.service'))
     paths.extend(Path('/usr/local/bin').glob('minion-*'))
     paths.append(Path(user.pw_dir) / '.bashrc')
@@ -127,6 +128,7 @@ def main():
         subprocess.run([sys.executable, ROOT / 'proxy/provision.py', '--check'], check=True)
         subprocess.run([sys.executable, ROOT / 'hhd/provision.py', '--check'], check=True)
         subprocess.run([sys.executable, ROOT / 'agents/provision.py', user.pw_name, '--check'], check=True)
+        subprocess.run([sys.executable, ROOT / 'development/provision.py', user.pw_name, '--check'], check=True)
         print('Checks passed. No changes made. Run sudo ./setup.sh with the same options to apply.', flush=True)
         return
     state = Path('/var/lib/minion/setup')
@@ -142,7 +144,7 @@ def main():
         run_dir.mkdir(mode=0o700)
         backup_configuration(run_dir / 'configuration-before.tar.gz', user)
         report = {'username': user.pw_name, 'started_at_utc': stamp, 'passed': False,
-                  'source_sha256': {str(p.relative_to(ROOT.parent)): digest(p) for folder in ('base', 'desktop', 'shell', 'proxy', 'hhd', 'agents')
+                  'source_sha256': {str(p.relative_to(ROOT.parent)): digest(p) for folder in ('base', 'desktop', 'shell', 'proxy', 'hhd', 'agents', 'development')
                                     for p in sorted((ROOT / folder).iterdir()) if p.is_file()},
                   'steps': [], 'reboot_required': True}
         with (run_dir / 'setup.log').open('w', buffering=1) as log:
@@ -174,6 +176,7 @@ def main():
                 run(sys.executable, ROOT / 'desktop/browser.py', *cache_options)
                 run(sys.executable, ROOT / 'proxy/provision.py')
                 run(sys.executable, ROOT / 'hhd/provision.py')
+                run(sys.executable, ROOT / 'development/provision.py', user.pw_name)
                 run(sys.executable, ROOT / 'agents/provision.py', user.pw_name)
                 report['passed'] = True
                 (state / 'last-success.json').write_text(json.dumps({'run': str(run_dir)}, indent=2) + '\n')

@@ -1,6 +1,6 @@
 # Minion setup on Ubuntu
 
-Install Ubuntu 24.04 Server amd64 manually or with the [installation helper](install.md), create your normal user, and boot into that installed system. Then run the standalone setup to add Sway, greetd, Foot, Firefox, desktop services, coding CLIs, Bash with ble.sh and local Atuin history. It also installs Ubuntu's supported HWE kernel, firmware, AMD microcode, Mesa graphics/video packages and ALSA device profiles. The setup uses your existing account and password and activates the configured environment on your next reboot.
+Install Ubuntu 24.04 Server amd64 manually or with the [installation helper](install.md), create your normal user, and boot into that installed system. Then run the standalone setup to add Sway, greetd, Foot, Firefox, desktop services, development toolchains, Docker, coding CLIs, Bash with ble.sh and local Atuin history. It also installs Ubuntu's supported HWE kernel, firmware, AMD microcode, Mesa graphics/video packages and ALSA device profiles. The setup uses your existing account and password and activates the configured environment on your next reboot.
 
 Partition selection and LUKS encryption happen during Ubuntu installation. The optional helper creates a separate Ubuntu ESP in free space; when installing manually, choose the intended Linux space and preserve Windows, Recovery and their existing EFI files. The setup does not create encryption or partition disks. Physical screen orientation, touch mapping and hardware behavior still need validation on the WIN Mini.
 
@@ -32,7 +32,7 @@ After reboot, enter your LUKS passphrase if you configured encryption, then log 
 
 ## Coding CLIs
 
-Ordinary `sudo ./setup.sh` installs **Codex** (`codex`), **Claude Code** (`claude`) and **Cursor Agent** (`agent`) for the selected desktop account. Their official native installers run as that user, with the correct home directory and no root credentials or tool settings inherited. No system Node.js/npm installation is needed. Setup installs Git, curl, certificates, ripgrep, `xdg-utils` for opening browser sign-in links, and the bubblewrap/socat packages used by Claude's optional Linux sandbox; it leaves tool permissions and sandbox settings at upstream defaults.
+Ordinary `sudo ./setup.sh` installs **Codex** (`codex`), **Claude Code** (`claude`) and **Cursor Agent** (`agent`) for the selected desktop account. Their official native installers run as that user, with the correct home directory and no root credentials or tool settings inherited. Their native installers are independent of the development Node.js/npm installation. Setup installs Git, curl, certificates, ripgrep, `xdg-utils` for opening browser sign-in links, and the bubblewrap/socat packages used by Claude's optional Linux sandbox; it leaves tool permissions and sandbox settings at upstream defaults.
 
 These tools follow their publishers' current release channels: Codex's latest release, Claude's stable channel and Cursor's current CLI release. Their HTTPS bootstrap scripts are downloaded completely before execution; these are upstream installers, not Minion-pinned artifacts. Upstream installers handle their payload downloads and integrity checks where provided. Executable commands already found in `~/.local/bin` or the standard system binary directories are retained without launching them, because even a version check can rewrite upstream settings. Newly installed commands are checked with `--version`. Minion does not reset account or personal tool settings.
 
@@ -47,6 +47,76 @@ agent --version
 Launch `codex`, `claude` or `agent` as your normal user and follow that tool's sign-in prompts. Setup does not sign in, transfer credentials or start model sessions. Each tool needs its own supported account or API access. Native installations can update through their upstream mechanisms; rerunning Minion setup retains an existing installation.
 
 Official installation instructions: [Codex](https://learn.chatgpt.com/docs/codex/cli), [Claude Code](https://code.claude.com/docs/en/setup), [Cursor Agent](https://cursor.com/docs/cli/installation).
+
+## Development environment
+
+Ordinary `sudo ./setup.sh` preinstalls the following for your desktop account. Fresh installations resolve the **latest stable releases at setup time**, then install the actual runtimes and tools. There is no first-use compiler download. Node follows the current release rather than the older LTS branch; prereleases/nightlies are not requested.
+
+| Area | Installed | Version manager / source |
+| --- | --- | --- |
+| Go | Go, gopls, Delve (`dlv`) | mise; official Go releases and Go modules |
+| JavaScript / TypeScript | Node, bundled npm, pnpm, `tsc`, TypeScript language server | mise; official releases and npm |
+| Rust | Stable rustc/Cargo, rustfmt, Clippy, rust-analyzer, rust-src | rustup |
+| Python | Current CPython, uv/uvx, Ruff, Pyright | uv-managed Python and tools; mise for Pyright |
+| Build tools | Current CMake and Ninja | mise |
+| Other tools | Neovim, GitHub CLI, Git LFS, ShellCheck, shfmt, jq | mise |
+| Containers | Docker Engine/CLI, containerd, Buildx, Compose plugin | Docker's signed Ubuntu stable repository |
+
+Ubuntu packages provide the native build prerequisites (`build-essential`, Make, pkg-config, OpenSSL/libffi and common Python build headers), GDB, strace, tmux, rsync and archive utilities. These OS dependencies follow Ubuntu's supported package versions; the Go, Rust, Node and Python toolchains above are installed separately from Ubuntu's runtime packages. Ubuntu's `/usr/bin/python3` is retained for OS services; the development `python` and `python3` commands live in your account. Conda/Miniforge is optional and is not installed by default alongside uv.
+
+Open a new terminal after setup. Bash activates mise automatically, includes Cargo's commands and uses uv's user-local Python. All per-user downloads, installers and builds run without root privileges. HTTPS bootstrap scripts for mise, uv and rustup are downloaded completely before execution. These follow upstream channels rather than the project's pinned desktop artifact manifest. mise uses its registry/backends and their upstream integrity checks.
+
+```bash
+go version
+rustc --version
+node --version
+pnpm --version
+tsc --version
+python --version
+uv --version
+docker compose version
+```
+
+mise records exact initial versions in `~/.config/mise/config.toml`. To select a version for one project, run inside that project's directory:
+
+```bash
+mise use node@24          # installs it and writes mise.toml
+mise use go@latest
+mise ls                  # shows selected and installed versions
+```
+
+Bash switches when you enter a project with a trusted mise configuration. For an existing checkout, review its configuration, run `mise trust` if prompted, then `mise install`. Existing `.nvmrc`/`.node-version` support can be enabled with `mise settings add idiomatic_version_file_enable_tools node`. For scripts, CI and editor subprocesses that do not run interactive Bash, use `mise exec -- COMMAND`. Do not use sudo with mise, rustup, uv or project package managers.
+
+Python projects should use isolated dependencies:
+
+```bash
+uv init
+uv add --dev pytest debugpy
+uv run python
+# In an existing project requiring another interpreter:
+uv python install 3.12
+uv python pin 3.12
+uv sync
+```
+
+The global TypeScript compiler and language tools work immediately. Add TypeScript, ESLint, Prettier and test runners as project development dependencies when a repository needs them, so its lockfile determines their versions. Rust projects can select a toolchain through `rust-toolchain.toml`; rustup downloads additional versions on request.
+
+Docker starts at boot. Setup adds your account to the `docker` group; **log out and back in (or reboot)** before using it without sudo. This group grants root-equivalent access to the machine. Use `docker compose` rather than the legacy `docker-compose` executable. Setup retains daemon configuration, images, containers and volumes, and does not explicitly restart an already running Docker service. APT upgrades to Docker packages may restart it. An existing conflicting runtime package or different Docker APT source makes setup stop with an explanation rather than removing it automatically.
+
+Reruns retain existing mise/uv/rustup installations and your global mise tool selections, installing missing defaults and any selected-but-missing tools. They ensure the stable Rust toolchain and latest uv-known stable Python are present without replacing an existing Rust default or user-local Python default. They retain an existing Ruff command. They do not upgrade every pinned mise tool automatically. To deliberately refresh the installed environment as your normal user:
+
+```bash
+mise self-update
+mise upgrade
+rustup update stable
+uv self update
+uv python install --default cpython  # deliberately select the newest Python as default
+uv tool upgrade ruff
+```
+
+Docker updates come through APT. Project versions and lockfiles remain your responsibility. Initial installed mise versions and rustup state are recorded in the setup log. Development downloads are not covered by `--asset-dir`/`--asset-url`.
+
+Upstream guides: [mise](https://mise.jdx.dev/getting-started.html), [rustup](https://rust-lang.org/tools/install/), [uv Python](https://docs.astral.sh/uv/guides/install-python/), [Docker on Ubuntu](https://docs.docker.com/engine/install/ubuntu/).
 
 ## Desktop controls
 

@@ -1,6 +1,6 @@
 # Minion setup on Ubuntu
 
-Install Ubuntu 24.04 Server amd64 manually or with the [installation helper](install.md), create your normal user, and boot into that installed system. Then run the standalone setup to add Sway, greetd, Foot, Firefox, desktop services, Bash with ble.sh and local Atuin history. It also installs Ubuntu's supported HWE kernel, firmware, AMD microcode, Mesa graphics/video packages and ALSA device profiles. The setup uses your existing account and password and activates the configured environment on your next reboot.
+Install Ubuntu 24.04 Server amd64 manually or with the [installation helper](install.md), create your normal user, and boot into that installed system. Then run the standalone setup to add Sway, greetd, Foot, Firefox, desktop services, coding CLIs, Bash with ble.sh and local Atuin history. It also installs Ubuntu's supported HWE kernel, firmware, AMD microcode, Mesa graphics/video packages and ALSA device profiles. The setup uses your existing account and password and activates the configured environment on your next reboot.
 
 Partition selection and LUKS encryption happen during Ubuntu installation. The optional helper creates a separate Ubuntu ESP in free space; when installing manually, choose the intended Linux space and preserve Windows, Recovery and their existing EFI files. The setup does not create encryption or partition disks. Physical screen orientation, touch mapping and hardware behavior still need validation on the WIN Mini.
 
@@ -29,6 +29,26 @@ Working internet connectivity is required for normal setup. No application bundl
 Setup also installs and enables [Handheld Daemon power controls](power-controls.md), with verified, pinned daemon and UI releases. Open **Handheld Daemon** from Super+D or run `minion-hhd-ui`. Initial power overrides are disabled until explicitly enabled in its interface; Minion's controller mapper remains in charge of input. Actual TDP/GPU controls, kernel-module signing and suspend behavior need testing on the 2023/7840U handheld.
 
 After reboot, enter your LUKS passphrase if you configured encryption, then log in using your existing account password. Super+Enter opens Foot, Super+D opens the application launcher, Super+B opens Firefox, Super+E opens Thunar, Super+1 through Super+4 switch workspaces, and Super+L locks the session. The configuration uses Bash and local-only Atuin without requiring an account.
+
+## Coding CLIs
+
+Ordinary `sudo ./setup.sh` installs **Codex** (`codex`), **Claude Code** (`claude`) and **Cursor Agent** (`agent`) for the selected desktop account. Their official native installers run as that user, with the correct home directory and no root credentials or tool settings inherited. No system Node.js/npm installation is needed. Setup installs Git, curl, certificates, ripgrep, `xdg-utils` for opening browser sign-in links, and the bubblewrap/socat packages used by Claude's optional Linux sandbox; it leaves tool permissions and sandbox settings at upstream defaults.
+
+These tools follow their publishers' current release channels: Codex's latest release, Claude's stable channel and Cursor's current CLI release. Their HTTPS bootstrap scripts are downloaded completely before execution; these are upstream installers, not Minion-pinned artifacts. Upstream installers handle their payload downloads and integrity checks where provided. Executable commands already found in `~/.local/bin` or the standard system binary directories are retained without launching them, because even a version check can rewrite upstream settings. Newly installed commands are checked with `--version`. Minion does not reset account or personal tool settings.
+
+Open a new Foot terminal after setup. Minion's Bash integration adds `~/.local/bin` to PATH. Check installation with:
+
+```bash
+codex --version
+claude --version
+agent --version
+```
+
+Launch `codex`, `claude` or `agent` as your normal user and follow that tool's sign-in prompts. Setup does not sign in, transfer credentials or start model sessions. Each tool needs its own supported account or API access. Native installations can update through their upstream mechanisms; rerunning Minion setup retains an existing installation.
+
+Official installation instructions: [Codex](https://learn.chatgpt.com/docs/codex/cli), [Claude Code](https://code.claude.com/docs/en/setup), [Cursor Agent](https://cursor.com/docs/cli/installation).
+
+## Desktop controls
 
 The bottom bar shows the HHD power target, available temperatures, Wi-Fi signal, output volume/mute, proxy service state, battery, right-stick mode and date/time. Click Wi-Fi to see the connected network name. A keyboard layout indicator appears when multiple layouts are configured; it prefers physical keyboards over the gamepad's virtual keyboard. The compact battery display uses `73% ↑` for charging, `↓` for discharging, `Full` for a full battery and `Idle` when connected but not charging. The battery indicator is hidden when no readable system battery is detected; peripheral batteries are excluded.
 

@@ -1,5 +1,9 @@
 # Source at the end of the user's .bashrc. Noninteractive shells remain plain Bash.
 [[ $- == *i* ]] || return
+case ":$PATH:" in
+  *":$HOME/.local/bin:"*) ;;
+  *) export PATH="$HOME/.local/bin:$PATH" ;;
+esac
 [[ ${MINION_SHELL_LOADED-} ]] && return
 MINION_SHELL_LOADED=1
 source /usr/local/share/blesh/ble.sh --attach=none

@@ -15,6 +15,7 @@ python3 tests/check-install-plan.py
 python3 tests/check-install-launch.py
 python3 tests/check-proxy.py
 python3 tests/check-hhd-artifacts.py
+python3 tests/check-coding-clis.py
 ```
 
 The setup check verifies the root entry point, source staging and coordinator paths without installing packages. The browser check isolates Snap command selection and existing-browser retention. The chord check feeds independent Xbox face codes through all 24 named shortcuts in 480 press/release orders, and checks immediate Backspace holds, fixed versus trigger-modified shortcuts, terminal guards, invalid/rolling gestures, selection/repeat/neutral transitions, persistent legend capture, profile validation, lifecycle cleanup and held-arrow compatibility with shortcuts disabled. It creates no host input device and reads Linux key codes from `/usr/include/linux/input-event-codes.h`.
@@ -22,6 +23,8 @@ The setup check verifies the root entry point, source staging and coordinator pa
 The status bar check uses battery/hwmon fixtures and isolated command/API providers to check signal/network details, volume/mute, proxy service states, keyboard layout selection, power targets and safe click notifications. It checks HHD authentication, bounded read-only requests and failures, sensor units/labels, preferred channels, duplicate aliases, invalid/faulted/disabled sensors, live updates, disappearance and recovery. It does not query or change host hardware or services.
 
 The HHD artifact check refuses corrupted downloads and altered cache entries, checks temporary-file cleanup, and verifies that matching cached releases need no network access. The setup-layout check includes default HHD installation, its read-only preflight and all component source hashes. Actual power controls require the [on-device checks](validation-plan.md#on-device-backlog).
+
+The coding CLI check verifies that installers and initial version checks drop root privileges, use the selected user's home and groups, and exclude root credentials/settings from their environment. It also checks that existing commands are retained without execution, failed downloads are cleaned up before shell execution, missing installed commands fail setup, interactive Bash sets PATH without duplication and preflight is read-only. The setup-layout check includes these tools in ordinary provisioning and source staging. These checks do not download releases or start model sessions.
 
 ## Optional proxy container test
 
@@ -197,6 +200,10 @@ python3 tests/check-gamepad-mapping.py "$VM_DIR"
 The synthetic controller is created inside the guest. Mapping tests use a Firefox text-field fixture to exercise editing keys, immediate/held Backspace, shortcut editing, navigation and right-stick selection; no browser navigation shortcuts are assigned. They also check constituent suppression, Sway focus/move/resize/workspaces, window shortcuts, persistent legend, picker/launcher, passthrough, reconnect, lock, inactive console and restart behavior. Exhaustive shortcut orders and terminal guards are checked separately by the host checker. The test removes its controller and HTTP service afterward. Physical trigger axes, adjacent presses and comfort remain device checks.
 
 ## Recorded results and current limits
+
+On 2026-10-11, ordinary setup gained the official native Codex, Claude Code and Cursor Agent installers for the selected user, with Bash PATH integration and retention of existing executables without launching them. Host CLI isolation/failure/PATH checks, setup-layout checks and syntax checks passed. In Ubuntu 24.04 amd64 under QEMU, Codex 0.162.1 and Cursor Agent 2026.10.01-e373342 passed installation, unprivileged version/help commands, ownership, unchanged binaries/settings on rerun without download connectivity, and execution with the checkout unavailable. The test caught Cursor rewriting settings during `--version`; setup now skips execution of retained commands. [Private amd64 report](../.local/cli-qa/amd64-report.json).
+
+Codex and Claude test payloads were cached after comparison with published SHA-256 checksums to avoid this environment's download rate limits; Cursor downloaded through its normal installer. Claude's bundled Bun runtime aborted with `MemoryExhaustion` under x86 user emulation. Its verified 2.1.287 ARM64 binary passed version/help checks in native Ubuntu Linux, but its upstream installer remained blocked by the test network's MITM certificate validation. No certificate bypass or test relay is included in device setup. Claude's complete amd64 installation, account sign-in, authenticated model sessions and all three tools' sandbox behavior remain device checks. [Private native report](../.local/cli-qa/native-report.json).
 
 On 2026-10-11, the bar gained an authenticated read-only HHD target display and conditional CPU/control, GPU, NVMe and battery temperature summaries, with a full sensor notification and an HHD launcher action. The status-bar suite passed target versus quick-slider precedence, unavailable/unready controls, API authentication/bounded responses/timeouts, Celsius conversion, preferred channel selection, duplicate aliases, invalid/faulted/disabled sensors, safe clicks and live sensor/API loss and recovery. Setup-layout and syntax checks passed. These isolated tests do not establish which sensors the WIN Mini exports, physical readback accuracy, bar fit at 2× scaling, native UI launch or suspend behavior; those checks are queued for the device.
 

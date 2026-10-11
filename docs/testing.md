@@ -14,11 +14,14 @@ python3 tests/check-status-bar.py
 python3 tests/check-install-plan.py
 python3 tests/check-install-launch.py
 python3 tests/check-proxy.py
+python3 tests/check-hhd-artifacts.py
 ```
 
 The setup check verifies the root entry point, source staging and coordinator paths without installing packages. The browser check isolates Snap command selection and existing-browser retention. The chord check feeds independent Xbox face codes through all 24 named shortcuts in 480 press/release orders, and checks immediate Backspace holds, fixed versus trigger-modified shortcuts, terminal guards, invalid/rolling gestures, selection/repeat/neutral transitions, persistent legend capture, profile validation, lifecycle cleanup and held-arrow compatibility with shortcuts disabled. It creates no host input device and reads Linux key codes from `/usr/include/linux/input-event-codes.h`.
 
-The status bar check uses battery fixtures and isolated command providers to check signal/network details, volume/mute, proxy service states, keyboard layout selection, safe click notifications, live JSON updates and provider failures/timeouts. It does not query or change host services.
+The status bar check uses battery/hwmon fixtures and isolated command/API providers to check signal/network details, volume/mute, proxy service states, keyboard layout selection, power targets and safe click notifications. It checks HHD authentication, bounded read-only requests and failures, sensor units/labels, preferred channels, duplicate aliases, invalid/faulted/disabled sensors, live updates, disappearance and recovery. It does not query or change host hardware or services.
+
+The HHD artifact check refuses corrupted downloads and altered cache entries, checks temporary-file cleanup, and verifies that matching cached releases need no network access. The setup-layout check includes default HHD installation, its read-only preflight and all component source hashes. Actual power controls require the [on-device checks](validation-plan.md#on-device-backlog).
 
 ## Optional proxy container test
 
@@ -194,6 +197,12 @@ python3 tests/check-gamepad-mapping.py "$VM_DIR"
 The synthetic controller is created inside the guest. Mapping tests use a Firefox text-field fixture to exercise editing keys, immediate/held Backspace, shortcut editing, navigation and right-stick selection; no browser navigation shortcuts are assigned. They also check constituent suppression, Sway focus/move/resize/workspaces, window shortcuts, persistent legend, picker/launcher, passthrough, reconnect, lock, inactive console and restart behavior. Exhaustive shortcut orders and terminal guards are checked separately by the host checker. The test removes its controller and HTTP service afterward. Physical trigger axes, adjacent presses and comfort remain device checks.
 
 ## Recorded results and current limits
+
+On 2026-10-11, the bar gained an authenticated read-only HHD target display and conditional CPU/control, GPU, NVMe and battery temperature summaries, with a full sensor notification and an HHD launcher action. The status-bar suite passed target versus quick-slider precedence, unavailable/unready controls, API authentication/bounded responses/timeouts, Celsius conversion, preferred channel selection, duplicate aliases, invalid/faulted/disabled sensors, safe clicks and live sensor/API loss and recovery. Setup-layout and syntax checks passed. These isolated tests do not establish which sensors the WIN Mini exports, physical readback accuracy, bar fit at 2× scaling, native UI launch or suspend behavior; those checks are queued for the device.
+
+On 2026-10-11, default setup gained HHD 4.1.12 and HHD UI 3.4.2 with verified release downloads, Ubuntu-managed Python dependencies and a power-only boot service. An amd64 Ubuntu 24.04 container with synthetic WIN Mini `G1617-01` DMI passed real package installation, ACPI DKMS compilation against the current HWE headers, Python dependency checks, UI library resolution and sandbox-helper permissions, authenticated localhost API access, provider filtering, disabled initial TDP/energy overrides, retained settings and an uninterrupted rerun. Boot with the checkout unavailable retained settings and kept overrides disabled. The test caught and corrected a separate upstream one-shot TDP-enable action default. [Private HHD report](../.local/hhd-qa/installed-report.json).
+
+Host setup-layout, artifact refusal/cache and syntax checks passed. Electron's sandbox failed to launch under Mac-hosted x86 QEMU user emulation with `clone: Invalid argument`; native Wayland UI operation remains unverified. The container has no physical AMD power/GPU/fan hardware and cannot establish Secure Boot module acceptance. These checks do not replace the [queued handheld tests](validation-plan.md#on-device-backlog), and a complete desktop provisioning run has not been repeated for this addition.
 
 On 2026-10-11, the bar gained Wi-Fi signal/network details, volume/mute, proxy service state and a conditional keyboard layout indicator, with compact battery labels. The status bar checker passed fixtures, live state changes, protocol output and unavailable/timed-out providers; setup layout and Python syntax passed. These checks use isolated command providers, so physical Wi-Fi/audio/battery readings and the complete bar in a handheld session still need device verification.
 

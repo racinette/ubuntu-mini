@@ -77,7 +77,7 @@ def preflight(args):
         asset_url = assets.as_uri()
     else:
         asset_url = None
-        print('Online setup: Ubuntu repositories, Snap Store and verified upstream shell/proxy downloads.', flush=True)
+        print('Online setup: Ubuntu repositories, Snap Store and verified upstream shell/proxy/HHD downloads.', flush=True)
     return user, asset_url
 
 
@@ -93,6 +93,7 @@ def backup_configuration(path, user):
         '/etc/udev/rules.d/60-minion-gamepad-uinput.rules',
         '/etc/modules-load.d/minion-gamepad.conf',
         '/etc/systemd/system/minion-proxy.service',
+        '/etc/systemd/system/minion-hhd.service', '/etc/hhd',
         '/usr/local/lib/minion-proxy', '/var/lib/minion/proxy',
         '/usr/local/share/minion/bashrc.bash')]
     paths.extend(Path('/etc/systemd/user').glob('minion-*.service'))
@@ -124,6 +125,7 @@ def main():
     print(f'Setup target: {user.pw_name}. Existing Ubuntu APT sources will be used.', flush=True)
     if args.check:
         subprocess.run([sys.executable, ROOT / 'proxy/provision.py', '--check'], check=True)
+        subprocess.run([sys.executable, ROOT / 'hhd/provision.py', '--check'], check=True)
         print('Checks passed. No changes made. Run sudo ./setup.sh with the same options to apply.', flush=True)
         return
     state = Path('/var/lib/minion/setup')
@@ -139,7 +141,7 @@ def main():
         run_dir.mkdir(mode=0o700)
         backup_configuration(run_dir / 'configuration-before.tar.gz', user)
         report = {'username': user.pw_name, 'started_at_utc': stamp, 'passed': False,
-                  'source_sha256': {str(p.relative_to(ROOT.parent)): digest(p) for folder in ('base', 'desktop', 'shell', 'proxy')
+                  'source_sha256': {str(p.relative_to(ROOT.parent)): digest(p) for folder in ('base', 'desktop', 'shell', 'proxy', 'hhd')
                                     for p in sorted((ROOT / folder).iterdir()) if p.is_file()},
                   'steps': [], 'reboot_required': True}
         with (run_dir / 'setup.log').open('w', buffering=1) as log:
@@ -170,6 +172,7 @@ def main():
                 run('systemctl', 'start', 'snapd.socket')
                 run(sys.executable, ROOT / 'desktop/browser.py', *cache_options)
                 run(sys.executable, ROOT / 'proxy/provision.py')
+                run(sys.executable, ROOT / 'hhd/provision.py')
                 report['passed'] = True
                 (state / 'last-success.json').write_text(json.dumps({'run': str(run_dir)}, indent=2) + '\n')
             except Exception as error:

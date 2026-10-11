@@ -1,0 +1,16 @@
+[Unit]
+Description=Minion handheld power controls (Handheld Daemon)
+After=dbus.service
+
+[Service]
+Type=simple
+Environment=HHD_PLUGINS=adjustor
+Environment=HHD_CONFIG_DIR=/etc/hhd
+Environment=HHD_TOKEN_FILE=/tmp/hhd/token
+Environment=HHD_OVERLAY=/usr/local/bin/minion-hhd-ui
+ExecStart=/usr/local/lib/minion-hhd/runtime/bin/hhd
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

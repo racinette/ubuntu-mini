@@ -1,0 +1,7 @@
+#!/bin/sh
+if [ "$1" = "--version" ]; then
+    exec python3 -c 'import json; print(json.load(open("/usr/local/lib/minion-hhd/artifacts.json"))["ui"]["version"])'
+fi
+# Invoke Electron directly: AppRun can silently add --no-sandbox when its
+# namespace probe fails. The extracted bundle has a root-owned sandbox helper.
+exec /usr/local/lib/minion-hhd/ui/hhd-ui --ozone-platform=wayland "$@"

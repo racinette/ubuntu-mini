@@ -1,0 +1,15 @@
+# Install the controls without applying power, clock or cooling overrides.
+# Enable controls explicitly in Handheld Daemon after checking the device.
+tdp:
+  tdp:
+    # Upstream defaults this one-shot action to true, separately from the toggle.
+    tdp_enable: false
+hhd:
+  http:
+    localhost: true
+    token: true
+  settings:
+    tdp_enable: false
+    enforce_limits: true
+    amd_energy_enable: false
+    amd_energy_ppd: false

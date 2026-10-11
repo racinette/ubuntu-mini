@@ -27,7 +27,7 @@ def load_setup():
 
 def main():
     sources = setup_sources()
-    assert len(sources) == 26
+    assert len(sources) == 33
     assert all(p.is_file() for p in sources)
     assert all(p == PROJECT / 'setup.sh' or p.is_relative_to(PROJECT / 'setup') for p in sources)
     assert {p.name for p in sources}.isdisjoint({'first-boot.py', 'minion-first-boot.service'})
@@ -49,7 +49,7 @@ def main():
         copies = []
         with patch('session.ssh', return_value=''), patch('session.subprocess.run', side_effect=lambda cmd, **kw: copies.append(cmd)):
             staged = stage_setup(guest, '/home/vmuser/minion-test', include_gitignore=True)
-        assert len(staged) == 27 and len(copies) == 27
+        assert len(staged) == len(sources) + 1 and len(copies) == len(staged)
         assert {cmd[-1].removeprefix('vmuser@127.0.0.1:/home/vmuser/minion-test/') for cmd in copies} == {
             str(p.relative_to(PROJECT)) for p in staged}
         for invalid in ('/etc/minion', '/home/vmuser/../root', 'relative/path'):
@@ -76,7 +76,9 @@ def main():
              patch.object(setup.subprocess, 'run') as check_run, \
              patch.object(sys, 'argv', ['setup.sh', '--check']), contextlib.redirect_stdout(io.StringIO()):
             setup.main()
-        check_run.assert_called_once_with([sys.executable, PROJECT / 'setup/proxy/provision.py', '--check'], check=True)
+        assert check_run.call_count == 2
+        for component in ('proxy', 'hhd'):
+            check_run.assert_any_call([sys.executable, PROJECT / f'setup/{component}/provision.py', '--check'], check=True)
         assert not state.exists()
 
         with patch.object(setup, 'Path', side_effect=target_path), \
@@ -93,7 +95,7 @@ def main():
         assert all(experiment.digest(PROJECT / name) == checksum for name, checksum in report['source_sha256'].items())
         scripts = [cmd[1] for cmd in commands if cmd[0] == sys.executable]
         assert scripts == [str(PROJECT / 'setup' / name) for name in (
-            'desktop/provision.py', 'shell/provision.py', 'desktop/browser.py', 'proxy/provision.py')]
+            'desktop/provision.py', 'shell/provision.py', 'desktop/browser.py', 'proxy/provision.py', 'hhd/provision.py')]
 
         vm = directory / 'vm'
         vm.mkdir()

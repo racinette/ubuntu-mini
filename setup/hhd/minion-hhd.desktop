@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Handheld Daemon
+Comment=CPU power and GPU controls for Minion
+Exec=minion-hhd-ui
+Icon=preferences-system-power
+Categories=Settings;System;
+Keywords=power;TDP;GPU;handheld;
+Terminal=false

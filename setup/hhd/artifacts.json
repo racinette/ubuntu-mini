@@ -1,0 +1,15 @@
+{
+  "daemon": {
+    "version": "4.1.12",
+    "filename": "hhd-4.1.12.tar.gz",
+    "url": "https://files.pythonhosted.org/packages/75/d2/d0267bd2c5361828bb0f64592afe6fe9776c6f7b82221dcebf006aa80c13/hhd-4.1.12.tar.gz",
+    "sha256": "d858acc7b4a2e7b598b69f7d9eddbd513901c65180c432fcfe24c7ac2b6804f3"
+  },
+  "ui": {
+    "version": "3.4.2",
+    "squashfs_offset": 188392,
+    "filename": "hhd-ui-3.4.2.AppImage",
+    "url": "https://github.com/hhd-dev/hhd-ui/releases/download/v3.4.2/hhd-ui.AppImage",
+    "sha256": "f7559ae74749016e917b5301a5eac71687ed00f6a08a150fe1fbf970c6fea712"
+  }
+}

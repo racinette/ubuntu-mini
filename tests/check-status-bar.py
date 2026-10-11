@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import select
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -47,6 +48,87 @@ def main():
         supply('BAT1', type='Battery', capacity=100, status='Full')
         assert len(status.batteries(supplies)) == 2
 
+        hwmon = root / 'hwmon'; hwmon.mkdir()
+        def sensor(name, driver, **values):
+            directory = hwmon / name; directory.mkdir(exist_ok=True)
+            (directory / 'name').write_text(driver)
+            for key, value in values.items():
+                (directory / key).write_text(str(value))
+            return directory
+        assert not status.temperatures(hwmon, supplies)[0]
+        cpu = sensor('hwmon0', 'k10temp', temp1_label='Tctl', temp1_input=67000,
+                     temp2_label='Tdie', temp2_input=65000, temp3_label='Tccd1', temp3_input=69000)
+        sensor('hwmon1', 'amdgpu', temp1_label='edge', temp1_input=58000,
+               temp2_label='junction', temp2_input=71000)
+        ssd = sensor('hwmon2', 'nvme', temp1_label='Composite', temp1_input=40500,
+                     temp2_label='Sensor 1', temp2_input=43000)
+        sensor('hwmon3', 'acpitz', temp1_input=44000)
+        sensor('hwmon4', 'nvme', temp1_label='Composite', temp1_input=39000)
+        # The same physical file must not appear twice through class symlinks.
+        (hwmon / 'hwmon9').symlink_to(cpu, target_is_directory=True)
+        supply('BAT0', temp=315)
+        supply('mouse', temp=400)
+        thermal, detail = status.temperatures(hwmon, supplies)
+        assert thermal[0]['full_text'] == 'CPU65° GPU58° SSD40° Bat32°'
+        assert thermal[0]['short_text'] == 'CPU65°'
+        assert detail.count('/ Tdie:') == 1 and '/ Tctl: 67.0 °C' in detail
+        assert '/ junction: 71.0 °C' in detail and '/ Sensor 1: 43.0 °C' in detail
+        assert 'acpitz' in detail and 'BAT0 / battery: 31.5 °C' in detail and 'mouse' not in detail
+        (cpu / 'temp2_input').unlink()
+        assert status.temperatures(hwmon, supplies)[0][0]['full_text'].startswith('Ctl67°')
+        (cpu / 'temp2_input').write_text('65000')
+        for value in ('garbage', 'NaN', '2147483647', '-273150', '151000'):
+            (cpu / 'temp2_input').write_text(value)
+            assert '/ Tdie:' not in status.temperatures(hwmon, supplies)[1]
+        (cpu / 'temp2_input').write_text('65000')
+        (cpu / 'temp2_fault').write_text('1')
+        assert '/ Tdie:' not in status.temperatures(hwmon, supplies)[1]
+        (cpu / 'temp2_fault').unlink()
+        (cpu / 'temp2_enable').write_text('0')
+        assert '/ Tdie:' not in status.temperatures(hwmon, supplies)[1]
+        (cpu / 'temp2_enable').unlink()
+        unknown = root / 'unknown'; unknown.mkdir()
+        (unknown / 'hwmon0').mkdir()
+        (unknown / 'hwmon0/temp1_input').write_text('-5000')
+        assert status.temperatures(unknown, root / 'missing')[0][0]['full_text'] == 'Temp-5°'
+
+        automatic = {'hhd': {'settings': {'tdp_enable': False}}}
+        manual = {'hhd': {'settings': {'tdp_enable': True, 'tdp_ready': True}},
+                  'tdp': {'smu': {'std': {'skin_limit': 18}}, 'qam': {'tdp': 15}}}
+        for state, expected in ((automatic, 'Auto'), (manual, 'Limit 18W'), (None, 'Power ?'),
+                                ({}, 'Power ?'), ([], 'Power ?'),
+                                ({'hhd': {'settings': {'tdp_enable': True, 'tdp_ready': False}}}, 'Power ?')):
+            with patch.object(status, 'hhd_state', return_value=state):
+                assert status.power()[0]['full_text'] == expected
+        with patch.object(status, 'hhd_state', return_value=manual):
+            assert 'not measured' in status.power()[1]
+        for value in (True, '18', -1, float('inf'), float('nan'), 9999, 10**400):
+            invalid = {'hhd': manual['hhd'], 'tdp': {'smu': {'std': {'skin_limit': value}}}}
+            with patch.object(status, 'hhd_state', return_value=invalid):
+                assert status.power()[0]['full_text'] == 'Limit ?'
+        token = root / 'token'; token.write_text('private123')
+        with patch.object(status.http.client, 'HTTPConnection') as client:
+            connection = client.return_value
+            response = connection.getresponse.return_value
+            response.status = 200
+            response.read.return_value = json.dumps(manual).encode()
+            assert status.hhd_state(token) == manual
+            client.assert_called_with('127.0.0.1', 5335, timeout=1)
+            assert connection.request.call_args.args == ('GET', '/api/v1/state')
+            assert connection.request.call_args.kwargs['headers']['Authorization'] == 'Bearer private123'
+            for payload in (b'not json', b'[]', b'x' * (256 * 1024 + 1)):
+                response.read.return_value = payload
+                assert status.hhd_state(token) is None
+            for code in (401, 302, 500):
+                response.status = code
+                assert status.hhd_state(token) is None
+            connection.getresponse.side_effect = TimeoutError
+            assert status.hhd_state(token) is None
+            assert connection.close.called
+        with patch.object(status.http.client, 'HTTPConnection') as client:
+            assert status.hhd_state(root / 'no-token') is None
+            client.assert_not_called()
+
         for output, expected in [('Volume: 0.42', 'Vol 42%'), ('Volume: 0.42 [MUTED]', 'Muted'),
                                  ('Volume: 1.20', 'Vol 120%'), ('Volume: 0.00', 'Vol 0%'),
                                  (None, 'Vol ?'), ('invalid', 'Vol ?')]:
@@ -85,13 +167,22 @@ def main():
                 patch.object(status, 'run') as run:
             status.clicks({'wifi': '<Guest> & friends'})
             assert run.call_args.args[-3:] == ('--', 'Wi-Fi', '&lt;Guest&gt; &amp; friends')
+        with patch.object(status.sys, 'stdin', io.StringIO('[\n{"name":"temperatures","button":1}\n')), \
+                patch.object(status, 'run') as run:
+            status.clicks({'temperatures': 'CPU <die>: 65 °C\nSSD: 40 °C'})
+            assert run.call_args.args[-2:] == ('Temperatures', 'CPU &lt;die&gt;: 65 °C\nSSD: 40 °C')
+        with patch.object(status.sys, 'stdin', io.StringIO('[\n{"name":"power","button":1}\n')), \
+                patch.object(status.subprocess, 'Popen') as launch:
+            status.clicks({})
+            assert launch.call_args.args == (['minion-hhd-ui'],)
+            assert launch.call_args.kwargs['start_new_session'] is True
 
         # Run the actual streaming entry point with isolated CLI providers.
         binary = root / 'bin'; binary.mkdir()
         fixture = root / 'state.json'
         data = {'nmcli': '*:67:Cafe: "Guest"', 'wpctl': 'Volume: 0.42',
                 'systemctl': 'LoadState=loaded\nActiveState=active',
-                'swaymsg': json.dumps([virtual, physical])}
+                'swaymsg': json.dumps([virtual, physical]), 'hhd': automatic}
         def save():
             staged = fixture.with_suffix('.new')
             staged.write_text(json.dumps(data)); staged.replace(fixture)
@@ -105,11 +196,22 @@ if value is None: sys.exit(1)
 if value == 'TIMEOUT': time.sleep(3)
 print(value)
 '''
-        for name in data:
+        for name in ('nmcli', 'wpctl', 'systemctl', 'swaymsg'):
             path = binary / name; path.write_text(provider); path.chmod(0o755)
         runtime = root / 'runtime'; (runtime / 'minion-gamepad').mkdir(parents=True)
         mode = runtime / 'minion-gamepad/right-stick-mode'; mode.write_text('select\n')
-        process = subprocess.Popen([sys.executable, str(SOURCE)], stdin=subprocess.PIPE,
+        # Isolate filesystem and API providers too: never query host hardware/HHD.
+        entry = '''import json,runpy,sys
+from pathlib import Path
+module=runpy.run_path(sys.argv[1])
+main=module['main']; scope=main.__globals__
+thermal=scope['temperatures']; battery=scope['batteries']
+scope['temperatures']=lambda:thermal(Path(sys.argv[2]),Path(sys.argv[3]))
+scope['batteries']=lambda:battery(Path(sys.argv[3]))
+scope['hhd_state']=lambda:json.loads(Path(sys.argv[4]).read_text()).get('hhd')
+main()
+'''
+        process = subprocess.Popen([sys.executable, '-c', entry, str(SOURCE), str(hwmon), str(supplies), str(fixture)], stdin=subprocess.PIPE,
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0,
                                    env={**os.environ, 'PATH': str(binary),
                                         'MINION_STATUS_FIXTURE': str(fixture), 'XDG_RUNTIME_DIR': str(runtime)})
@@ -130,7 +232,8 @@ print(value)
             assert json.loads(line()) == {'version': 1, 'click_events': True}
             assert line() == '['
             expected = {'wifi': 'Wi-Fi 67%', 'audio': 'Vol 42%', 'proxy': 'Proxy ON',
-                        'layout': 'RU', 'stick': 'R: Select'}
+                        'layout': 'RU', 'stick': 'R: Select', 'power': 'Auto',
+                        'temperatures': 'CPU65° GPU58° SSD40° Bat32°'}
             deadline = time.monotonic() + 8
             while True:
                 first = frame()
@@ -139,7 +242,9 @@ print(value)
                 # Cold interpreter startup in fake providers can exceed the CLI timeout.
                 assert time.monotonic() < deadline, first
             data.update(nmcli='', wpctl='Volume: 0.42 [MUTED]', systemctl='LoadState=loaded\nActiveState=failed',
-                        swaymsg=json.dumps([dict(physical, xkb_active_layout_name='English (US)')]))
+                        swaymsg=json.dumps([dict(physical, xkb_active_layout_name='English (US)')]), hhd=manual)
+            (cpu / 'temp2_input').write_text('72000')
+            (ssd / 'temp1_input').write_text('48000')
             mode.write_text('resize\n'); save()
             deadline = time.monotonic() + 9
             while True:
@@ -149,6 +254,8 @@ print(value)
                 assert time.monotonic() < deadline, 'Slow indicators did not refresh'
             assert (current['wifi'], current['audio'], current['layout'], current['stick']) == (
                 'Wi-Fi disconnected', 'Muted', 'US', 'R: Resize')
+            assert current['power'] == 'Limit 18W'
+            assert current['temperatures'] == 'CPU72° GPU58° SSD48° Bat32°'
             data.update(wpctl='TIMEOUT', swaymsg=None); save()
             deadline = time.monotonic() + 5
             while True:
@@ -156,12 +263,30 @@ print(value)
                 if current['audio'] == 'Vol ?' and 'layout' not in current:
                     break
                 assert time.monotonic() < deadline, 'Unavailable providers froze status'
+            data['hhd'] = None; save()
+            shutil.rmtree(hwmon)
+            (supplies / 'BAT0/temp').unlink()
+            deadline = time.monotonic() + 9
+            while True:
+                current = frame()
+                if current['power'] == 'Power ?' and 'temperatures' not in current:
+                    break
+                assert time.monotonic() < deadline, 'Lost power/sensor providers froze status'
+            hwmon.mkdir()
+            sensor('hwmon8', 'k10temp', temp1_label='Tctl', temp1_input=61000)
+            data['hhd'] = automatic; save()
+            deadline = time.monotonic() + 9
+            while True:
+                current = frame()
+                if current.get('temperatures') == 'Ctl61°' and current['power'] == 'Auto':
+                    break
+                assert time.monotonic() < deadline, 'Reconnected providers did not recover'
         finally:
             process.terminate()
             process.wait(timeout=4)
             errors = process.stderr.read().decode()
             assert not errors, errors
-    print('Passed: battery filtering/states, Wi-Fi signal/details, mute/volume, proxy lifecycle, physical keyboard layout, safe clicks, live JSON updates and provider failure/timeout handling.')
+    print('Passed: battery/network/audio/proxy/layout, read-only HHD targets/auth/failures, temperature channels/units/filtering/hotplug, safe clicks and live JSON updates.')
 
 
 if __name__ == '__main__':

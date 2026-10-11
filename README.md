@@ -26,6 +26,7 @@ Clone as your normal user and run setup through `sudo`. The repository contains 
 | `setup/desktop/` | Desktop provisioning, services, gamepad mapper and configuration |
 | `setup/shell/` | Shell provisioning, verified download manifest and user defaults |
 | `setup/proxy/` | Verified Mihomo service and repo-based subscription management |
+| `setup/hhd/` | Pinned Handheld Daemon power controls, desktop UI and boot service |
 | `tests/` | Host checks, disposable VM control, local mirror and acceptance tests |
 | `tests/fixtures/` | Synthetic controller, browser pages and shell/input fixtures |
 | `docs/` | Setup, controls, test instructions and remaining acceptance checks |
@@ -39,6 +40,7 @@ Only `setup.sh` and `setup/` are needed for post-install device setup. `install.
 - [Run tests and inspect validation results](docs/testing.md)
 - [Reuse downloads through the local mirror](docs/local-mirror.md)
 - [Configure and enable the proxy service](docs/proxy.md)
+- [Use the installed handheld power controls](docs/power-controls.md)
 - [Remaining validation and hardware checks](docs/validation-plan.md)
 
 ISO images, VM disks, firmware variables, credentials, mirror content and test reports stay under ignored local paths. Documentation links into `.local/` refer to private evidence unavailable in a fresh clone. Retained VM results describe the source revision tested; restructuring the repository does not update installed VM sources.

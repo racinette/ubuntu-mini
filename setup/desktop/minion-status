@@ -1,12 +1,171 @@
-#!/bin/sh
-set -eu
-printf '{"version":1}\n[\n'
-while :; do
-    mode=Resize
-    if [ -n "${XDG_RUNTIME_DIR:-}" ] && [ -r "$XDG_RUNTIME_DIR/minion-gamepad/right-stick-mode" ]; then
-        read -r stick_mode < "$XDG_RUNTIME_DIR/minion-gamepad/right-stick-mode" || true
-        if [ "$stick_mode" = select ]; then mode='Select text'; fi
-    fi
-    printf '[{"full_text":"R: %s | %s"}],\n' "$mode" "$(date '+%a %d %b %H:%M')"
-    sleep 1
-done
+#!/usr/bin/python3
+"""Compact Sway bar status, using the desktop's existing system services."""
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
+import html
+import json
+import math
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+import threading
+import time
+
+
+def run(*command):
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=1,
+                                env={**os.environ, 'LC_ALL': 'C'})
+        return result.stdout.strip() if result.returncode == 0 else None
+    except (OSError, subprocess.TimeoutExpired, UnicodeError):
+        return None
+
+
+def read(path):
+    try:
+        return path.read_text().strip()
+    except (OSError, UnicodeError):
+        return ''
+
+
+def block(name, text, short=None):
+    result = {'name': name, 'full_text': text}
+    if short:
+        result['short_text'] = short
+    return result
+
+
+def batteries(root=Path('/sys/class/power_supply')):
+    result = []
+    for supply in sorted(root.glob('*')):
+        if (read(supply / 'type') != 'Battery' or read(supply / 'scope') == 'Device'
+                or read(supply / 'present') not in ('', '1')):
+            continue
+        capacity = read(supply / 'capacity')
+        if not re.fullmatch(r'[0-9]{1,3}', capacity) or int(capacity) > 100:
+            continue
+        suffix = {'Charging': ' ↑', 'Discharging': ' ↓', 'Full': ' Full',
+                  'Not charging': ' Idle'}.get(read(supply / 'status'), ' ?')
+        result.append(block('battery', f'{int(capacity)}%{suffix}'))
+    return result
+
+
+def wifi():
+    # Cached access points only: status polling must never trigger a scan.
+    output = run('nmcli', '-t', '--escape', 'no', '-f', 'IN-USE,SIGNAL,SSID',
+                 'device', 'wifi', 'list', '--rescan', 'no')
+    if output is None:
+        return block('wifi', 'Wi-Fi ?'), 'Wi-Fi status is unavailable'
+    for line in output.splitlines():
+        fields = line.split(':', 2)
+        if len(fields) == 3 and fields[0] == '*':
+            signal, ssid = fields[1:]
+            strength = signal + '%' if signal.isdecimal() and 0 <= int(signal) <= 100 else 'ON'
+            return block('wifi', 'Wi-Fi ' + strength), ssid or 'Hidden network'
+    return block('wifi', 'Wi-Fi disconnected', 'Wi-Fi OFF'), 'Wi-Fi is disconnected'
+
+
+def audio():
+    output = run('wpctl', 'get-volume', '@DEFAULT_AUDIO_SINK@')
+    if output is None:
+        return block('audio', 'Vol ?')
+    match = re.fullmatch(r'Volume:\s+([0-9]+(?:\.[0-9]+)?)(\s+\[MUTED\])?', output)
+    if not match:
+        return block('audio', 'Vol ?')
+    volume = float(match[1])
+    if not math.isfinite(volume * 100):
+        return block('audio', 'Vol ?')
+    return block('audio', 'Muted' if match[2] else f'Vol {int(volume * 100 + .5)}%')
+
+
+def proxy():
+    output = run('systemctl', 'show', '-p', 'LoadState', '-p', 'ActiveState', 'minion-proxy.service')
+    if output is None:
+        return block('proxy', 'Proxy ?')
+    values = dict(line.split('=', 1) for line in output.splitlines() if '=' in line)
+    if values.get('LoadState') == 'not-found':
+        state = 'N/A'
+    else:
+        state = {'active': 'ON', 'reloading': 'ON', 'inactive': 'OFF', 'failed': 'FAIL',
+                 'activating': 'START', 'deactivating': 'STOP'}.get(values.get('ActiveState'), '?')
+    return block('proxy', 'Proxy ' + state)
+
+
+def keyboard_layout():
+    output = run('swaymsg', '-r', '-t', 'get_inputs')
+    try:
+        inputs = json.loads(output or 'null')
+    except ValueError:
+        return []
+    if not isinstance(inputs, list):
+        return []
+    keyboards = [item for item in inputs if isinstance(item, dict) and item.get('type') == 'keyboard'
+                 and item.get('name') != 'Minion gamepad keyboard']
+    physical = [item for item in keyboards if item.get('vendor', 0)]
+    layouts = []
+    for item in physical or keyboards:
+        if len(item.get('xkb_layout_names') or []) < 2:
+            continue
+        name = item.get('xkb_active_layout_name')
+        if isinstance(name, str) and name and name not in layouts:
+            layouts.append(name)
+    codes = {'English (US)': 'US', 'English (UK)': 'UK', 'Russian': 'RU',
+             'German': 'DE', 'French': 'FR', 'Spanish': 'ES', 'Ukrainian': 'UA'}
+    if not layouts:
+        return []
+    label = '/'.join(codes.get(name, name) for name in layouts)
+    return [block('layout', label, label[:12])]
+
+
+def stick_mode():
+    directory = os.environ.get('XDG_RUNTIME_DIR')
+    mode = read(Path(directory) / 'minion-gamepad/right-stick-mode') if directory else ''
+    return block('stick', 'R: Select' if mode == 'select' else 'R: Resize')
+
+
+def clicks(details):
+    for line in sys.stdin:
+        try:
+            event = json.loads(line.strip().lstrip(','))
+        except ValueError:
+            continue  # Opening bracket of the click-event stream.
+        if isinstance(event, dict) and event.get('name') == 'wifi' and event.get('button') == 1:
+            run('notify-send', '-a', 'minion', '--', 'Wi-Fi',
+                html.escape(details.get('wifi', 'Wi-Fi status is unavailable')))
+
+
+def main():
+    details = {}
+    threading.Thread(target=clicks, args=(details,), daemon=True).start()
+    print(json.dumps({'version': 1, 'click_events': True}) + '\n[', flush=True)
+    network, service = block('wifi', 'Wi-Fi ?'), block('proxy', 'Proxy ?')
+    next_slow = 0
+    with ThreadPoolExecutor(max_workers=4) as workers:
+        while True:
+            started = time.monotonic()
+            volume = workers.submit(audio)
+            layout = workers.submit(keyboard_layout)
+            slow = started >= next_slow
+            if slow:
+                network_future = workers.submit(wifi)
+                service_future = workers.submit(proxy)
+            blocks = [stick_mode()]
+            blocks += layout.result()
+            if slow:
+                network, details['wifi'] = network_future.result()
+                service = service_future.result()
+                next_slow = started + 5
+            blocks += [network, volume.result(), service] + batteries()
+            now = datetime.now()
+            blocks.append(block('clock', now.strftime('%a %d %b %H:%M'), now.strftime('%H:%M')))
+            print(json.dumps(blocks, ensure_ascii=False) + ',', flush=True)
+            time.sleep(max(0, 1 - (time.monotonic() - started)))
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (BrokenPipeError, KeyboardInterrupt):
+        pass

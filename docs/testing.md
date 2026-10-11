@@ -10,12 +10,15 @@ Run from the repository root:
 python3 tests/check-setup-layout.py
 python3 tests/check-browser-download-mode.py
 python3 tests/check-chord-recognizer.py
+python3 tests/check-status-bar.py
 python3 tests/check-install-plan.py
 python3 tests/check-install-launch.py
 python3 tests/check-proxy.py
 ```
 
 The setup check verifies the root entry point, source staging and coordinator paths without installing packages. The browser check isolates Snap command selection and existing-browser retention. The chord check feeds independent Xbox face codes through all 24 named shortcuts in 480 press/release orders, and checks immediate Backspace holds, fixed versus trigger-modified shortcuts, terminal guards, invalid/rolling gestures, selection/repeat/neutral transitions, persistent legend capture, profile validation, lifecycle cleanup and held-arrow compatibility with shortcuts disabled. It creates no host input device and reads Linux key codes from `/usr/include/linux/input-event-codes.h`.
+
+The status bar check uses battery fixtures and isolated command providers to check signal/network details, volume/mute, proxy service states, keyboard layout selection, safe click notifications, live JSON updates and provider failures/timeouts. It does not query or change host services.
 
 ## Optional proxy container test
 
@@ -191,6 +194,10 @@ python3 tests/check-gamepad-mapping.py "$VM_DIR"
 The synthetic controller is created inside the guest. Mapping tests use a Firefox text-field fixture to exercise editing keys, immediate/held Backspace, shortcut editing, navigation and right-stick selection; no browser navigation shortcuts are assigned. They also check constituent suppression, Sway focus/move/resize/workspaces, window shortcuts, persistent legend, picker/launcher, passthrough, reconnect, lock, inactive console and restart behavior. Exhaustive shortcut orders and terminal guards are checked separately by the host checker. The test removes its controller and HTTP service afterward. Physical trigger axes, adjacent presses and comfort remain device checks.
 
 ## Recorded results and current limits
+
+On 2026-10-11, the bar gained Wi-Fi signal/network details, volume/mute, proxy service state and a conditional keyboard layout indicator, with compact battery labels. The status bar checker passed fixtures, live state changes, protocol output and unavailable/timed-out providers; setup layout and Python syntax passed. These checks use isolated command providers, so physical Wi-Fi/audio/battery readings and the complete bar in a handheld session still need device verification.
+
+On 2026-10-11, the status bar gained system battery percentage and charging status. Isolated power-supply fixtures passed charging/discharging/full states, changing readings, missing/invalid values, absent/peripheral battery filtering, multiple batteries and valid bar JSON while retaining the right-stick indicator. Shell syntax passed. Physical WIN Mini battery readings have not been checked.
 
 On 2026-10-11, character chords and the L3 Super layer were replaced with 24 named D-pad + Y/A/B shortcuts, immediate holdable X/Backspace, R3 right-stick selection mode and an L3 shortcut legend. The Linux frame checker passed all 480 assigned press/release orders, independent Xbox button codes, modifier restoration, terminal guards, selection/repeat/neutral transitions, legend capture, profile validation and lifecycle resets. Setup layout, browser download mode, Python and shell syntax checks passed.
 

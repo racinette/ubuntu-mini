@@ -30,6 +30,8 @@ Setup also installs and enables [Handheld Daemon power controls](power-controls.
 
 After reboot, enter your LUKS passphrase if you configured encryption, then log in using your existing account password. Super+Enter opens Foot, Super+D opens the application launcher, Super+B opens Firefox, Super+E opens Thunar, Super+1 through Super+4 switch workspaces, and Super+L locks the session. The configuration uses Bash and local-only Atuin without requiring an account.
 
+Work through the [device checklist](device-checklist.md) after installation. It includes the known touchscreen issue, HHD and temperature checks, controller behavior, suspend, networking, proxy access and development tools.
+
 ## Coding CLIs
 
 Ordinary `sudo ./setup.sh` installs **Codex** (`codex`), **Claude Code** (`claude`) and **Cursor Agent** (`agent`) for the selected desktop account. Their official native installers run as that user, with the correct home directory and no root credentials or tool settings inherited. Their native installers are independent of the development Node.js/npm installation. Setup installs Git, curl, certificates, ripgrep, `xdg-utils` for opening browser sign-in links, and the bubblewrap/socat packages used by Claude's optional Linux sandbox; it leaves tool permissions and sandbox settings at upstream defaults.

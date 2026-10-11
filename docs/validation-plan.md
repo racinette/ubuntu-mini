@@ -2,6 +2,8 @@
 
 The supported workflow is manual Ubuntu installation followed by source-only post-install setup. Earlier VM runs validated setup, reruns, signed boot, desktop use and synthetic gamepad input. [Testing instructions](testing.md) distinguish those recorded results from checks of the current source tree. The current chord assignments still need a fresh VM run and physical comfort testing.
 
+Use the [device checklist](device-checklist.md) for the checks to perform after installation, diagnostic commands and recording failures. This plan tracks the broader validation scope and known backlog.
+
 ## Software checks
 
 - Repeat setup from a clean Ubuntu Server VM, then rerun it with personal settings and an active desktop. Confirm settings and partition geometry are preserved.

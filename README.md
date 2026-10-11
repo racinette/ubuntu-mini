@@ -45,6 +45,7 @@ Only `setup.sh` and `setup/` are needed for post-install device setup. `install.
 - [Use the installed handheld power controls](docs/power-controls.md)
 - [Use the development toolchains and Docker](docs/post-install-setup.md#development-environment)
 - [Use the installed coding CLIs](docs/post-install-setup.md#coding-clis)
+- [Check the actual device after installation](docs/device-checklist.md)
 - [Remaining validation and hardware checks](docs/validation-plan.md)
 
 ISO images, VM disks, firmware variables, credentials, mirror content and test reports stay under ignored local paths. Documentation links into `.local/` refer to private evidence unavailable in a fresh clone. Retained VM results describe the source revision tested; restructuring the repository does not update installed VM sources.

@@ -1,0 +1,66 @@
+#!/usr/bin/python3
+"""Control display power and the session's explicit keep-awake override."""
+import argparse
+import fcntl
+import json
+import os
+from pathlib import Path
+import subprocess
+import time
+
+
+def state_directory():
+    directory = Path(os.environ['XDG_RUNTIME_DIR']) / 'minion-idle'
+    directory.mkdir(mode=0o700, exist_ok=True)
+    return directory
+
+
+def display_power(enabled):
+    if enabled:
+        output = subprocess.check_output(['swaymsg', '-r', '-t', 'get_outputs'], text=True, timeout=5)
+        if any(item.get('power') is False for item in json.loads(output)):
+            # Record before powering on, to let L4 recognize that its own
+            # input woke a dark panel before its release action is evaluated.
+            (state_directory() / 'last-display-wake').write_text(str(time.monotonic()))
+    if not enabled:
+        # Arm the independent activity listener, including before its first
+        # one-second idle timeout. Do not signal the battery lock timer.
+        subprocess.run(['systemctl', '--user', 'kill', '--kill-who=main',
+                        '--signal=SIGUSR1', 'minion-display-wake.service'],
+                       check=True, timeout=5)
+    subprocess.run(['swaymsg', 'output', '*', 'power', 'on' if enabled else 'off'],
+                   check=True, timeout=5, stdout=subprocess.DEVNULL)
+
+
+def toggle_awake():
+    directory = state_directory()
+    target = directory / 'keep-awake'
+    with (directory / 'control.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        enabled = not (target.exists() and target.read_text().strip() == '1')
+        temporary = target.with_suffix('.tmp')
+        temporary.write_text('1\n' if enabled else '0\n')
+        temporary.chmod(0o600)
+        temporary.replace(target)
+    message = ('Keep awake enabled: automatic idle locking and display-off paused.'
+               if enabled else 'Keep awake disabled: normal charger-aware idle policy restored.')
+    subprocess.run(['notify-send', '-a', 'minion', '--', 'Keep awake', message],
+                   check=False, timeout=5)
+    return enabled
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('action', choices=('off', 'on', 'toggle-awake', 'status'))
+    action = parser.parse_args().action
+    if action in ('off', 'on'):
+        display_power(action == 'on')
+    elif action == 'toggle-awake':
+        toggle_awake()
+    else:
+        target = state_directory() / 'keep-awake'
+        print(json.dumps({'keep_awake': target.exists() and target.read_text().strip() == '1'}))
+
+
+if __name__ == '__main__':
+    main()

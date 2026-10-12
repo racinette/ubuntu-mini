@@ -200,6 +200,18 @@ print(value)
             path = binary / name; path.write_text(provider); path.chmod(0o755)
         runtime = root / 'runtime'; (runtime / 'minion-gamepad').mkdir(parents=True)
         mode = runtime / 'minion-gamepad/stick-mode'; mode.write_text('window\n')
+        awake = runtime / 'minion-idle/keep-awake'
+        awake.parent.mkdir()
+        with patch.dict(os.environ, XDG_RUNTIME_DIR=str(runtime)):
+            assert status.awake_mode()['full_text'] == 'Awake OFF'
+            awake.write_text('1\n')
+            assert status.awake_mode()['full_text'] == 'Awake ON'
+            assert status.awake_mode()['color'] == '#9ece6a'
+            awake.write_text('0\n')
+        with patch.object(status.sys, 'stdin', io.StringIO('[\n{"name":"awake","button":1}\n')), \
+                patch.object(status, 'run') as run:
+            status.clicks({})
+            run.assert_called_once_with('minion-idle-controls', 'toggle-awake')
         # Isolate filesystem and API providers too: never query host hardware/HHD.
         entry = '''import json,runpy,sys
 from pathlib import Path
@@ -232,7 +244,7 @@ main()
             assert json.loads(line()) == {'version': 1, 'click_events': True}
             assert line() == '['
             expected = {'wifi': 'Wi-Fi 67%', 'audio': 'Vol 42%', 'proxy': 'Proxy ON',
-                        'layout': 'RU', 'stick': 'Window', 'power': 'Auto',
+                        'layout': 'RU', 'stick': 'Window', 'power': 'Auto', 'awake': 'Awake OFF',
                         'temperatures': 'CPU65° GPU58° SSD40° Bat32°'}
             deadline = time.monotonic() + 8
             while True:
@@ -245,7 +257,7 @@ main()
                         swaymsg=json.dumps([dict(physical, xkb_active_layout_name='English (US)')]), hhd=manual)
             (cpu / 'temp2_input').write_text('72000')
             (ssd / 'temp1_input').write_text('48000')
-            mode.write_text('workspace\n'); save()
+            mode.write_text('workspace\n'); awake.write_text('1\n'); save()
             deadline = time.monotonic() + 9
             while True:
                 current = frame()
@@ -255,6 +267,7 @@ main()
             assert (current['wifi'], current['audio'], current['layout'], current['stick']) == (
                 'Wi-Fi disconnected', 'Muted', 'US', 'Workspace')
             assert current['power'] == 'Limit 18W'
+            assert current['awake'] == 'Awake ON'
             assert current['temperatures'] == 'CPU72° GPU58° SSD48° Bat32°'
             data.update(wpctl='TIMEOUT', swaymsg=None); save()
             deadline = time.monotonic() + 5

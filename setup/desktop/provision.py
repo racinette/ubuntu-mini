@@ -52,7 +52,7 @@ finally:
 # Our no-recommends install includes them explicitly; they grant video-group
 # writes to screen backlights. New group membership takes effect next login.
 run('usermod', '-a', '-G', 'video', user.pw_name)
-for name in ('minion-session', 'minion-session-ready', 'minion-lock', 'minion-idle', 'minion-status', 'minion-gamepad', 'minion-window-picker'):
+for name in ('minion-session', 'minion-session-ready', 'minion-lock', 'minion-idle', 'minion-idle-controls', 'minion-rear-buttons', 'minion-status', 'minion-gamepad', 'minion-window-picker'):
     write('/usr/local/bin/' + name, HERE.joinpath(name).read_text(), 0o755)
 write('/etc/minion/sway.conf', HERE.joinpath('sway.conf').read_text())
 write('/etc/minion/gamepad.json', HERE.joinpath('gamepad.json').read_text())
@@ -67,13 +67,16 @@ IdleAction=ignore
 # Do not grant access to all keyboards or add the user to the input group.
 write('/etc/udev/rules.d/60-minion-gamepad-uinput.rules',
       'SUBSYSTEM=="misc", KERNEL=="uinput", OPTIONS+="static_node=uinput", TAG+="uaccess"\n')
+write('/etc/udev/rules.d/60-minion-rear-buttons.rules',
+      'SUBSYSTEM=="input", KERNEL=="event*", ATTRS{idVendor}=="2f24", ATTRS{idProduct}=="0135", ENV{ID_INPUT_KEYBOARD}=="1", TAG+="uaccess"\n')
 write('/etc/modules-load.d/minion-gamepad.conf', 'uinput\n')
 run('modprobe', 'uinput')
 run('udevadm', 'control', '--reload-rules')
 run('udevadm', 'trigger', '--action=add', '--subsystem-match=backlight')
 run('udevadm', 'trigger', '--action=add', '--subsystem-match=misc', '--sysname-match=uinput')
+run('udevadm', 'trigger', '--action=change', '--subsystem-match=input')
 run('udevadm', 'settle')
-for name in ('minion-gamepad', 'minion-screen-lock'):
+for name in ('minion-gamepad', 'minion-screen-lock', 'minion-display-wake', 'minion-rear-buttons'):
     write('/etc/systemd/user/' + name + '.service', HERE.joinpath(name + '.service').read_text())
 write('/etc/greetd/config.toml', '''[terminal]
 vt = 1
@@ -108,7 +111,7 @@ write('/etc/systemd/user/minion-session.target', '''[Unit]
 Description=Minion graphical session services
 BindsTo=graphical-session.target
 After=graphical-session.target
-Wants=mako.service minion-polkit.service minion-idle.service minion-network-applet.service minion-bluetooth-applet.service minion-gamepad.service
+Wants=mako.service minion-polkit.service minion-idle.service minion-display-wake.service minion-rear-buttons.service minion-network-applet.service minion-bluetooth-applet.service minion-gamepad.service
 ''')
 write('/etc/systemd/user/mako.service.d/session.conf', '''[Unit]
 PartOf=minion-session.target

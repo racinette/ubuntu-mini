@@ -16,7 +16,8 @@ Post-install setup installs this profile automatically. In the WIN Mini's gamepa
 | Select | Window picker, on release |
 | Menu / Xbox | Application launcher, on release |
 | L3 | Show / dismiss shortcut legend, on release |
-| L4 / R4 | Unassigned |
+| L4 | Toggle display power, without locking or suspending |
+| R4 | Toggle Keep awake |
 
 The sticks start in **Window** mode. R3 switches both sticks together:
 
@@ -28,6 +29,12 @@ The sticks start in **Window** mode. R3 switches both sticks together:
 | L2 + right stick | Select text with Shift+arrows | Resize window |
 | R2 + right stick | Ctrl+arrows; words horizontally | Resize window |
 | L2 + R2 + right stick | Ctrl+Shift+arrows; select words horizontally | Resize window |
+
+On the WIN Mini 2023, L4 and R4 emit Print Screen and Pause on the separate `12068:309:Mouse_for_Windows` keyboard. A session reader coalesces both ordinary key-repeat events and firmware macro repetitions into one action on release, allowing a 75 ms gap between sequences within a hold. Sway consumes the rear keys while preserving the physical keyboard's Print Screen screenshot shortcut. A device-specific uaccess rule grants the active local user access to this rear keyboard, without adding the user to the input group. No firmware remapping is needed. Other devices or firmware mappings need their own matching and input handling.
+
+L4 toggles display power while applications continue running. A second L4 press restores the display and leaves it on. Keyboard, touchpad, touchscreen or mapped controller input also restores it; this does not unlock a session that was already locked. L4 also works while locked. R4 toggles the explicit **Keep awake** override while unlocked; the bar shows `Awake ON` or `Awake OFF` and can be clicked to toggle it. The override suppresses automatic idle locking and display-off on either power source, survives idle-service restarts and charger changes, and resets at reboot. Turning it off restores fresh battery timers when unplugged; AC already disables those timers.
+
+For a background agent, enable Keep awake with R4, then turn the display off with L4. Keep awake does not unlock an existing lock. Super+L still locks only, and closing the lid or explicitly suspending still locks and suspends. Without Keep awake, the normal five-minute battery idle lock still applies after manually turning the display off. These bindings do not change the power button.
 
 Workspaces cycle through 1–4. Window focus and resize actions repeat after a short hold; Window mode uses continuous text movement and scrolling at a speed based on deflection. Dead zones prevent small movements from generating actions. Trigger hysteresis stabilizes held modifiers. Ordinary release actions use the modifiers held when released. X acts on press and uses normal keyboard repeat while held; R2+X deletes words where Ctrl+Backspace is supported.
 
@@ -92,4 +99,4 @@ One compatible controller is selected automatically. If several match, set `devi
 
 The mapping follows Xbox/xpad labels: X is Linux BTN_NORTH (307), and Y is BTN_WEST (308). These historical directional aliases do not describe Xbox button positions. The host checker independently feeds driver codes through every assigned gesture, without creating a host input device.
 
-The [VM mapping suite](testing.md#gamepad-tests) covers real applications, shortcuts and lifecycle behavior with a synthetic controller. See recorded results for what has actually run on this revision. Physical controls, suspend and comfort need WIN Mini validation. Rear buttons, gyro and rumble have no added mappings.
+The [VM mapping suite](testing.md#gamepad-tests) covers real applications, shortcuts and lifecycle behavior with a synthetic controller. See recorded results for what has actually run on this revision. Physical controls, suspend and comfort need WIN Mini validation. The rear buttons use their own session reader independently of the controller mapper, including in controller passthrough. Gyro and rumble have no added mappings.

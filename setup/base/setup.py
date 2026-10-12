@@ -91,6 +91,7 @@ def backup_configuration(path, user):
         '/etc/systemd/user/xdg-desktop-portal-gtk.service.d',
         '/etc/systemd/user/xdg-desktop-portal-wlr.service.d',
         '/etc/udev/rules.d/60-minion-gamepad-uinput.rules',
+        '/etc/udev/rules.d/60-minion-rear-buttons.rules',
         '/etc/modules-load.d/minion-gamepad.conf',
         '/etc/systemd/logind.conf.d/60-minion-power.conf',
         '/etc/systemd/system/minion-proxy.service',

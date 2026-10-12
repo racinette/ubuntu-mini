@@ -248,6 +248,15 @@ def stick_mode():
     return block('stick', 'Workspace' if mode == 'workspace' else 'Window')
 
 
+def awake_mode():
+    directory = os.environ.get('XDG_RUNTIME_DIR')
+    enabled = bool(directory) and read(Path(directory) / 'minion-idle/keep-awake') == '1'
+    result = block('awake', 'Awake ON' if enabled else 'Awake OFF', 'Awake' if enabled else 'Idle')
+    if enabled:
+        result['color'] = '#9ece6a'
+    return result
+
+
 def clicks(details):
     for line in sys.stdin:
         try:
@@ -259,6 +268,8 @@ def clicks(details):
         name, button = event.get('name'), event.get('button')
         if name == 'power' and button == 1:
             launch_power_controls()
+        elif name == 'awake' and button == 1:
+            run('minion-idle-controls', 'toggle-awake')
         elif (name in ('wifi', 'temperatures') and button == 1) or (name == 'power' and button == 3):
             title = {'wifi': 'Wi-Fi', 'temperatures': 'Temperatures', 'power': 'Power controls'}[name]
             run('notify-send', '-a', 'minion', '--', title, html.escape(details.get(name, 'Status is unavailable')))
@@ -281,7 +292,7 @@ def main():
                 network_future = workers.submit(wifi)
                 service_future = workers.submit(proxy)
                 health_future = workers.submit(health)
-            blocks = [stick_mode()]
+            blocks = [stick_mode(), awake_mode()]
             blocks += layout.result()
             if slow:
                 network, details['wifi'] = network_future.result()

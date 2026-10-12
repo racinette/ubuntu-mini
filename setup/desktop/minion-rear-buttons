@@ -1,0 +1,125 @@
+#!/usr/bin/python3
+"""Read the WIN Mini rear keyboard and debounce its repeated firmware macros."""
+import logging
+import select
+import subprocess
+import time
+
+log = logging.getLogger('minion-rear-buttons')
+RELEASE_GRACE = 0.075
+
+
+def active_session():
+    import ctypes
+    import os
+    lib = ctypes.CDLL('libsystemd.so.0')
+    lib.sd_uid_get_display.argtypes = [ctypes.c_uint, ctypes.POINTER(ctypes.c_void_p)]
+    lib.sd_session_is_active.argtypes = [ctypes.c_void_p]
+    pointer = ctypes.c_void_p()
+    if lib.sd_uid_get_display(os.getuid(), ctypes.byref(pointer)) < 0:
+        return False
+    try:
+        return lib.sd_session_is_active(pointer) > 0
+    finally:
+        free = ctypes.CDLL(None).free
+        free.argtypes = [ctypes.c_void_p]
+        free(pointer)
+
+
+class Buttons:
+    def __init__(self, display_was_off, action):
+        self.display_was_off = display_was_off
+        self.action = action
+        self.held = {}
+        self.pending = {}
+        self.wake_only = False
+
+    def event(self, code, value, now):
+        if code not in (99, 119) or value == 2:
+            return
+        if value == 1:
+            # Firmware emits brief releases between repeated macro sequences.
+            # A new down within the grace period continues the original hold.
+            if code not in self.held:
+                self.held[code] = True
+                if code == 99:
+                    self.wake_only = self.display_was_off()
+            self.pending.pop(code, None)
+        elif code in self.held:
+            self.pending[code] = now + RELEASE_GRACE
+
+    def tick(self, now):
+        for code, deadline in list(self.pending.items()):
+            if now < deadline:
+                continue
+            del self.pending[code]
+            self.held.pop(code, None)
+            self.action(('on' if self.wake_only else 'off') if code == 99 else 'toggle-awake')
+
+
+def display_was_off():
+    import json
+    import os
+    from pathlib import Path
+    # The compositor may process the same L4 press and wake the panel before
+    # this reader sees it. The wake helper records real Off -> On transitions.
+    recent = Path(os.environ['XDG_RUNTIME_DIR']) / 'minion-idle/last-display-wake'
+    output = subprocess.check_output(['swaymsg', '-r', '-t', 'get_outputs'], text=True, timeout=5)
+    if any(item.get('power') is False for item in json.loads(output)):
+        return True
+    try:
+        return time.monotonic() - float(recent.read_text()) < .25
+    except (OSError, ValueError):
+        return False
+
+
+def action(name):
+    if not active_session():
+        return
+    if name == 'toggle-awake' and subprocess.run(
+            ['systemctl', '--user', 'is-active', '--quiet', 'minion-screen-lock.service']).returncode == 0:
+        return
+    subprocess.run(['minion-idle-controls', name], check=True, timeout=10)
+
+
+def main():
+    import evdev
+    while True:
+        device = None
+        for path in evdev.list_devices():
+            candidate = evdev.InputDevice(path)
+            if ((candidate.info.vendor, candidate.info.product) == (0x2f24, 0x0135)
+                    and {99, 119} <= set(candidate.capabilities().get(evdev.ecodes.EV_KEY, []))):
+                device = candidate
+                break
+            candidate.close()
+        if device is None:
+            time.sleep(1)
+            continue
+        log.info('Rear keyboard ready: %s', device.path)
+        buttons = Buttons(display_was_off, action)
+        # Ignore controls already held when the reader starts/reconnects.
+        blocked = set(device.active_keys()) & {99, 119}
+        try:
+            while True:
+                if select.select([device.fd], [], [], .01)[0]:
+                    for event in device.read():
+                        if event.type == evdev.ecodes.EV_SYN and event.code == evdev.ecodes.SYN_DROPPED:
+                            raise OSError('Rear keyboard event stream lost synchronization')
+                        if event.type != evdev.ecodes.EV_KEY:
+                            continue
+                        if event.code in blocked:
+                            if event.value == 0:
+                                blocked.remove(event.code)
+                            continue
+                        buttons.event(event.code, event.value, time.monotonic())
+                buttons.tick(time.monotonic())
+        except OSError as error:
+            log.warning('Rear keyboard disconnected/reset: %s', error)
+        finally:
+            device.close()
+
+
+if __name__ == '__main__':
+    logging.basicConfig(level=logging.INFO)
+    main()

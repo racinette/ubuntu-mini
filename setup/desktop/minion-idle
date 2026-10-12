@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 """Keep idle lock/blank timers on battery and stay awake on external power."""
 from pathlib import Path
+import os
 import signal
 import subprocess
 import threading
@@ -19,12 +20,20 @@ def external_power(supplies=Path('/sys/class/power_supply')):
     return False
 
 
-def idle_command(on_ac):
+def keep_awake():
+    directory = os.environ.get('XDG_RUNTIME_DIR')
+    try:
+        return bool(directory) and (Path(directory) / 'minion-idle/keep-awake').read_text().strip() == '1'
+    except OSError:
+        return False
+
+
+def idle_command(on_ac, awake=False):
     command = ['/usr/bin/swayidle', '-w']
-    if not on_ac:
+    if not (on_ac or awake):
         command += ['timeout', '300', 'minion-lock',
-                    'timeout', '600', 'swaymsg output * power off',
-                    'resume', 'swaymsg output * power on']
+                    'timeout', '600', 'swaymsg "output * power off"',
+                    'resume', 'swaymsg "output * power on"']
     # Explicit suspend still waits for the authenticated lock on either source.
     return command + ['before-sleep', 'minion-lock']
 
@@ -46,18 +55,21 @@ def supervise(stopping):
     try:
         while not stopping.is_set():
             on_ac = external_power()
+            awake = keep_awake()
             if process is not None and process.poll() is not None:
                 raise RuntimeError('swayidle exited unexpectedly')
-            if on_ac != current:
+            state = (on_ac, awake)
+            if state != current:
                 stop_child(process)
                 process = None
-                if on_ac:
+                if on_ac and (current is None or not current[0]):
                     subprocess.run(['swaymsg', 'output', '*', 'power', 'on'],
                                    check=True, timeout=5)
-                print('External power: idle timers disabled.' if on_ac else
+                print('Keep awake: idle timers disabled.' if awake else
+                      'External power: idle timers disabled.' if on_ac else
                       'Battery: lock after 5 minutes, displays off after 10.', flush=True)
-                process = subprocess.Popen(idle_command(on_ac))
-                current = on_ac
+                process = subprocess.Popen(idle_command(on_ac, awake))
+                current = state
             stopping.wait(2)
     finally:
         stop_child(process)

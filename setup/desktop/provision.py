@@ -9,6 +9,7 @@ import shutil
 import subprocess
 
 from audio import seed_microphone_level
+from firmware import install as install_sensor_firmware
 
 HERE = Path(__file__).resolve().parent
 parser = argparse.ArgumentParser(description=__doc__)
@@ -50,6 +51,8 @@ try:
 finally:
     if created_mask:
         run('systemctl', 'unmask', '--runtime', 'greetd.service')
+if install_sensor_firmware():
+    print('Installed verified WIN Mini BMI260 motion-sensor firmware.')
 # Ubuntu splits these rules out of brightnessctl as a recommended package.
 # Our no-recommends install includes them explicitly; they grant video-group
 # writes to screen backlights. New group membership takes effect next login.

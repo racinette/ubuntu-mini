@@ -4,11 +4,14 @@ Tests run independently of device setup. Host checks use isolated commands or ma
 
 ## Host checks
 
+The sensor firmware check uses isolated targets to verify model matching, pinned download URLs, checksum refusal before installation, retention of existing plain/compressed firmware and installation of the accompanying license. It does not probe host hardware. Normal setup enables the sensor driver but leaves gyro input mapping and automatic rotation unconfigured.
+
 Run from the repository root:
 
 ```bash
 python3 tests/check-setup-layout.py
 python3 tests/check-microphone-defaults.py
+python3 tests/check-sensor-firmware.py
 python3 tests/check-network-picker.py
 python3 tests/check-browser-download-mode.py
 python3 tests/check-chord-recognizer.py
@@ -215,6 +218,8 @@ python3 tests/check-gamepad-mapping.py "$VM_DIR"
 The synthetic controller is created inside the guest. Mapping tests use a Firefox text-field fixture to exercise editing keys, immediate/held Backspace, shortcut editing, navigation and right-stick selection; no browser navigation shortcuts are assigned. They also check constituent suppression, Sway focus/move/resize/workspaces, window shortcuts, persistent legend, picker/launcher, passthrough, reconnect, lock, inactive console and restart behavior. Exhaustive shortcut orders and terminal guards are checked separately by the host checker. The test removes its controller and HTTP service afterward. Physical trigger axes, adjacent presses and comfort remain device checks.
 
 ## Recorded results and current limits
+
+On 2026-10-12, a driver audit on the WIN Mini 2023 confirmed hardware-accelerated OpenGL on the Radeon 780M (`amdgpu`, radeonsi/Mesa 25.2.8) and successful Vulkan enumeration through RADV. The motion sensor was unbound because `bmi260-init-data.fw` was absent. Setup now conditionally installs the pinned upstream firmware and license when this model lacks either plain or compressed firmware, while retaining existing package-provided copies. Firmware corruption/retention checks and setup staging/preflight checks passed. Local installation followed by a probe of only `i2c-BMI0160:00` successfully bound `bmi270_i2c` without reboot; the `bmi260` IIO device returned changing samples on all six acceleration/angular-velocity channels. [Private sensor report](../.local/device-checks/sensor-firmware-install-result.json). Deliberate tilt/orientation accuracy, calibration, gyro input mapping, sensor resume/reboot behavior, GPU load and actual hardware video decoding remain untested.
 
 On 2026-10-12, the WIN Mini's battery idle check locked successfully after five minutes, but the ten-minute display-off command failed with `Invalid output subcommand: Documents.` The unquoted output wildcard expanded into home-directory filenames when swayidle ran the command through the shell. Both display-off and resume commands now quote the full Sway command. A regression check executes both commands through `/bin/sh` with a stub IPC client in a populated directory and verifies that the wildcard survives. Idle-policy and setup-layout checks passed. After local installation and idle-service restart, a brief power cycle using the corrected commands reported Sway output power false and kernel DRM DPMS Off, followed by successful restoration to On. [Private panel report](../.local/device-checks/idle-display-fix-result.json). The user then repeated the idle check and confirmed that display-off now works.
 

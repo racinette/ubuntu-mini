@@ -100,6 +100,9 @@ def backup_configuration(path, user):
         '/usr/local/share/minion/bashrc.bash', '/etc/codex/config.toml',
         '/etc/apparmor.d/bwrap-userns-restrict',
         '/etc/apt/sources.list.d/docker.sources', '/etc/apt/keyrings/docker.asc')]
+    paths.extend(Path(name) for name in (
+        '/usr/lib/firmware/bmi260-init-data.fw',
+        '/usr/share/doc/minion-firmware/LICENSE.bmi260'))
     paths.extend(Path('/etc/systemd/user').glob('minion-*.service'))
     paths.extend(Path('/usr/local/bin').glob('minion-*'))
     paths.append(Path('/usr/local/share/applications/minion-network.desktop'))
@@ -130,6 +133,7 @@ def main():
         raise SystemExit(str(error)) from error
     print(f'Setup target: {user.pw_name}. Existing Ubuntu APT sources will be used.', flush=True)
     if args.check:
+        subprocess.run([sys.executable, ROOT / 'desktop/firmware.py', '--check'], check=True)
         subprocess.run([sys.executable, ROOT / 'proxy/provision.py', '--check'], check=True)
         subprocess.run([sys.executable, ROOT / 'hhd/provision.py', '--check'], check=True)
         subprocess.run([sys.executable, ROOT / 'agents/provision.py', user.pw_name, '--check'], check=True)

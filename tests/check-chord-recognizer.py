@@ -35,7 +35,7 @@ class Keyboard:
 def main():
     header = Path('/usr/include/linux/input-event-codes.h').read_text()
     constants = {name: int(value, 0) for name, value in re.findall(
-        r'^#define\s+((?:KEY|BTN|ABS|EV)_\w+)\s+(0x[\da-fA-F]+|\d+)\b', header, re.M)}
+        r'^#define\s+((?:KEY|BTN|ABS|EV|REL)_\w+)\s+(0x[\da-fA-F]+|\d+)\b', header, re.M)}
     codes = SimpleNamespace(**constants, ecodes=constants)
     profile = json.loads((PROJECT / 'setup/desktop/gamepad.json').read_text())
     expected = {
@@ -48,7 +48,7 @@ def main():
         'DOWN+LEFT+B': 'previous_match', 'DOWN+RIGHT+B': 'next_match',
     }
     assert profile['chords'] == expected
-    assert profile['actions']['BTN_THUMBL'] == 'legend' and profile['actions']['BTN_THUMBR'] == 'selection'
+    assert profile['actions']['BTN_THUMBL'] == 'legend' and profile['actions']['BTN_THUMBR'] == 'stick_context'
     with tempfile.TemporaryDirectory(prefix='minion-shortcut-test-') as temporary:
         directory = Path(temporary)
         def path(value):
@@ -80,7 +80,7 @@ def main():
             state.raw_axes = {axis: 0 for axis in state.ranges}
             keyboard.events.clear()
         def downs():
-            return [code for kind, code, value in keyboard.events if value == 1]
+            return [code for kind, code, value in keyboard.events if kind == codes.EV_KEY and value == 1]
         for face, output in (('A', codes.KEY_ENTER), ('B', codes.KEY_ESC), ('Y', codes.KEY_TAB)):
             reset(); frame({face}); frame({face})
             assert not keyboard.events
@@ -218,35 +218,194 @@ def main():
             def close(self): pass
         state.device = Device()
         reset()
+        assert state.stick_mode == 'window'
         with patch.object(state, 'notify'), patch.object(state, 'command') as command:
-            frame(buttons=(318,)); assert state.right_pending is None
-            frame(); assert state.right_pending == 'select' and state.right_mode == 'resize'
+            frame(buttons=(318,)); assert state.stick_pending is None
+            frame(); assert state.stick_pending == 'workspace' and state.stick_mode == 'window'
+            # Both sticks must be centered; returning only one is insufficient.
             state.raw_axes[config['right_stick'][0]] = 32767
+            state.raw_axes[config['left_stick'][0]] = -32768
             state.tick(0, True)
-            assert not keyboard.events and not command.called and state.right_pending == 'select'
+            assert not keyboard.events and not command.called
             state.raw_axes[config['right_stick'][0]] = 0
             state.tick(.1, True)
-            assert state.right_mode == 'select' and state.right_pending is None
-            state.raw_axes[config['right_stick'][0]] = 32767
+            assert state.stick_pending == 'workspace' and not command.called
+            state.raw_axes[config['left_stick'][0]] = 0
             state.tick(.2, True)
-            assert downs() == [codes.KEY_LEFTSHIFT, codes.KEY_RIGHT] and not state.keys
-            count = len(keyboard.events)
-            state.tick(.3, True); assert len(keyboard.events) == count
-            state.tick(.7, True); assert len(keyboard.events) > count
-            frame(ctrl=True); keyboard.events.clear()
-            state.tick(1, True)
-            assert codes.KEY_RIGHT in downs() and state.keys == {codes.KEY_LEFTCTRL}
-            assert not command.called
-            frame(buttons=(318,)); frame()
-            assert state.right_pending == 'resize'
-            state.tick(2, True); assert not command.called
-            state.raw_axes[config['right_stick'][0]] = 0
-            state.tick(3, True); assert state.right_mode == 'resize'
+            assert state.stick_mode == 'workspace' and state.stick_pending is None
             state.raw_axes[config['right_stick'][0]] = 32767
-            state.tick(4, True); command.assert_called_with('resize grow width 5 ppt')
-        assert (directory / 'right-stick-mode').read_text().strip() == 'resize'
+            state.tick(.3, True); command.assert_called_with('resize grow width 5 ppt')
+            state.raw_axes[config['right_stick'][0]] = 0
+            state.raw_axes[config['left_stick'][0]] = -32768
+            state.tick(.4, True); command.assert_called_with('focus left')
+            frame(shift=True)
+            state.raw_axes[config['left_stick'][0]] = 32767
+            state.tick(.5, True); command.assert_called_with('move right')
+            frame(); frame(buttons=(318,)); frame()
+            assert state.stick_pending == 'window'
+            command.reset_mock(); state.tick(1, True)
+            assert not command.called and state.stick_mode == 'workspace'
+            state.raw_axes[config['left_stick'][0]] = 0
+            state.tick(2, True)
+            assert state.stick_mode == 'window' and not state.stick_pending
+        assert (directory / 'stick-mode').read_text().strip() == 'window'
+
+        window = {'id': 42, 'rect': {'x': -960, 'y': 20, 'width': 960, 'height': 500}}
+        # The virtual device exposes both mouse and keyboard capabilities.
+        capabilities = mapper.output_capabilities(config, codes)
+        assert codes.BTN_LEFT in capabilities[codes.EV_KEY]
+        assert set(capabilities[codes.EV_REL]) == {codes.REL_X, codes.REL_Y, codes.REL_WHEEL,
+            codes.REL_HWHEEL, codes.REL_WHEEL_HI_RES, codes.REL_HWHEEL_HI_RES}
+        # Wheel detents have full 120-unit magnitude and correct direction, with
+        # trigger releases/restores ordered around them on the same event stream.
+        for shift, ctrl in itertools.product((False, True), repeat=2):
+            for axis, value, wheel, precise, sign in (
+                    (config['left_stick'][0], -32768, codes.REL_HWHEEL, codes.REL_HWHEEL_HI_RES, -1),
+                    (config['left_stick'][0], 32767, codes.REL_HWHEEL, codes.REL_HWHEEL_HI_RES, 1),
+                    (config['left_stick'][1], -32768, codes.REL_WHEEL, codes.REL_WHEEL_HI_RES, 1),
+                    (config['left_stick'][1], 32767, codes.REL_WHEEL, codes.REL_WHEEL_HI_RES, -1)):
+                reset(); frame(shift=shift, ctrl=ctrl)
+                held = set(state.keys); keyboard.events.clear()
+                with patch.object(state, 'focused_window', return_value=window), patch.object(
+                        state, 'command', return_value=True) as command:
+                    state.raw_axes[axis] = value
+                    state.tick(0, True)
+                    command.assert_called_once_with('seat seat0 cursor set -480 270')
+                    relative = [event for event in keyboard.events if event[0] == codes.EV_REL]
+                    assert relative == [(codes.EV_REL, precise, sign * 120), (codes.EV_REL, wheel, sign)]
+                    first_wheel = keyboard.events.index(relative[0])
+                    last_wheel = keyboard.events.index(relative[-1])
+                    for key in held:
+                        assert keyboard.events.index((codes.EV_KEY, key, 0)) < first_wheel
+                        assert keyboard.events.index((codes.EV_KEY, key, 1)) > last_wheel
+                    assert state.keys == held
+                    state.raw_axes[axis] = 0
+                    command.reset_mock(); keyboard.events.clear(); state.tick(1, True)
+                    assert not command.called and not keyboard.events and state.scroll_target is None
+                frame(); assert not state.keys
+        reset()
+        with patch.object(state, 'focused_window', return_value=window), patch.object(state, 'command', return_value=True):
+            state.scroll('down', 3, 0, True)
+            assert keyboard.events == [(codes.EV_REL, codes.REL_WHEEL_HI_RES, -360),
+                                       (codes.EV_REL, codes.REL_WHEEL, -3)]
+
+        def scrolled(value, frequency=100):
+            reset(); state.raw_axes[config['left_stick'][1]] = value
+            with patch.object(state, 'scroll') as scroll:
+                for step in range(frequency + 1):
+                    state.tick(step / frequency, True)
+                return sum(call.args[1] for call in scroll.call_args_list)
+        slow_scroll, fast_scroll = scrolled(19660), scrolled(32767)
+        assert 1 <= slow_scroll <= 3 and 18 <= fast_scroll <= 19
+        assert abs(scrolled(32767, 30) - fast_scroll) <= 1
+        assert scrolled(17000) == 0
+        # Both sticks retain independent continuous speeds when used together.
+        reset(); frame(shift=True, ctrl=True)
+        state.raw_axes[config['left_stick'][1]] = 32767
+        state.raw_axes[config['right_stick'][0]] = 32767
+        with patch.object(state, 'focused_window', return_value=window), patch.object(state, 'command', return_value=True) as command:
+            for step in range(101):
+                state.tick(step / 100, True)
+            assert 39 <= sum(key == codes.KEY_RIGHT for key in downs()) <= 41
+            assert 18 <= -sum(value for kind, code, value in keyboard.events
+                             if kind == codes.EV_REL and code == codes.REL_WHEEL) <= 19
+            assert state.keys == {codes.KEY_LEFTSHIFT, codes.KEY_LEFTCTRL}
+        frame(); assert not state.keys
+
+        # Missing windows or rejected cursor positioning must not scroll elsewhere.
+        reset(); state.raw_axes[config['left_stick'][1]] = 32767
+        with patch.object(state, 'focused_window', side_effect=ValueError('No window')), patch.object(state, 'command') as command:
+            state.tick(0, True); assert not command.called
+        reset(); state.raw_axes[config['left_stick'][1]] = 32767
+        with patch.object(state, 'focused_window', return_value=window), patch.object(state, 'command', return_value=False) as command:
+            state.tick(0, True)
+            command.assert_called_once_with('seat seat0 cursor set -480 270')
+        # Retarget held scrolling when the focused window changes.
+        other = {'id': 43, 'rect': {'x': 0, 'y': 0, 'width': 600, 'height': 400}}
+        reset(); state.raw_axes[config['left_stick'][1]] = 32767
+        with patch.object(state, 'focused_window', side_effect=(window, other)), patch.object(state, 'command', return_value=True) as command:
+            state.tick(0, True); state.tick(.21, True)
+            assert 'seat seat0 cursor set 300 200' in [call.args[0] for call in command.call_args_list]
+
+        # Text navigation uses exactly the trigger modifiers, in all directions.
+        for shift, ctrl in itertools.product((False, True), repeat=2):
+            modifiers = ({codes.KEY_LEFTSHIFT} if shift else set()) | ({codes.KEY_LEFTCTRL} if ctrl else set())
+            for axis, value, key in ((config['right_stick'][0], -32768, codes.KEY_LEFT),
+                                     (config['right_stick'][0], 32767, codes.KEY_RIGHT),
+                                     (config['right_stick'][1], -32768, codes.KEY_UP),
+                                     (config['right_stick'][1], 32767, codes.KEY_DOWN)):
+                reset(); state.stick_mode = 'window'; frame(shift=shift, ctrl=ctrl)
+                state.raw_axes[axis] = value
+                with patch.object(state, 'shortcut', wraps=state.shortcut) as shortcut:
+                    state.tick(0, True)
+                    shortcut.assert_called_once_with(key, modifiers)
+                assert state.keys == modifiers
+                state.raw_axes[axis] = 0
+                state.tick(.1, True); frame()
+                assert not state.keys
+        # Triggers change navigation/selection while the stick remains deflected.
+        reset(); state.stick_mode = 'window'
+        state.raw_axes[config['right_stick'][0]] = 32767
+        with patch.object(state, 'shortcut', wraps=state.shortcut) as shortcut:
+            state.tick(0, True)
+            for index, (shift, ctrl) in enumerate(((True, False), (True, True), (False, True), (False, False)), 1):
+                modifiers = ({codes.KEY_LEFTSHIFT} if shift else set()) | ({codes.KEY_LEFTCTRL} if ctrl else set())
+                frame(shift=shift, ctrl=ctrl)
+                shortcut.reset_mock(); state.tick(index * .06, True)
+                assert shortcut.called
+                assert all(call.args == (codes.KEY_RIGHT, modifiers) for call in shortcut.call_args_list)
+                assert state.keys == modifiers
+        # Existing personal profiles using either old action name toggle the context.
+        for action in ('selection', 'text_navigation'):
+            reset(); state.stick_mode = 'workspace'
+            with patch.object(state, 'notify'):
+                state.dispatch(action)
+                state.tick(0, True)
+            assert state.stick_mode == 'window'
+
+        # Continuous selection scales with deflection, not the input polling rate.
+        def selected(axis, value, frequency=100):
+            reset(); state.stick_mode = 'window'
+            state.raw_axes[axis] = value
+            for step in range(frequency + 1):
+                state.tick(step / frequency, True)
+            assert not state.keys
+            return sum(key in (codes.KEY_RIGHT, codes.KEY_DOWN) for key in downs())
+
+        horizontal, vertical = config['right_stick']
+        with patch.object(state, 'command') as command:
+            light = selected(horizontal, 19660)
+            fast = selected(horizontal, 32767)
+            assert 3 <= light <= 7 and 39 <= fast <= 41, (light, fast)
+            assert abs(selected(horizontal, 32767, 30) - fast) <= 1
+            assert abs(selected(horizontal, 32767, 60) - fast) <= 1
+            assert 9 <= selected(vertical, 32767) <= 11
+            reset(); state.stick_mode = 'window'
+            state.raw_axes[horizontal] = 17000
+            state.tick(0, True); state.tick(.1, True)
+            assert not keyboard.events
+            state.raw_axes[horizontal] = 32767
+            state.tick(.2, True)
+            state.raw_axes[horizontal] = 0
+            state.tick(.21, True); state.tick(1, True)
+            assert downs() == [codes.KEY_RIGHT] and not state.keys
+            # Reversing starts a single precise step with no leftover movement.
+            state.raw_axes[horizontal] = -32768
+            state.tick(1.01, True)
+            assert downs() == [codes.KEY_RIGHT, codes.KEY_LEFT]
+            # A stalled loop does not accumulate seconds of repeat events.
+            keyboard.events.clear(); state.tick(100, True)
+            assert sum(key == codes.KEY_LEFT for key in downs()) <= 4
+            # Returning to a light deflection immediately slows the movement.
+            state.raw_axes[horizontal] = -19660
+            keyboard.events.clear()
+            for step in range(1, 101):
+                state.tick(100 + step / 100, True)
+            assert 3 <= sum(key == codes.KEY_LEFT for key in downs()) <= 7
+            assert not state.keys and not command.called
+
         for reason in ('reset', 'disconnect', 'inactive', 'paused', 'passthrough'):
-            reset(); state.device = Device(); state.right_mode = 'select'; frame({'X'}, shift=True, ctrl=True)
+            reset(); state.device = Device(); state.stick_mode = 'workspace'; frame({'X'}, shift=True, ctrl=True)
             frame({'X', 'UP', 'A'}, shift=True, ctrl=True)
             if reason == 'reset': state.reset()
             elif reason == 'disconnect': state.detach()
@@ -255,7 +414,8 @@ def main():
                 (directory / 'paused').touch(); state.tick(0, True); (directory / 'paused').unlink()
             else:
                 with patch.object(state, 'notify'): state.toggle()
-            assert not state.keys and state.right_mode == 'resize' and not state.right_pending
+            assert not state.keys and state.stick_mode == 'window' and not state.stick_pending
+            assert state.motion_time == [None, None] and state.motion_credit == [0, 0]
             assert not state.text_gesture.previous and not state.pending_buttons
         state.device = None
 
@@ -266,6 +426,14 @@ def main():
         with patch.object(mapper.subprocess, 'Popen', return_value=process):
             frame(buttons=(317,)); assert not state.legend_open()
             frame(); assert state.legend_open() and not keyboard.events
+        with patch.object(state, 'command') as command:
+            state.device = Device()
+            state.raw_axes[config['left_stick'][0]] = 32767
+            state.raw_axes[config['right_stick'][0]] = 32767
+            state.tick(0, True)
+            assert not command.called and not keyboard.events
+            state.raw_axes[config['left_stick'][0]] = 0
+            state.raw_axes[config['right_stick'][0]] = 0
         legend = state.legend_text()
         assert all(mapper.ACTION_LABELS[action] in legend for action in expected.values())
         with patch.object(state, 'dispatch') as dispatch:
@@ -278,7 +446,10 @@ def main():
             frame(buttons=(317,)); frame(); assert not state.legend_open()
 
         # User profiles cannot bring X back into shortcuts or load old character outputs.
-        for changes in ({'chords': {'UP+X': 'copy'}}, {'chords': {'UP+Y': 'KEY_E'}}):
+        for changes in ({'chords': {'UP+X': 'copy'}}, {'chords': {'UP+Y': 'KEY_E'}},
+                        {'selection_rate': [40, 4]}, {'selection_rate': [0, 40]},
+                        {'selection_line_rate': [2, 101]}, {'selection_rate': [4, True]},
+                        {'selection_rate': 'fast'}, {'scroll_rate': [18, 1]}):
             personal = directory / 'bad.json'; personal.write_text(json.dumps(changes))
             with patch.object(mapper, 'Path', side_effect=path):
                 try: mapper.configuration(personal, codes)
@@ -289,7 +460,7 @@ def main():
         assert keyboard.events == [(codes.EV_KEY, codes.KEY_UP, 1)]
         frame(); assert keyboard.events[-1] == (codes.EV_KEY, codes.KEY_UP, 0)
         config['chords'] = saved
-        print(f'Passed: 24 named shortcuts, {orders} press/release orders, independent Xbox codes, holdable Backspace, modifier restoration, terminal guards, selection/repeat/neutral transition, legend capture, lifecycle reset and profile validation.')
+        print(f'Passed: 24 named shortcuts, {orders} press/release orders, Xbox codes, Backspace holds, modifier restoration, terminal guards, shared contexts/both-stick neutral switch, scroll targeting/direction/speed/modifiers/failure handling, text navigation/speed, legend capture, lifecycle reset and profile validation.')
 
 
 if __name__ == '__main__':

@@ -11,17 +11,25 @@ Post-install setup installs this profile automatically. In the WIN Mini's gamepa
 | R2, right trigger | Hold Ctrl |
 | L1 / R1 | Previous / next workspace, on release |
 | L2 + bumper | Send focused window to adjacent workspace without following it |
-| Left stick | Focus window in that direction |
-| L2 + left stick | Move window in that direction |
-| Right stick | Resize, or extend text selection in selection mode |
-| R3 | Toggle right-stick Resize / Select text mode, on release |
+| R3 | Switch both sticks between Window / Workspace controls, on release |
 | Start | Open terminal, on release |
 | Select | Window picker, on release |
 | Menu / Xbox | Application launcher, on release |
 | L3 | Show / dismiss shortcut legend, on release |
 | L4 / R4 | Unassigned |
 
-Workspaces cycle through 1–4. Stick directions repeat after a short hold; dead zones prevent small movements from generating actions. Trigger hysteresis stabilizes held modifiers. Ordinary release actions use the modifiers held when released. X acts on press and uses normal keyboard repeat while held; R2+X deletes words where Ctrl+Backspace is supported.
+The sticks start in **Window** mode. R3 switches both sticks together:
+
+| Control | Window | Workspace |
+| --- | --- | --- |
+| Left stick | Scroll vertically/horizontally | Focus window |
+| L2 + left stick | Scroll | Move window |
+| Right stick | Move the caret with arrows | Resize window |
+| L2 + right stick | Select text with Shift+arrows | Resize window |
+| R2 + right stick | Ctrl+arrows; words horizontally | Resize window |
+| L2 + R2 + right stick | Ctrl+Shift+arrows; select words horizontally | Resize window |
+
+Workspaces cycle through 1–4. Window focus and resize actions repeat after a short hold; Window mode uses continuous text movement and scrolling at a speed based on deflection. Dead zones prevent small movements from generating actions. Trigger hysteresis stabilizes held modifiers. Ordinary release actions use the modifiers held when released. X acts on press and uses normal keyboard repeat while held; R2+X deletes words where Ctrl+Backspace is supported.
 
 ## Shortcut table
 
@@ -29,13 +37,19 @@ D-pad + Y/A/B execute the [24 named shortcuts](gamepad-chord-layout.md): editing
 
 Copy/paste are terminal-aware. Editing actions ignore held triggers for their shortcut and restore them afterward; navigation shortcuts accept Shift/Ctrl. Application support determines Find, Save, Redo and search-match behavior. See the table for details.
 
-## Right-stick modes and legend
+## Stick contexts and legend
 
-Right-stick left/right shrink/grow window width; up/down shrink/grow height. R3 switches to Select text: left/right emit Shift+Left/Right, and up/down Shift+Up/Down. Hold R2 to add Ctrl for word selection horizontally. Selection works where the application supports keyboard text selection. It does not provide a universal pointer-drag selection.
+In Window mode, the left stick scrolls and the right stick navigates text like the D-pad. Hold L2 (Shift) to extend selection, R2 (Ctrl) for word movement horizontally, or both for word selection. Ctrl+up/down follows the application's own navigation behavior. Triggers can be pressed or released while the stick remains deflected to switch between movement and selection.
 
-The stick must return to neutral before a mode switch takes effect. The bar continuously shows `R: Resize` or `R: Select text`. `minion-gamepad --status` reports `right_stick_mode` and `right_stick_pending`. Toggling the mode alone leaves no keyboard modifier held. Locking, leaving the active desktop, disconnecting, input resynchronization, restarting the service or entering passthrough restores Resize.
+A quick nudge moves once. Holding the stick moves continuously, with light deflection for precision and full deflection for speed. Text movement ranges from 4 to 40 horizontal steps per second and 2 to 10 vertical steps per second. The same speeds apply while selecting. Scrolling ranges from 1 to 18 wheel steps per second in either axis; the dominant axis wins on diagonals. Returning to neutral stops immediately. Text navigation and selection use the focused application's keyboard behavior, such as in a browser text box or editor; they do not provide universal pointer-drag or terminal scrollback selection.
 
-L3 opens a persistent Fuzzel legend derived from the active shortcut profile. D-pad up/down browse, typing filters the list, and B/Escape, Enter or another L3 tap dismisses it. It remains visible until dismissed. While open, shortcut chords and stick window actions are suppressed. The legend closes when mapping is suspended or reset.
+A new scroll gesture positions the pointer at the center of the focused window, then sends full mouse-wheel detents through the virtual input device. Each detent carries 120 high-resolution units plus its legacy wheel event, so applications receive normal wheel distances. Held scrolling checks for a changed focused window or geometry every 200 ms and retargets it. Within an application, the pane under that center point receives the scroll; a split editor may therefore need touchpad positioning or an application-specific command to scroll another pane. Controller Shift/Ctrl are temporarily released around wheel events and restored afterward, so triggers keep ordinary scrolling rather than zooming or changing axes. Physical keyboard modifiers still follow the application's behavior. Wheel scrolling in terminals depends on the running program and its mouse/scrollback handling.
+
+In Workspace mode, the left stick focuses windows, L2+left stick moves them, and the right stick resizes them. Right-stick left/right shrink/grow width; up/down shrink/grow height. These actions retain their fixed repeat timing.
+
+R3 requests a context change. Both sticks must return to neutral before it takes effect; both are suppressed while a change is pending. The bar shows `Window` or `Workspace`. `minion-gamepad --status` reports `stick_mode` and `stick_pending`. Toggling the context alone leaves no keyboard modifier held. Locking, leaving the active desktop, disconnecting, input resynchronization, restarting the service or entering passthrough restores Window.
+
+L3 opens a persistent Fuzzel legend derived from the active shortcut profile. D-pad up/down browse, typing filters the list, and B/Escape, Enter or another L3 tap dismisses it. It remains visible until dismissed. While open, shortcut chords and both sticks are suppressed. The legend closes when mapping is suspended or reset.
 
 The window picker lists windows across workspaces, with the current window first. D-pad up/down selects, A focuses the selected window, and B cancels. Typing filters by application, title or workspace. The launcher uses the same navigation keys. Optional buttons missing from a controller are reported in status.
 
@@ -62,7 +76,9 @@ systemctl --user restart minion-gamepad.service
 minion-gamepad --status
 ```
 
-Setup preserves this file. Top-level settings override the defaults; a nested object replaces that entire object. Chord values are named actions such as `copy`, `close`, `home` and `equalize`, as shown in the default JSON. `actions` assigns named actions to buttons, including `legend` and `selection`. X must remain Backspace and cannot appear in a chord. Set `chords` to `{}` to disable shortcuts and restore held D-pad arrows. Thresholds, repeat timing, workspace numbers and resize increments are configurable.
+Setup preserves this file. Top-level settings override the defaults; a nested object replaces that entire object. Chord values are named actions such as `copy`, `close`, `home` and `equalize`, as shown in the default JSON. `actions` assigns named actions to buttons, including `legend` and `stick_context`. The earlier `selection` and `text_navigation` action names remain aliases for `stick_context`; both now switch the shared Window/Workspace context. X must remain Backspace and cannot appear in a chord. Set `chords` to `{}` to disable shortcuts and restore held D-pad arrows. Thresholds, repeat timing, workspace numbers and resize increments are configurable.
+
+Text navigation and selection speed is configurable with `selection_rate` (horizontal) and `selection_line_rate` (vertical), retaining the earlier setting names. Each is a pair of minimum and maximum steps per second, from 1 to 100. Scrolling speed uses `scroll_rate`, another minimum/maximum pair of wheel steps per second. Window focus and resizing retain their existing repeat timing.
 
 Old character-typing profiles and the old `super` action are incompatible with this layout. On a fresh install use the new default; if retaining a personal copy during development, replace its old `chords` and `actions` objects before restarting. No profile migration is performed.
 
@@ -70,7 +86,7 @@ One compatible controller is selected automatically. If several match, set `devi
 
 ## Implementation and tested scope
 
-[minion-gamepad](../setup/desktop/minion-gamepad) runs as the logged-in user, reads evdev events, emits keys through the virtual keyboard, and sends desktop operations through Sway IPC. Setup installs Ubuntu's `python3-evdev`, loads uinput and grants the active local user access through a uaccess rule; it does not add the account to the input group.
+[minion-gamepad](../setup/desktop/minion-gamepad) runs as the logged-in user, reads evdev events, emits keys and wheel scrolling through a shared virtual input device, and sends desktop operations and cursor positioning through Sway IPC. Setup installs Ubuntu's `python3-evdev`, loads uinput and grants the active local user access through a uaccess rule; it does not add the account to the input group.
 
 The mapping follows Xbox/xpad labels: X is Linux BTN_NORTH (307), and Y is BTN_WEST (308). These historical directional aliases do not describe Xbox button positions. The host checker independently feeds driver codes through every assigned gesture, without creating a host input device.
 

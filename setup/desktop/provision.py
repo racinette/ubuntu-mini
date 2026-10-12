@@ -52,10 +52,17 @@ finally:
 # Our no-recommends install includes them explicitly; they grant video-group
 # writes to screen backlights. New group membership takes effect next login.
 run('usermod', '-a', '-G', 'video', user.pw_name)
-for name in ('minion-session', 'minion-session-ready', 'minion-lock', 'minion-status', 'minion-gamepad', 'minion-window-picker'):
+for name in ('minion-session', 'minion-session-ready', 'minion-lock', 'minion-idle', 'minion-status', 'minion-gamepad', 'minion-window-picker'):
     write('/usr/local/bin/' + name, HERE.joinpath(name).read_text(), 0o755)
 write('/etc/minion/sway.conf', HERE.joinpath('sway.conf').read_text())
 write('/etc/minion/gamepad.json', HERE.joinpath('gamepad.json').read_text())
+write('/etc/systemd/logind.conf.d/60-minion-power.conf', '''[Login]
+# Lid close suspends on every power source, including when docked.
+HandleLidSwitch=suspend
+HandleLidSwitchExternalPower=suspend
+HandleLidSwitchDocked=suspend
+IdleAction=ignore
+''')
 # logind grants uinput access to the active local user, as used by common mappers.
 # Do not grant access to all keyboards or add the user to the input group.
 write('/etc/udev/rules.d/60-minion-gamepad-uinput.rules',
@@ -114,7 +121,7 @@ After=graphical-session.target
 ''')
 services = {
     'polkit': '/usr/libexec/polkit-mate-authentication-agent-1',
-    'idle': "/usr/bin/swayidle -w timeout 300 'minion-lock' timeout 600 'swaymsg output * power off' resume 'swaymsg output * power on' before-sleep 'minion-lock'",
+    'idle': '/usr/local/bin/minion-idle',
     'network-applet': '/usr/bin/nm-applet',
     'bluetooth-applet': '/usr/bin/blueman-applet',
 }

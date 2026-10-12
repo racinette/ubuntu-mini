@@ -83,14 +83,14 @@ When checking module acceptance, `sudo modprobe acpi_call` should succeed. If it
 Use the [control reference](gamepad-controls.md) and [24-shortcut table](gamepad-chord-layout.md) while checking these items.
 
 - [ ] In hardware gamepad mode, A/B/Y produce Enter/Escape/Tab and X produces Backspace. Confirm X and Y are not swapped. X acts immediately and repeats while held; R2+X deletes words where supported.
-- [ ] Left stick focuses windows; L2+left stick moves them. Bumpers change workspaces; L2+bumper moves the focused window without following it. Check dead zones, repeat rate and diagonal handling for comfort.
+- [ ] In Workspace mode, left stick focuses windows, L2+left stick moves them and right stick resizes them. Bumpers change workspaces; L2+bumper moves the focused window without following it. Check dead zones, repeat rate and diagonal handling for comfort.
 - [ ] Start opens Foot, Select opens the window picker, and Menu/Xbox opens the launcher. D-pad and A/B can operate and dismiss the picker/launcher.
 - [ ] Test all 24 shortcuts, including physical diagonals. Try both press orders; each action fires once after release and does not leak arrows or face-button actions. Up+A closes only the focused test window.
 - [ ] Copy/paste work in both a GUI text field and Foot. Other guarded editing commands do not interrupt or suspend the shell. Use disposable text and windows for destructive editing/close tests.
 - [ ] L3 shows a persistent searchable legend. D-pad browsing and B/Escape/Enter/L3 dismissal work; underlying windows do not receive suppressed shortcuts or stick operations while it is open.
-- [ ] R3 switches right-stick Resize/Select text mode, with the bar matching the mode. Switching while deflected waits for neutral. In an editor, selection extends with Shift+arrows and R2 adds Ctrl; no modifier stays held after release or a mode change.
+- [ ] R3 switches both sticks between Window/Workspace, with the bar matching the mode. Switching while either stick is deflected waits for both to return to neutral and suppresses both meanwhile. Window mode: left stick scrolls vertically/horizontally, targeting the focused window rather than a neighbor; check center-pane behavior in split editors, and ordinary scrolling with triggers held. Right stick moves the caret; L2 selects, R2 moves by words horizontally, and both select words. Check changing triggers while the stick stays deflected. For both sticks, a nudge acts once, light deflection acts slowly and full deflection acts rapidly; up/down text movement stays slower than left/right, including during selection. Returning to neutral stops immediately; no modifier stays held after trigger release or a mode change.
 - [ ] Start+Select held for at least 0.75 seconds toggles passthrough after release. A game receives ordinary controller input without duplicate virtual keyboard actions; toggling back restores navigation.
-- [ ] Hardware mouse mode and the physical touchpad remain usable. Lock/unlock, mode changes and suspend/wake release held keys, require neutral controls and restore the expected right-stick state. Cold boot starts in desktop/Resize mode.
+- [ ] Hardware mouse mode and the physical touchpad remain usable. Lock/unlock, mode changes and suspend/wake release held keys, require neutral controls and restore Window controls. Cold boot starts in desktop/Window mode.
 
 ```bash
 minion-gamepad --status
@@ -163,8 +163,8 @@ sudo journalctl -u minion-proxy.service -b
 
 ## Locking and repeated suspend
 
-- [ ] Super+L locks the session and requires authentication. The idle path locks after five minutes and powers off displays after ten; waking restores the display without bypassing the lock.
-- [ ] Closing the lid and manual suspend lock before sleeping. Repeat several cycles on AC and battery, including a cycle after using HHD controls and one with the proxy active.
+- [ ] Super+L locks the session and requires authentication on AC and battery. On battery, the idle path locks after five minutes and powers off displays after ten; waking restores the display without bypassing the lock. On AC, idle locking/display-off are disabled. Unplugging restores the battery timers; plugging in does not bypass an existing lock.
+- [ ] Closing the lid and manual suspend lock before sleeping on both AC and battery, including when docked. Repeat several cycles, including a cycle after using HHD controls and one with the proxy active.
 - [ ] After each wake, recheck display, touch coordinates, physical keyboard/touchpad, controller, Wi-Fi, Bluetooth, audio, brightness, power controls and bar readings. No stale modifier, duplicate input or frozen reading remains.
 - [ ] Record battery percentage, elapsed time and approximate charge loss during a longer battery suspend. Compare with your intended daily use rather than assuming a fixed acceptable loss.
 - [ ] After a cold boot, confirm the same essential services and workflows recover. If later applying Ubuntu/kernel updates, repeat boot/unlock, module acceptance, suspend and Windows boot checks.

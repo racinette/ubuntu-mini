@@ -92,10 +92,11 @@ def backup_configuration(path, user):
         '/etc/systemd/user/xdg-desktop-portal-wlr.service.d',
         '/etc/udev/rules.d/60-minion-gamepad-uinput.rules',
         '/etc/modules-load.d/minion-gamepad.conf',
+        '/etc/systemd/logind.conf.d/60-minion-power.conf',
         '/etc/systemd/system/minion-proxy.service',
         '/etc/systemd/system/minion-hhd.service', '/etc/hhd',
         '/usr/local/lib/minion-proxy', '/var/lib/minion/proxy',
-        '/usr/local/share/minion/bashrc.bash',
+        '/usr/local/share/minion/bashrc.bash', '/etc/codex/config.toml',
         '/etc/apt/sources.list.d/docker.sources', '/etc/apt/keyrings/docker.asc')]
     paths.extend(Path('/etc/systemd/user').glob('minion-*.service'))
     paths.extend(Path('/usr/local/bin').glob('minion-*'))

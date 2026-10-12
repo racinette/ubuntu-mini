@@ -49,7 +49,9 @@ ACTION_LABELS = {
     'fullscreen': 'Fullscreen', 'floating': 'Floating', 'file_manager': 'File manager',
     'split': 'Horizontal / vertical split', 'equalize': 'Equalize tiled sizes',
     'screenshot': 'Screenshot', 'terminal': 'Terminal', 'window_picker': 'Window picker',
-    'launcher': 'Application launcher', 'legend': 'Shortcut legend', 'selection': 'Resize / select text',
+    'launcher': 'Application launcher', 'legend': 'Shortcut legend',
+    'stick_context': 'Window / workspace controls',
+    'text_navigation': 'Window / workspace controls', 'selection': 'Window / workspace controls',
 }
 
 # Xbox/xpad uses Linux's historical BTN_X=BTN_NORTH, BTN_Y=BTN_WEST
@@ -165,6 +167,12 @@ def configuration(path, codes):
     for name in ('repeat_delay', 'repeat_interval', 'toggle_hold'):
         if not .05 <= config[name] <= 10:
             raise ValueError('Invalid ' + name)
+    for name in ('selection_rate', 'selection_line_rate', 'scroll_rate'):
+        rates = config[name]
+        if (not isinstance(rates, list) or len(rates) != 2
+                or any(type(rate) is not int for rate in rates)
+                or not 1 <= rates[0] <= rates[1] <= 100):
+            raise ValueError('Invalid ' + name)
     if not isinstance(config['resize_step'], int) or not 1 <= config['resize_step'] <= 25:
         raise ValueError('Invalid resize_step')
     numbers = config['workspace_numbers']
@@ -230,14 +238,16 @@ class Mapper:
         self.grabbed = False
         self.keys = set()
         self.legend = None
-        self.right_mode, self.right_pending = 'resize', None
-        self.publish_right_mode()
+        self.stick_mode, self.stick_pending = 'window', None
+        self.publish_stick_mode()
         self.raw_keys = set()
         self.raw_axes = {}
         self.ranges = {}
         self.triggers = [False, False]
         self.sticks = [None, None]
         self.next_repeat = [0, 0]
+        self.motion_time, self.motion_credit = [None, None], [0, 0]
+        self.scroll_target, self.scroll_check = None, 0
         self.ready = False
         self.running = True
         self.chord_since = None
@@ -268,11 +278,13 @@ class Mapper:
     def reset(self):
         self.write_keys(set())
         self.close_legend()
-        self.right_mode, self.right_pending = 'resize', None
-        self.publish_right_mode()
+        self.stick_mode, self.stick_pending = 'window', None
+        self.publish_stick_mode()
         self.triggers = [False, False]
         self.sticks = [None, None]
         self.next_repeat = [0, 0]
+        self.motion_time, self.motion_credit = [None, None], [0, 0]
+        self.scroll_target, self.scroll_check = None, 0
         self.ready = False
         self.pending_buttons.clear()
         self.text_gesture.clear()
@@ -280,8 +292,8 @@ class Mapper:
         self.chord_since = None
         self.chord_consumed = self.chord_armed = False
 
-    def publish_right_mode(self):
-        (self.directory / 'right-stick-mode').write_text(self.right_mode + '\n')
+    def publish_stick_mode(self):
+        (self.directory / 'stick-mode').write_text(self.stick_mode + '\n')
 
     def close_legend(self):
         if self.legend:
@@ -301,13 +313,15 @@ class Mapper:
 
     def legend_text(self):
         order = ('UP', 'DOWN', 'LEFT', 'RIGHT', 'Y', 'A', 'B')
-        lines = ['Right stick: ' + self.right_mode]
+        lines = ['Stick controls: ' + self.stick_mode]
         lines += ['+'.join(t for t in order if t in tokens) + '  :  ' + ACTION_LABELS[action]
                   for tokens, action in self.config['chords'].items()]
         lines += ['X: hold Backspace; A: Enter; B: Escape; Y: Tab',
                   'D-pad: arrows; L2: Shift; R2: Ctrl',
-                  'Left stick: focus; L2 + left stick: move',
-                  'Right stick: resize / select; R3: switch mode',
+                  'R3: switch Window / Workspace controls',
+                  'Window: left scrolls; right navigates text',
+                  'Window + right: L2 selects; R2 moves by words; both select words',
+                  'Workspace: left focuses; L2 + left moves; right resizes',
                   'L1 / R1: workspaces; L2 + bumper: send window']
         labels = {self.e.BTN_START: 'Start', self.e.BTN_SELECT: 'Select', self.e.BTN_MODE: 'Menu',
                   self.e.BTN_THUMBL: 'L3', self.e.BTN_THUMBR: 'R3'}
@@ -340,8 +354,7 @@ class Mapper:
         except (OSError, subprocess.TimeoutExpired) as error:
             log.warning('Gamepad notification failed: %s', error)
 
-    def focused_application(self):
-        """Check both Wayland/X11 identifiers and the actual compositor client."""
+    def focused_window(self):
         def focused(node):
             children = node.get('nodes', []) + node.get('floating_nodes', [])
             if node.get('focused') and not children and node.get('pid'):
@@ -354,6 +367,11 @@ class Mapper:
         node = focused(ipc('', 4))
         if not node:
             raise ValueError('No focused application')
+        return node
+
+    def focused_application(self):
+        """Check both Wayland/X11 identifiers and the actual compositor client."""
+        node = self.focused_window()
         pid = node['pid']
         if type(pid) is not int or pid <= 0:
             raise ValueError('Invalid focused application PID')
@@ -381,13 +399,14 @@ class Mapper:
     def dispatch(self, action):
         if action == 'legend':
             self.toggle_legend()
-        elif action == 'selection':
-            current = self.right_pending or self.right_mode
-            self.right_pending = 'select' if current == 'resize' else 'resize'
-            if self.right_pending == self.right_mode:
-                self.right_pending = None
-            self.notify('Right stick: ' + (self.right_pending or self.right_mode) +
-                        (' — return stick to neutral' if self.right_pending else ''))
+        elif action in ('stick_context', 'text_navigation', 'selection'):
+            current = self.stick_pending or self.stick_mode
+            self.stick_pending = 'workspace' if current == 'window' else 'window'
+            if self.stick_pending == self.stick_mode:
+                self.stick_pending = None
+            mode = self.stick_pending or self.stick_mode
+            self.notify('Stick controls: ' + mode.capitalize() +
+                        (' — center both sticks' if self.stick_pending else ''))
         elif action == 'equalize':
             self.equalize()
         elif action in ACTION_COMMANDS:
@@ -563,7 +582,8 @@ class Mapper:
                     return
         if desktop:
             for button in sorted(released & self.pending_buttons):
-                if self.legend_open() and self.config['actions'].get(button) not in ('legend', 'selection'):
+                if self.legend_open() and self.config['actions'].get(button) not in (
+                        'legend', 'stick_context', 'text_navigation', 'selection'):
                     continue
                 if button == self.config['previous_bumper']:
                     self.workspace(-1)
@@ -625,6 +645,59 @@ class Mapper:
             if action:
                 self.dispatch(action)
 
+    def motion_steps(self, index, now, magnitude, fresh, rates):
+        """Integrate stick speed so continuous movement is independent of polling rate."""
+        previous, self.motion_time[index] = self.motion_time[index], now
+        if fresh or previous is None:
+            self.motion_credit[index] = 0
+            return 1
+        low, high = rates
+        travel = max(0, min(1, (magnitude - self.config['stick_press']) /
+                            max(1e-6, 1 - self.config['stick_press'])))
+        rate = low + (high - low) * travel ** 2
+        # Discard long scheduling gaps rather than delivering a backlog of selections.
+        self.motion_credit[index] += min(.1, max(0, now - previous)) * rate
+        steps = int(self.motion_credit[index])
+        self.motion_credit[index] -= steps
+        return steps
+
+    def scroll(self, direction, steps, now, fresh):
+        if fresh or now >= self.scroll_check:
+            self.scroll_check = now + .2
+            try:
+                window = self.focused_window()
+                rect = window['rect']
+                if rect['width'] <= 0 or rect['height'] <= 0:
+                    raise ValueError('Focused window has no visible area')
+                target = (window['id'], rect['x'] + rect['width'] // 2,
+                          rect['y'] + rect['height'] // 2)
+                if fresh or target != self.scroll_target:
+                    self.scroll_target = None
+                    if self.command(f'seat seat0 cursor set {target[1]} {target[2]}'):
+                        self.scroll_target = target
+            except (OSError, ValueError, EOFError, KeyError) as error:
+                self.scroll_target = None
+                log.warning('Cannot target scrolling: %s', error)
+        if not steps or self.scroll_target is None:
+            return
+        axis, precise, sign = {
+            'up': (self.e.REL_WHEEL, self.e.REL_WHEEL_HI_RES, 1),
+            'down': (self.e.REL_WHEEL, self.e.REL_WHEEL_HI_RES, -1),
+            'left': (self.e.REL_HWHEEL, self.e.REL_HWHEEL_HI_RES, -1),
+            'right': (self.e.REL_HWHEEL, self.e.REL_HWHEEL_HI_RES, 1),
+        }[direction]
+        held = set(self.keys)
+        try:
+            # Wheel gestures stay plain scrolling even when controller triggers are held.
+            self.write_keys(held - {self.e.KEY_LEFTSHIFT, self.e.KEY_LEFTCTRL})
+            # One detent is 120 high-resolution units, plus its legacy equivalent.
+            # Keep wheel and modifier frames on the same evdev stream, in order.
+            self.keyboard.write(self.e.EV_REL, precise, sign * steps * 120)
+            self.keyboard.write(self.e.EV_REL, axis, sign * steps)
+            self.keyboard.syn()
+        finally:
+            self.write_keys(held)
+
     def tick(self, now, active):
         if not self.device:
             return
@@ -644,22 +717,49 @@ class Mapper:
             self.ready = self.neutral()
             return
         self.frame(set(), set(), now, active)
+        if self.stick_pending:
+            self.sticks = [None, None]
+            self.motion_time, self.motion_credit = [None, None], [0, 0]
+            self.scroll_target = None
+            if all(abs(self.axis(code)) <= self.config['stick_release'] for code in
+                   self.config['left_stick'] + self.config['right_stick']):
+                self.stick_mode, self.stick_pending = self.stick_pending, None
+                self.publish_stick_mode()
+                if self.legend_open():
+                    self.close_legend()
+                    self.toggle_legend()
+            return
         for index, name in enumerate(('left_stick', 'right_stick')):
             x, y = (self.axis(code) for code in self.config[name])
             magnitude = max(abs(x), abs(y))
             if magnitude <= self.config['stick_release']:
                 self.sticks[index] = None
-                if index == 1 and self.right_pending:
-                    self.right_mode, self.right_pending = self.right_pending, None
-                    self.publish_right_mode()
-                    if self.legend_open():
-                        self.close_legend()
-                        self.toggle_legend()
+                self.motion_time[index], self.motion_credit[index] = None, 0
+                if index == 0:
+                    self.scroll_target = None
                 continue
-            if self.legend_open() or index == 1 and self.right_pending:
+            if self.legend_open():
+                self.motion_time[index], self.motion_credit[index] = None, 0
+                self.scroll_target = None
                 continue
             direction = ('left' if x < 0 else 'right') if abs(x) >= abs(y) else ('up' if y < 0 else 'down')
             fresh = direction != self.sticks[index] and magnitude >= self.config['stick_press']
+            if self.stick_mode == 'window':
+                if not fresh and self.sticks[index] is None:
+                    continue
+                if not fresh:
+                    direction = self.sticks[index]
+                self.sticks[index] = direction
+                rates = self.config['scroll_rate'] if index == 0 else self.config[
+                    'selection_line_rate' if direction in ('up', 'down') else 'selection_rate']
+                steps = self.motion_steps(index, now, magnitude, fresh, rates)
+                if index == 0:
+                    self.scroll(direction, steps, now, fresh)
+                    continue
+                modifiers = self.keys & {self.e.KEY_LEFTSHIFT, self.e.KEY_LEFTCTRL}
+                for _ in range(steps):
+                    self.shortcut(getattr(self.e, 'KEY_' + direction.upper()), modifiers)
+                continue
             if not fresh and (self.sticks[index] is None or now < self.next_repeat[index]):
                 continue
             if not fresh:
@@ -668,11 +768,6 @@ class Mapper:
             self.next_repeat[index] = now + self.config['repeat_delay' if fresh else 'repeat_interval']
             if index == 0:
                 self.command(('move' if self.triggers[0] else 'focus') + ' ' + direction)
-            elif self.right_mode == 'select':
-                modifiers = {self.e.KEY_LEFTSHIFT}
-                if self.triggers[1]:
-                    modifiers.add(self.e.KEY_LEFTCTRL)
-                self.shortcut(getattr(self.e, 'KEY_' + direction.upper()), modifiers)
             elif not self.legend_open():
                 action = 'grow' if direction in ('right', 'down') else 'shrink'
                 dimension = 'width' if direction in ('left', 'right') else 'height'
@@ -683,10 +778,22 @@ class Mapper:
                 'device': self.device.path if self.device else None,
                 'device_name': self.device.name if self.device else None,
                 'grabbed': self.grabbed, 'ready': self.ready, 'keys': sorted(self.keys),
-                'right_stick_mode': self.right_mode, 'right_stick_pending': self.right_pending,
+                'stick_mode': self.stick_mode, 'stick_pending': self.stick_pending,
                 'legend_open': self.legend_open(),
                 'axis_ranges': self.ranges, 'actions': list(self.actions), 'reason': self.reason,
                 'unavailable_actions': self.unavailable_actions}
+
+
+def output_capabilities(config, codes):
+    keys = set(config['buttons'].values()) | {key for values in config['dpad'].values() for key in values}
+    keys |= {codes.KEY_LEFTSHIFT, codes.KEY_LEFTCTRL, codes.KEY_LEFTMETA}
+    keys |= {getattr(codes, name) for key, modifiers in KEY_ACTIONS.values() for name in (key, *modifiers)}
+    # Mouse classification requires X/Y and a mouse button even though this mapper
+    # emits only wheel movement. No pointer movement or mouse clicks are generated.
+    keys.add(codes.BTN_LEFT)
+    return {codes.EV_KEY: sorted(keys), codes.EV_REP: [],
+            codes.EV_REL: [codes.REL_X, codes.REL_Y, codes.REL_WHEEL, codes.REL_HWHEEL,
+                           codes.REL_WHEEL_HI_RES, codes.REL_HWHEEL_HI_RES]}
 
 
 def discover(config, evdev):
@@ -759,10 +866,7 @@ def main():
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise SystemExit('A mapper is already running')
-        output_keys = set(config['buttons'].values()) | {key for values in config['dpad'].values() for key in values}
-        output_keys |= {evdev.ecodes.KEY_LEFTSHIFT, evdev.ecodes.KEY_LEFTCTRL, evdev.ecodes.KEY_LEFTMETA}
-        output_keys |= {getattr(evdev.ecodes, name) for key, modifiers in KEY_ACTIONS.values() for name in (key, *modifiers)}
-        with evdev.UInput({evdev.ecodes.EV_KEY: sorted(output_keys), evdev.ecodes.EV_REP: []},
+        with evdev.UInput(output_capabilities(config, evdev.ecodes),
                           name='Minion gamepad keyboard', phys='minion/gamepad-keyboard', vendor=0x1209, product=2) as keyboard:
             mapper = Mapper(config, keyboard, evdev.ecodes, directory)
             server = socket.socket(socket.AF_UNIX)

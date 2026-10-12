@@ -11,7 +11,7 @@
     "BTN_SELECT": "window_picker",
     "BTN_MODE": "launcher",
     "BTN_THUMBL": "legend",
-    "BTN_THUMBR": "selection"
+    "BTN_THUMBR": "stick_context"
   },
   "dpad": {
     "ABS_HAT0X": [
@@ -51,6 +51,9 @@
   "trigger_release": 0.35,
   "repeat_delay": 0.45,
   "repeat_interval": 0.18,
+  "selection_rate": [4, 40],
+  "selection_line_rate": [2, 10],
+  "scroll_rate": [1, 18],
   "resize_step": 5,
   "toggle_hold": 0.75,
   "chord_axes": [

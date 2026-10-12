@@ -2,15 +2,21 @@
 <meta charset="utf-8">
 <title>minion controller navigation test</title>
 <style>
-body{font:20px sans-serif;margin:2em;background:#151820;color:#eee}
-textarea{font:22px monospace;width:90%;height:4em}button{font:20px sans-serif;padding:.6em}
+body{font:20px sans-serif;margin:1em;background:#151820;color:#eee}
+h1{font-size:24px;margin:.2em 0}p{margin:.5em 0}
+#scrollbox{position:fixed;inset:90px 12px 12px;overflow:auto;border:2px solid #789}
+#scrollcontent{width:1800px;padding:16px;box-sizing:border-box}
+textarea{font:22px monospace;width:620px;max-width:90vw;height:2em}button{font:20px sans-serif;padding:.6em}
 pre{font:15px monospace;white-space:pre-wrap}
 </style>
 <h1>Controller navigation</h1>
-<p>Triggers hold Shift/Ctrl. Face buttons and D-pad navigate this application.</p>
+<p>Window: left stick scrolls, right moves text; L2 selects, R2 moves by words. R3: Workspace.</p>
+<div id="scrollbox"><div id="scrollcontent">
 <textarea id="editor" autofocus></textarea>
 <p><button id="next">Next focus target</button></p>
 <pre id="output"></pre>
+<div id="scrollsample"></div>
+</div></div>
 <script>
 const events=[]; let command=0;
 for(const type of ["keydown","keyup"]){
@@ -20,6 +26,13 @@ for(const type of ["keydown","keyup"]){
   });
 }
 const editor=document.querySelector("#editor");
+const scrollbox=document.querySelector("#scrollbox");
+document.querySelector("#scrollsample").innerHTML=Array.from({length:30},(_,i)=>
+  `<p>Line ${i+1}: scroll vertically or horizontally with the left stick. Light pressure is slow; full pressure is fast.</p>`).join("");
+addEventListener("wheel",e=>{
+  events.push({type:"wheel",deltaX:e.deltaX,deltaY:e.deltaY,shift:e.shiftKey,ctrl:e.ctrlKey,target:e.target.id});
+  if(events.length>120) events.shift();
+},{passive:true});
 setInterval(async()=>{
   const cmd=await (await fetch("/command")).json();
   if(cmd.id!==command){
@@ -28,12 +41,14 @@ setInterval(async()=>{
     if(cmd.text!==undefined) editor.value=cmd.text;
     if(cmd.focus) document.getElementById(cmd.focus).focus();
     if(cmd.selection) editor.setSelectionRange(...cmd.selection);
+    if(cmd.scroll) scrollbox.scrollTo(...cmd.scroll);
   }
   const pads=Array.from(navigator.getGamepads?.()||[]).filter(Boolean).map(p=>({
     id:p.id,buttons:p.buttons.map(b=>({pressed:b.pressed,value:b.value})),axes:Array.from(p.axes)
   }));
   const state={focused:document.hasFocus(),target:document.activeElement.id,text:editor.value,
-    selection:[editor.selectionStart,editor.selectionEnd],events,pads,command};
+    selection:[editor.selectionStart,editor.selectionEnd],events,pads,command,
+    scroll:[scrollbox.scrollLeft,scrollbox.scrollTop]};
   document.querySelector("#output").textContent=JSON.stringify({target:state.target,
     selection:state.selection,events:events.slice(-8)},null,2);
   await fetch("/state",{method:"POST",body:JSON.stringify(state)});

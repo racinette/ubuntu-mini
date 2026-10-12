@@ -244,8 +244,8 @@ def keyboard_layout():
 
 def stick_mode():
     directory = os.environ.get('XDG_RUNTIME_DIR')
-    mode = read(Path(directory) / 'minion-gamepad/right-stick-mode') if directory else ''
-    return block('stick', 'R: Select' if mode == 'select' else 'R: Resize')
+    mode = read(Path(directory) / 'minion-gamepad/stick-mode') if directory else ''
+    return block('stick', 'Workspace' if mode == 'workspace' else 'Window')
 
 
 def clicks(details):

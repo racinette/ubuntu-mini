@@ -20,6 +20,17 @@ INSTALLERS = (
 SYSTEM_PATH = '/usr/local/bin:/usr/bin:/bin'
 
 
+def install_codex_defaults(target=Path('/etc/codex/config.toml')):
+    """Seed system defaults without replacing existing system or user settings."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with target.open('x') as stream:
+            stream.write(HERE.joinpath('codex.toml').read_text())
+        target.chmod(0o644)
+    except FileExistsError:
+        print(f'Retaining existing Codex system settings: {target}', flush=True)
+
+
 def target_user(username):
     user = pwd.getpwnam(username)
     if user.pw_uid < 1000 or Path(user.pw_shell).name != 'bash' or not Path(user.pw_dir).is_dir():
@@ -89,6 +100,7 @@ def main():
         raise SystemExit('Run as root inside the installed target')
     subprocess.run(['apt-get', 'install', '-y', '--no-install-recommends',
                     *HERE.joinpath('packages.txt').read_text().split()], check=True)
+    install_codex_defaults()
     env = user_environment(user)
     for installer in INSTALLERS:
         install_cli(user, env, *installer)

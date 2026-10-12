@@ -31,9 +31,9 @@ Desktop actions call Sway directly. Equalize balances tiled siblings recursively
 
 Tap L3 to open a persistent, searchable legend generated from the active profile. Browse it with D-pad up/down; B/Escape, Enter or another L3 tap dismisses it. Shortcut chords and stick window actions are suppressed while it is open.
 
-R3 toggles the right stick between resizing and text selection. Selection sends Shift+arrows; R2 adds Ctrl for word selection horizontally where supported. Both modes repeat while held. Switching waits for neutral and suspends stick actions until then. The bar shows `R: Resize` or `R: Select text`; status also reports a pending switch. Selection uses the focused application's keyboard behavior, so editors/text fields work best and terminal scrollback or arbitrary displayed text may require application-specific controls.
+R3 switches both sticks between Window and Workspace controls. Window is the default: left scrolls, right navigates text; L2 adds Shift for selection and R2 adds Ctrl for word movement horizontally. Both triggers select words where supported. Text navigation and scrolling speed increase with stick deflection; up/down text movement runs more slowly than left/right. Workspace uses left-stick focus, L2+left-stick move and right-stick resize, with the existing repeat timing.
 
-The legend closes and the right stick returns to Resize on lock, inactive session, disconnect, input resynchronization, passthrough or service restart. No Shift modifier remains held just because selection mode is enabled.
+Switching waits for both sticks to return to neutral and suppresses both until then. The bar shows `Window` or `Workspace`; status reports `stick_mode` and `stick_pending`. The legend closes and the context returns to Window on lock, inactive session, disconnect, input resynchronization, passthrough or service restart. Entering Window mode alone holds no keyboard modifiers; L2 and R2 control Shift and Ctrl. The [control reference](gamepad-controls.md#stick-contexts-and-legend) describes scrolling target and application behavior.
 
 ## Verification
 

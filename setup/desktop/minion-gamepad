@@ -37,8 +37,12 @@ KEY_ACTIONS = {
     'document_home': ('KEY_HOME', ('KEY_LEFTCTRL',)),
     'document_end': ('KEY_END', ('KEY_LEFTCTRL',)),
     'previous_match': ('KEY_F3', ('KEY_LEFTSHIFT',)), 'next_match': ('KEY_F3', ()),
+    'interrupt': ('KEY_C', ('KEY_LEFTCTRL',)),
+    'suspend_job': ('KEY_Z', ('KEY_LEFTCTRL',)),
+    'end_input': ('KEY_D', ('KEY_LEFTCTRL',)),
 }
 NAVIGATION_ACTIONS = {'page_up', 'page_down', 'home', 'end', 'document_home', 'document_end'}
+TERMINAL_ACTIONS = {'interrupt', 'suspend_job', 'end_input'}
 ACTION_LABELS = {
     'copy': 'Copy', 'paste': 'Paste', 'cut': 'Cut', 'undo': 'Undo', 'redo': 'Redo',
     'select_all': 'Select all', 'find': 'Find', 'save': 'Save',
@@ -52,6 +56,9 @@ ACTION_LABELS = {
     'launcher': 'Application launcher', 'legend': 'Shortcut legend',
     'stick_context': 'Window / workspace controls',
     'text_navigation': 'Window / workspace controls', 'selection': 'Window / workspace controls',
+    'interrupt': 'Interrupt / cancel (Ctrl+C)',
+    'suspend_job': 'Suspend terminal job (Ctrl+Z)',
+    'end_input': 'End terminal input (Ctrl+D)',
 }
 
 # Xbox/xpad uses Linux's historical BTN_X=BTN_NORTH, BTN_Y=BTN_WEST
@@ -429,7 +436,11 @@ class Mapper:
                     log.warning('Cannot identify focused application: %s', error)
                     self.notify('Shortcut skipped: cannot identify the focused application')
                     return
-                if application != 'gui':
+                if action in TERMINAL_ACTIONS:
+                    if application not in ('foot', 'terminal'):
+                        self.notify('This shortcut is only available in terminals')
+                        return
+                elif application != 'gui':
                     if application == 'foot' and action in ('copy', 'paste'):
                         modifiers.add(self.e.KEY_LEFTSHIFT)
                     else:
@@ -683,6 +694,14 @@ class Mapper:
             return
         if held and not self.text_gesture.previous:
             self.gesture_in_legend = self.legend_open()
+        # Every face in a multi-face prefix must precede the D-pad. Adding a
+        # second face alongside/after a direction must not turn a desktop
+        # gesture into a terminal command.
+        faces = held & set(self.config['chord_faces'])
+        previous_faces = self.text_gesture.previous & set(self.config['chord_faces'])
+        previous_directions = self.text_gesture.previous - set(self.config['chord_faces'])
+        if faces - previous_faces and (directions or previous_directions):
+            self.text_gesture.invalid = True
         captured = self.gesture_in_legend
         gesture = self.text_gesture.update(held)
         if not held:

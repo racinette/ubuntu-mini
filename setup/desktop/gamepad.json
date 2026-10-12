@@ -88,6 +88,9 @@
     "DOWN+LEFT+B": "previous_match",
     "DOWN+RIGHT+Y": "save",
     "DOWN+RIGHT+A": "screenshot",
-    "DOWN+RIGHT+B": "next_match"
+    "DOWN+RIGHT+B": "next_match",
+    "A+B": "interrupt",
+    "UP+A+B": "suspend_job",
+    "DOWN+A+B": "end_input"
   }
 }

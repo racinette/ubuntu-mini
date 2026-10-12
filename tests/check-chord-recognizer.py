@@ -46,6 +46,7 @@ def main():
         'UP+B': 'page_up', 'DOWN+B': 'page_down', 'LEFT+B': 'home', 'RIGHT+B': 'end',
         'UP+LEFT+B': 'document_home', 'UP+RIGHT+B': 'document_end',
         'DOWN+LEFT+B': 'previous_match', 'DOWN+RIGHT+B': 'next_match',
+        'A+B': 'interrupt', 'UP+A+B': 'suspend_job', 'DOWN+A+B': 'end_input',
     }
     assert profile['chords'] == expected
     assert profile['actions']['BTN_THUMBL'] == 'legend' and profile['actions']['BTN_THUMBR'] == 'stick_context'
@@ -105,6 +106,9 @@ def main():
             for presses in itertools.permutations(tokens):
                 if presses[0] not in XBOX_FACE_CODES:
                     continue
+                face_count = sum(token in XBOX_FACE_CODES for token in tokens)
+                if any(token not in XBOX_FACE_CODES for token in presses[:face_count]):
+                    continue
                 for releases in itertools.permutations(tokens):
                     reset()
                     with patch.object(state, 'dispatch') as dispatch:
@@ -119,7 +123,7 @@ def main():
                         dispatch.assert_called_once_with(action)
                     assert not keyboard.events
                     orders += 1
-        for invalid in (({'A', 'Y'}, set()), ({'A', 'B'}, set()),
+        for invalid in (({'A', 'Y'}, set()), ({'Y', 'B'}, set()),
                         ({'Y'}, {'UP', 'Y'}, {'Y'}, {'Y', 'B'}, {'B'}, set())):
             reset()
             with patch.object(state, 'dispatch') as dispatch:
@@ -153,6 +157,8 @@ def main():
             tokens = set(chord.split('+'))
             face = tokens & set(XBOX_FACE_CODES)
             directions = tokens - face
+            if not directions:
+                continue
             for simultaneous in (False, True):
                 reset()
                 with patch.object(state, 'dispatch') as dispatch:
@@ -164,6 +170,27 @@ def main():
                     assert keyboard.events == before and not dispatch.called
                     assert not state.dpad_navigation and not state.text_gesture.previous
                     assert not set(downs()) & {codes.KEY_ENTER, codes.KEY_ESC, codes.KEY_TAB}
+
+        # The entire A+B prefix must precede the direction. Holds do not repeat,
+        # unassigned directions do not fall back to Ctrl+C, and a rolling press
+        # during release invalidates the gesture.
+        for sequence in (
+                ({'A'}, {'A', 'UP'}, {'A', 'B', 'UP'}, set()),
+                ({'B'}, {'A', 'B', 'DOWN'}, set()),
+                ({'A', 'B'}, {'A', 'B', 'LEFT'}, set()),
+                ({'A', 'B'}, {'A'}, {'A', 'UP'}, set())):
+            reset()
+            with patch.object(state, 'dispatch') as dispatch:
+                for held in sequence: frame(held)
+                assert not keyboard.events and not dispatch.called
+        for direction, action in ((None, 'interrupt'), ('UP', 'suspend_job'), ('DOWN', 'end_input')):
+            reset()
+            with patch.object(state, 'dispatch') as dispatch:
+                frame({'A', 'B'}, at=0); frame({'A', 'B'}, at=60)
+                held = {'A', 'B'} | ({direction} if direction else set())
+                frame(held, at=61); frame(held, at=120)
+                assert not keyboard.events and not dispatch.called
+                frame(at=121); dispatch.assert_called_once_with(action)
 
         # Explicit repeats accelerate, do not depend on polling frequency,
         # respect current modifiers, stop at neutral and bound scheduling gaps.
@@ -252,6 +279,31 @@ def main():
                     assert downs() == [codes.KEY_LEFTCTRL, codes.KEY_LEFTSHIFT, codes.KEY_C if action == 'copy' else codes.KEY_V]
                 else:
                     assert not keyboard.events, (app, action)
+        # Terminal controls emit literal Ctrl+C/Z/D, never Ctrl+Shift variants,
+        # restore triggers, and fail closed in GUI/unidentified clients.
+        terminal_cases = {'interrupt': codes.KEY_C, 'suspend_job': codes.KEY_Z, 'end_input': codes.KEY_D}
+        for app in ('foot', 'terminal', 'gui', 'unknown'):
+            for action, key in terminal_cases.items():
+                for shift, ctrl in itertools.product((False, True), repeat=2):
+                    reset(); frame(shift=shift, ctrl=ctrl); keyboard.events.clear()
+                    held = set(state.keys)
+                    context = (patch.object(state, 'focused_application', side_effect=ValueError()) if app == 'unknown'
+                               else patch.object(state, 'focused_application', return_value=app))
+                    with context, patch.object(state, 'notify'):
+                        state.dispatch(action)
+                    if app in ('foot', 'terminal'):
+                        live = set(held)
+                        pressed = 0
+                        for kind, code, value in keyboard.events:
+                            if value: live.add(code)
+                            else: live.discard(code)
+                            if code == key and value == 1:
+                                assert live == {codes.KEY_LEFTCTRL, key}, (app, action, live)
+                                pressed += 1
+                        assert pressed == 1
+                    else:
+                        assert not keyboard.events, (app, action)
+                    assert state.keys == held
         for action, command in {'close': 'kill', 'fullscreen': 'fullscreen toggle', 'floating': 'floating toggle',
                                 'layout': 'layout toggle tabbed split', 'split': 'split toggle',
                                 'file_manager': 'exec thunar', 'screenshot': 'exec grim - | wl-copy --type image/png'}.items():
@@ -339,6 +391,7 @@ def main():
         # The virtual device exposes both mouse and keyboard capabilities.
         capabilities = mapper.output_capabilities(config, codes)
         assert codes.BTN_LEFT in capabilities[codes.EV_KEY]
+        assert {codes.KEY_C, codes.KEY_Z, codes.KEY_D} <= set(capabilities[codes.EV_KEY])
         assert set(capabilities[codes.EV_REL]) == {codes.REL_X, codes.REL_Y, codes.REL_WHEEL,
             codes.REL_HWHEEL, codes.REL_WHEEL_HI_RES, codes.REL_HWHEEL_HI_RES}
         # Wheel detents have full 120-unit magnitude and correct direction, with
@@ -525,6 +578,14 @@ def main():
         with patch.object(state, 'dispatch') as dispatch:
             frame({'A'}); frame({'UP', 'A'}); state.close_legend(); frame()
             assert not dispatch.called, 'Gesture escaped a closed legend'
+        for direction in (None, 'UP', 'DOWN'):
+            state.legend = process
+            with patch.object(state, 'dispatch') as dispatch:
+                frame({'A', 'B'})
+                if direction: frame({'A', 'B', direction})
+                frame()
+                assert not dispatch.called, 'Terminal command escaped the legend'
+            state.close_legend()
         state.legend = process
         frame({'DOWN'}, at=100)
         state.close_legend(); before = list(keyboard.events)
@@ -553,7 +614,7 @@ def main():
         assert keyboard.events == [(codes.EV_KEY, codes.KEY_UP, 1)]
         frame(); assert keyboard.events[-1] == (codes.EV_KEY, codes.KEY_UP, 0)
         config['chords'] = saved
-        print(f'Passed: 24 named shortcuts, {orders} face-first press/release orders, unlimited prefixes, wrong-order/simultaneous suppression, immediate/accelerated D-pad navigation, Xbox codes, Backspace holds, modifier restoration, terminal guards, shared contexts/both-stick neutral switch, scroll targeting/direction/speed/modifiers/failure handling, text navigation/speed, legend capture, lifecycle reset and profile validation.')
+        print(f'Passed: {len(expected)} named shortcuts, {orders} face-first press/release orders, unlimited prefixes, terminal-only Ctrl+C/Z/D and pair-prefix guards, wrong-order/simultaneous suppression, immediate/accelerated D-pad navigation, Xbox codes, Backspace holds, modifier restoration, terminal guards, shared contexts/both-stick neutral switch, scroll targeting/direction/speed/modifiers/failure handling, text navigation/speed, legend capture, lifecycle reset and profile validation.')
 
 
 if __name__ == '__main__':

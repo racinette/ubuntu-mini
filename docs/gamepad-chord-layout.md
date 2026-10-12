@@ -19,6 +19,18 @@ Hold Y/A/B first, then choose the D-pad direction. There is no deadline for comp
 
 Single A/B/Y inputs produce Enter/Escape/Tab on release. D-pad first sends arrows immediately, then repeats after 400 ms and accelerates while held. Horizontal repeats ramp from 4 to 30 steps per second and vertical repeats from 4 to 10 over another 1.2 seconds. Release stops immediately; direction changes restart the ramp. Adding A/B/Y during navigation stops it and consumes the remaining gesture instead of executing a combo. Simultaneous face/direction starts are suppressed. L2/R2 add Shift/Ctrl to navigation. X presses Backspace immediately, remains held for application key repeat, and releases immediately. R2+X gives Ctrl+Backspace. X never participates in shortcut recognition.
 
+## Terminal controls
+
+| Gesture | Action |
+| --- | --- |
+| A+B | Interrupt / cancel (Ctrl+C) |
+| Hold A+B, then Up | Suspend the foreground job (Ctrl+Z) |
+| Hold A+B, then Down | End input (Ctrl+D) |
+
+Both face buttons must be held before adding a direction. They may be pressed in either order or together, with no deadline. Release every participating control to execute once; holding does not repeat. Adding the second face button alongside or after the direction suppresses the gesture. Unassigned directions do nothing rather than falling back to interruption.
+
+These controls send literal Ctrl+C/Z/D only in recognized terminal windows, including Foot with custom application IDs. They are skipped in graphical applications and when the client cannot be identified. Held triggers do not change their modifiers. Terminal applications determine the result: Ctrl+C normally interrupts a foreground command, Ctrl+Z normally suspends it (use `fg` to resume), and Ctrl+D ends input rather than sending a signal; at an empty shell prompt it can exit the shell. No Enter/Escape or arrow leaks from these gestures.
+
 ## Modifiers and application behavior
 
 Copy/paste use Ctrl+C/V in graphical applications and Ctrl+Shift+C/V in Foot, including Foot windows with custom application IDs. Other detected terminals receive no editing shortcut. Cut, undo, redo, select all, find, save and search-match commands are skipped in detected terminals; this prevents shell interrupts, suspension or prefix commands. If the client cannot be identified, these actions are skipped with a notification.
@@ -37,4 +49,4 @@ Switching waits for both sticks to return to neutral and suppresses both until t
 
 ## Verification
 
-`python3 tests/check-chord-recognizer.py` checks all 24 assignments in 168 face-first press/release orders, unlimited prefix holds, wrong-order/simultaneous suppression, immediate and accelerated D-pad navigation, single keys, immediate Backspace holds, modifier restoration, terminal guards, invalid/rolling gestures, neutral mode transitions, stick selection/repeat, legend capture, profile validation and lifecycle cleanup. It creates no input device. Real application and Sway checks are recorded in [testing](testing.md); physical controller comfort and suspend behavior still need device QA.
+`python3 tests/check-chord-recognizer.py` checks all 27 assignments in 196 face-first press/release orders, unlimited prefix holds, terminal-only Ctrl+C/Z/D, complete A+B prefixes, wrong-order/simultaneous suppression, immediate and accelerated D-pad navigation, single keys, immediate Backspace holds, modifier restoration, terminal guards, invalid/rolling gestures, neutral mode transitions, stick selection/repeat, legend capture, profile validation and lifecycle cleanup. It creates no input device. Real application and Sway checks are recorded in [testing](testing.md); physical controller comfort and suspend behavior still need device QA.

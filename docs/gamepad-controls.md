@@ -46,6 +46,8 @@ D-pad first sends an arrow immediately. Holding it starts repetition after 400 m
 
 Copy/paste are terminal-aware. Editing actions ignore held triggers for their shortcut and restore them afterward; navigation shortcuts accept Shift/Ctrl. Application support determines Find, Save, Redo and search-match behavior. See the table for details.
 
+Terminal controls use the free A+B prefix: release A+B for Ctrl+C (interrupt), hold both before Up for Ctrl+Z (suspend job), or hold both before Down for Ctrl+D (end input). Release all participating controls to execute once, with no hold deadline or repeats. These actions work only in recognized terminal windows and ignore trigger modifiers. Ctrl+D can exit an empty shell; `fg` resumes a suspended job. The [terminal control reference](gamepad-chord-layout.md#terminal-controls) describes ordering and application behavior.
+
 ## Stick contexts and legend
 
 In Window mode, the left stick scrolls and the right stick navigates text like the D-pad. Hold L2 (Shift) to extend selection, R2 (Ctrl) for word movement horizontally, or both for word selection. Ctrl+up/down follows the application's own navigation behavior. Triggers can be pressed or released while the stick remains deflected to switch between movement and selection.

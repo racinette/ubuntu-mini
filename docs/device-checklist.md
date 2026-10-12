@@ -105,6 +105,7 @@ journalctl --user -u minion-gamepad.service -b
 - [ ] Physical QWERTY keys, modifiers, touchpad click/tap/scroll and any configured language switching work. The layout indicator follows the physical keyboard when multiple layouts are configured.
 - [ ] Fn brightness keys and `brightnessctl -c backlight set +5%` work without sudo. Check the minimum/maximum range, locked-screen behavior and wake persistence.
 - [ ] Speakers, headphones, jack detection and microphone work. Volume/mute keys, media keys and the bar agree with actual playback; repeat after waking.
+- [ ] On the WIN Mini 2023, a fresh setup seeds internal-microphone input at 10% (Capture and Internal Mic Boost both 0 dB). Record and replay speech to check clarity. Setup reruns preserve a subsequently chosen level and other audio routes; see [microphone defaults](post-install-setup.md#desktop-controls).
 - [ ] Pair a Bluetooth device if used, then test reconnect after reboot and suspend.
 - [ ] Test any dock, external storage and card reader you intend to use, including reconnection after suspend.
 - [ ] Firefox opens, accepts keyboard/touchpad input, and can copy/paste, upload a file and open a download in the file manager. Test screen sharing and its chooser in the application you intend to use.

@@ -8,6 +8,8 @@ import pwd
 import shutil
 import subprocess
 
+from audio import seed_microphone_level
+
 HERE = Path(__file__).resolve().parent
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--user', help='Existing desktop account; defaults to the account invoking sudo')
@@ -62,6 +64,10 @@ if not mako_config.exists():
     write(mako_config, HERE.joinpath('mako.conf').read_text(), 0o600)
     for path in (mako_config, mako_config.parent, mako_config.parent.parent):
         os.chown(path, user.pw_uid, user.pw_gid)
+# Per-route state supplies the first-login default without changing other mics
+# or forcing the level on subsequent logins. Existing saved levels win.
+if seed_microphone_level(user):
+    print('Seeded WIN Mini internal microphone at 10% (0 dB capture/boost).')
 write('/etc/systemd/logind.conf.d/60-minion-power.conf', '''[Login]
 # Lid close suspends on every power source, including when docked.
 HandleLidSwitch=suspend

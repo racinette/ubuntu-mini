@@ -1,0 +1,59 @@
+#!/usr/bin/python3
+"""Open the local dashboard without exposing its access token in process arguments."""
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import urllib.parse
+
+
+def main():
+    if '--start' in sys.argv:
+        subprocess.run(['sudo', 'systemctl', 'start', 'minion-proxy.service'], check=True)
+    active = subprocess.run(['systemctl', 'is-active', '--quiet', 'minion-proxy.service']).returncode == 0
+    if not active:
+        import gi
+        gi.require_version('Gtk', '3.0')
+        from gi.repository import Gtk
+        dialog = Gtk.MessageDialog(message_type=Gtk.MessageType.QUESTION,
+                                   buttons=Gtk.ButtonsType.YES_NO,
+                                   text='Start the proxy to open its dashboard?')
+        response = dialog.run()
+        dialog.destroy()
+        if response == Gtk.ResponseType.YES:
+            subprocess.Popen(['foot', '--title=Start proxy', '/usr/bin/python3',
+                              str(Path(__file__).resolve()), '--start'], start_new_session=True)
+        return
+    access = json.loads(Path('/etc/minion/proxy-dashboard.json').read_text())
+    query = urllib.parse.urlencode({'hostname': '127.0.0.1', 'port': '9090',
+                                    'http': 'true', 'secret': access['secret']})
+    url = 'http://127.0.0.1:9090/ui/#/setup?' + query
+    # The Chromium snap cannot read arbitrary files in the session runtime dir.
+    directory = Path.home() / 'snap/chromium/common/minion-dashboard'
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if directory.stat().st_uid != os.getuid() or directory.is_symlink():
+        raise ValueError('Invalid dashboard bootstrap directory')
+    directory.chmod(0o700)
+    target = directory / 'minion-proxy-dashboard.html'
+    content = '<!doctype html><meta name="referrer" content="no-referrer"><script>location.replace(' + json.dumps(url) + ')</script>'
+    fd, name = tempfile.mkstemp(prefix='.proxy-dashboard-', dir=directory)
+    try:
+        with os.fdopen(fd, 'w') as stream:
+            stream.write(content)
+        os.replace(name, target)
+    finally:
+        Path(name).unlink(missing_ok=True)
+    subprocess.Popen(['chromium', '--no-first-run', '--no-default-browser-check',
+                      '--app=' + target.as_uri()], stdin=subprocess.DEVNULL,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (OSError, ValueError, KeyError, subprocess.CalledProcessError):
+        subprocess.run(['notify-send', '-a', 'minion', 'Proxy dashboard',
+                        'Could not open the local proxy dashboard. Check its installation and service.'])
+        raise SystemExit(1)

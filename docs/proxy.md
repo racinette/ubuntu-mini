@@ -2,7 +2,9 @@
 
 Ordinary `setup.sh` installs a checksum-pinned Mihomo binary and `minion-proxy.service` alongside the other components. Proxy use is optional: installing or rerunning setup does not enable, start or restart the service, and preserves existing proxy configuration. No subscription or account credentials belong in the repository.
 
-Run management commands directly from the repository with `sudo python3 setup/proxy/manage.py`. No global management command is installed. The service uses a root-owned runtime copy under `/usr/local/lib/minion-proxy/`, so boot does not depend on the checkout's location, availability or user permissions. Rerunning setup updates that copy. It works independently of Sway.
+Click **Proxy** in the bottom bar or choose **Proxy dashboard** from the launcher to open the locally installed MetaCubeXD dashboard in Chromium. Under **Proxies**, choose a server in **PROXY**, or **Automatic** for latency-based selection. The dashboard also provides latency tests, connection information and traffic monitoring. Selections are remembered by Mihomo across service restarts and boot. If the proxy is stopped, the launcher offers to start it through a local password terminal.
+
+Run management commands directly from the repository with `sudo python3 setup/proxy/manage.py`. The dashboard launcher is installed as `minion-proxy-ui`; the management helper remains in the repository. The service uses a root-owned runtime copy under `/usr/local/lib/minion-proxy/`, so boot does not depend on the checkout's location, availability or user permissions. Rerunning setup updates that copy. It works independently of Sway.
 
 ## Install and enable on the Mini
 
@@ -35,9 +37,13 @@ sudo install -o root -g root -m 600 /PRIVATE/PATH/device-id /var/lib/minion/prox
 
 The retained test identity for this checkout is in ignored `.local/proxy-qa/live/device-id`. Stop the test client before transferring the registration. An existing configured Mini should retain its own identity.
 
-The local HTTP/SOCKS listener binds only to `127.0.0.1:7890`. There is no exposed dashboard or network control API. The subscription URL, server cache and runtime state live under root-only `/var/lib/minion/proxy/`. The service's umask keeps new cache files private, and its launcher redacts the subscription URL from core output before sending it to the journal. Logs can still contain connection destinations; treat diagnostic reports as private.
+The local HTTP/SOCKS listener binds only to `127.0.0.1:7890`. The dashboard and authenticated control API bind only to `127.0.0.1:9090`, with static dashboard files served at `/ui/`; they are not exposed on Wi-Fi. The subscription URL, server cache, dashboard identity and runtime state live under root-only `/var/lib/minion/proxy/`. `/etc/minion/proxy-dashboard.json` grants the selected desktop account access to the local control API without granting access to the subscription files. The launcher passes the token through a private Chromium bootstrap file and a URL fragment, keeping it out of process arguments and HTTP request paths. Core output redacts subscription credentials and the dashboard token before reaching the journal. Logs can still contain connection destinations; treat diagnostic reports as private.
+
+Setup installs a checksum-pinned [MetaCubeXD static release](https://github.com/MetaCubeX/metacubexd), retaining its API identity on reruns. Installation does not start or restart the proxy. Restart an already configured service after upgrading to activate the dashboard. No second proxy engine is installed.
 
 ## Choose a subscription server
+
+The dashboard is the everyday picker. The following CLI commands remain available for administration. A deliberate CLI selection (including `--auto`) takes precedence at the next service start; subsequent dashboard selections are remembered until another explicit CLI selection. `--no-restart` still delays activation. The saved CLI policy is retained separately from the private generated dashboard runtime configuration. A previously pinned CLI choice appears as **Configured selection** in the dashboard and retains its exact-name filter and reject-if-missing behavior. A direct dashboard server choice uses Mihomo's native selection/cache behavior; if that server disappears, the selector falls back to its first available option, so choose another server if needed. `list` reports the saved CLI policy, which can differ from a later dashboard choice.
 
 After `configure`, check the cached servers and choose by number:
 

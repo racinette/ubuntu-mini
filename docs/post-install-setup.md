@@ -24,6 +24,10 @@ The repository contains scripts, configuration and small version/checksum manife
 
 Normal setup downloads Ubuntu packages through the target's existing APT sources and installs Firefox and [Canonical's Chromium](https://snapcraft.io/chromium) from the Snap Store's stable channel. Snap handles their signed runtime dependencies. Chromium opens from the application launcher (Super+D) or the `chromium` command; Super+B continues to open Firefox. Atuin and ble.sh are downloaded to temporary directories from the URLs in `setup/shell/artifacts.json` and must match the recorded SHA-256 checksums before installation. Mihomo uses the version/checksum manifest in `setup/proxy/artifacts.json`; a matching installed binary is retained. The ble.sh nightly URL can change upstream: a checksum mismatch stops setup; update and test the version/checksum manifest before accepting a different release.
 
+Setup seeds `~/.chromium-browser.init` with `--no-first-run --no-default-browser-check`, preventing Chromium's unbranded first-run terms placeholder from blocking normal windows or external links. Existing personal startup settings are preserved. The proxy launcher also passes these flags explicitly.
+
+Setup seeds Firefox first, with Chromium as the fallback, for HTTP/HTTPS links and HTML files in `~/.config/mimeapps.list`. Existing explicit defaults are preserved on reruns. The proxy dashboard opens Chromium directly, independently of this preference.
+
 The Chromium Snap includes a matching driver at `/snap/bin/chromium.chromedriver`. For WebDriver, set the browser binary to `/snap/chromium/current/usr/lib/chromium-browser/chrome`; launching `/snap/bin/chromium` from inside the confined driver failed in the device check. Use a separate automation profile under `~/snap/chromium/common/` and `--headless=new` when no window is needed. This combination passed page navigation and JavaScript execution with the browser sandbox enabled. Direct `chromium --headless=new --dump-dom URL` also works. Ordinary desktop launches continue to use `chromium`.
 
 Working internet connectivity is required for normal setup. No application bundle is transferred with the clone. APT sources are retained, and setup does not embed a VM host address.
@@ -180,7 +184,7 @@ For brightness troubleshooting, run `brightnessctl -c backlight set +5%` without
 
 ## Logs and reruns
 
-Setup also installs the headless proxy runtime. To use it, privately configure your subscription with `sudo python3 setup/proxy/manage.py configure` from the repository, then explicitly enable its service. Rerunning ordinary setup updates it and preserves its configuration and activation state. See [proxy setup](proxy.md).
+Setup also installs the proxy runtime and a local MetaCubeXD dashboard. To use it, privately configure your subscription with `sudo python3 setup/proxy/manage.py configure` from the repository, then explicitly enable its service. Click **Proxy** in the bar or choose **Proxy dashboard** from the launcher to select servers, restore Automatic selection and test latency. Graphical selections persist across proxy restarts. Rerunning ordinary setup updates it and preserves its configuration, dashboard identity and activation state. See [proxy setup](proxy.md).
 
 Every applied run saves `setup.log`, `result.json` and `configuration-before.tar.gz` under `/var/lib/minion/setup/TIMESTAMP/`. These directories are private to root. `/var/lib/minion/setup/last-success.json` identifies the last successful run. A failure prints the log path and returns nonzero; inspect the log, resolve the problem and rerun the same command.
 

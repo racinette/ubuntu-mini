@@ -183,7 +183,7 @@ def main():
                 run(sys.executable, ROOT / 'shell/provision.py', user.pw_name, *cache_options)
                 run('systemctl', 'start', 'snapd.socket')
                 run(sys.executable, ROOT / 'desktop/browser.py', *cache_options)
-                run(sys.executable, ROOT / 'proxy/provision.py')
+                run(sys.executable, ROOT / 'proxy/provision.py', '--user', user.pw_name)
                 run(sys.executable, ROOT / 'hhd/provision.py')
                 run(sys.executable, ROOT / 'development/provision.py', user.pw_name)
                 run(sys.executable, ROOT / 'agents/provision.py', user.pw_name)

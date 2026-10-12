@@ -57,11 +57,40 @@ if install_sensor_firmware():
 # Our no-recommends install includes them explicitly; they grant video-group
 # writes to screen backlights. New group membership takes effect next login.
 run('usermod', '-a', '-G', 'video', user.pw_name)
-for name in ('minion-session', 'minion-session-ready', 'minion-lock', 'minion-idle', 'minion-idle-controls', 'minion-rear-buttons', 'minion-status', 'minion-gamepad', 'minion-window-picker', 'minion-network'):
+for name in ('minion-session', 'minion-session-ready', 'minion-lock', 'minion-idle', 'minion-idle-controls', 'minion-rear-buttons', 'minion-status', 'minion-gamepad', 'minion-window-picker', 'minion-network', 'minion-proxy-ui'):
     write('/usr/local/bin/' + name, HERE.joinpath(name).read_text(), 0o755)
 write('/etc/minion/sway.conf', HERE.joinpath('sway.conf').read_text())
 write('/etc/minion/gamepad.json', HERE.joinpath('gamepad.json').read_text())
 write('/usr/local/share/applications/minion-network.desktop', HERE.joinpath('minion-network.desktop').read_text())
+write('/usr/local/share/applications/minion-proxy-ui.desktop', HERE.joinpath('minion-proxy-ui.desktop').read_text())
+chromium_init = Path(user.pw_dir) / '.chromium-browser.init'
+if not chromium_init.exists():
+    write(chromium_init, HERE.joinpath('chromium.init').read_text(), 0o600)
+    os.chown(chromium_init, user.pw_uid, user.pw_gid)
+# Prefer Firefox over Snap's browser discovery order; retain explicit choices.
+mimeapps = Path(user.pw_dir) / '.config/mimeapps.list'
+browser_defaults = configparser.ConfigParser(interpolation=None)
+browser_defaults.optionxform = str
+browser_defaults.read(HERE / 'mimeapps.list')
+associations = configparser.ConfigParser(interpolation=None)
+associations.optionxform = str
+associations.read(mimeapps)
+if not associations.has_section('Default Applications'):
+    associations.add_section('Default Applications')
+changed = False
+for kind, applications in browser_defaults['Default Applications'].items():
+    if kind not in associations['Default Applications']:
+        associations['Default Applications'][kind] = applications
+        changed = True
+if changed:
+    created_parent = not mimeapps.parent.exists()
+    mimeapps.parent.mkdir(parents=True, exist_ok=True)
+    if created_parent:
+        os.chown(mimeapps.parent, user.pw_uid, user.pw_gid)
+    with mimeapps.open('w') as stream:
+        associations.write(stream, space_around_delimiters=False)
+    mimeapps.chmod(0o600)
+    os.chown(mimeapps, user.pw_uid, user.pw_gid)
 # Seed notification defaults without replacing the user's existing settings.
 mako_config = Path(user.pw_dir) / '.config/mako/config'
 if not mako_config.exists():

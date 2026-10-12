@@ -5,6 +5,7 @@ import base64
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 import getpass
+import hashlib
 import http.client
 import json
 import os
@@ -16,6 +17,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import uuid
 import urllib.error
@@ -168,6 +170,7 @@ def configure(url, mode):
         validate(scratch / 'config.json', scratch)
         write_private(STATE / 'providers/subscription.txt', payload)
         write_private(STATE / 'config.json', content)
+    (STATE / 'dashboard-selection-source.json').unlink(missing_ok=True)
     print('Subscription cached and configuration validated. Mode: ' + mode)
     print('Start or restart with: sudo systemctl restart ' + UNIT)
     print('Enable at boot with: sudo systemctl enable ' + UNIT)
@@ -185,18 +188,19 @@ def server_pattern(name):
     return '^' + re.escape(name).replace('`', r'\x60') + '$'
 
 
-def controller_request(path, request_path, timeout=1):
+def controller_request(path, request_path, timeout=1, method='GET', body=None):
     connection = http.client.HTTPConnection('localhost', timeout=timeout)
     try:
         connection.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         connection.sock.settimeout(timeout)
         connection.sock.connect(str(path))
-        connection.request('GET', request_path)
+        connection.request(method, request_path, body=None if body is None else json.dumps(body),
+                           headers={} if body is None else {'Content-Type': 'application/json'})
         response = connection.getresponse()
         data = response.read(2 * MAX_SUBSCRIPTION + 1)
         if len(data) > 2 * MAX_SUBSCRIPTION:
             raise ProxyError('Mihomo control response exceeded the size limit')
-        return response.status, json.loads(data)
+        return response.status, json.loads(data) if data else None
     finally:
         connection.close()
 
@@ -403,6 +407,7 @@ def select_server(server=None, automatic=False, restart=True):
     group.clear()
     group.update(replacement)
     save_config(config)
+    (STATE / 'dashboard-selection-source.json').unlink(missing_ok=True)
     print('Saved selection: ' + ('automatic (latency)' if automatic else json.dumps(name, ensure_ascii=False)))
     if restart:
         try:
@@ -416,8 +421,72 @@ def select_server(server=None, automatic=False, restart=True):
         print('Saved only. Activate with: sudo systemctl restart ' + UNIT)
 
 
+def dashboard_runtime(config):
+    """Keep the saved CLI policy intact and expose a native, persistent selector."""
+    settings = STATE / 'dashboard.json'
+    if not settings.exists():
+        return config, None
+    access = json.loads(settings.read_text())
+    if not isinstance(access.get('secret'), str) or len(access['secret']) < 32:
+        raise ProxyError('Invalid dashboard identity; rerun proxy provisioning')
+    runtime = json.loads(json.dumps(config))
+    saved = proxy_group(runtime)
+    fingerprint = hashlib.sha256(json.dumps(saved, sort_keys=True).encode()).hexdigest()
+    automatic = configuration('', 'proxy', '')['proxy-groups'][0]
+    automatic['name'] = 'Automatic'
+    groups = runtime['proxy-groups']
+    if any(group['name'] in ('Automatic', 'Configured selection') for group in groups):
+        raise ProxyError('Dashboard group names conflict with personal proxy groups')
+    if saved['type'] == 'url-test' and not saved.get('filter'):
+        groups.remove(saved)
+        default = 'Automatic'
+    else:
+        saved['name'] = 'Configured selection'
+        default = 'Configured selection'
+    groups.insert(0, {'name': 'PROXY', 'type': 'select',
+                      'proxies': [default] + ([] if default == 'Automatic' else ['Automatic']),
+                      'use': ['subscription']})
+    groups.append(automatic)
+    runtime.update({'external-controller': '127.0.0.1:9090',
+                    'external-controller-unix': 'dashboard.sock',
+                    'external-ui': str(STATE / 'ui'), 'secret': access['secret'],
+                    'external-controller-cors': {'allow-origins': ['http://127.0.0.1:9090']}})
+    runtime.setdefault('profile', {})['store-selected'] = True
+    return runtime, {'fingerprint': fingerprint, 'default': default}
+
+
+def reconcile_dashboard(child, selection):
+    """A deliberate CLI policy change supersedes the last dashboard selection once."""
+    marker = STATE / 'dashboard-selection-source.json'
+    if marker.exists() and json.loads(marker.read_text()).get('fingerprint') == selection['fingerprint']:
+        return
+    deadline = time.monotonic() + 15
+    while child.poll() is None:
+        try:
+            status, group = controller_request(STATE / 'dashboard.sock', '/proxies/PROXY')
+            if status == 200 and selection['default'] in group.get('all', []):
+                status, _ = controller_request(STATE / 'dashboard.sock', '/proxies/PROXY',
+                                               method='PUT', body={'name': selection['default']})
+                if status != 204:
+                    raise ProxyError('Could not restore configured proxy selection')
+                write_private(marker, json.dumps(selection).encode())
+                return
+        except (OSError, ValueError, http.client.HTTPException):
+            pass
+        if time.monotonic() >= deadline:
+            raise ProxyError('Dashboard control did not initialize')
+        time.sleep(.1)
+    raise ProxyError('Proxy stopped before dashboard selection initialized')
+
+
 def supervise():
     config = load_config()
+    runtime, selection = dashboard_runtime(config)
+    configuration_path = STATE / 'config.json'
+    if selection:
+        configuration_path = STATE / 'dashboard-runtime.json'
+        write_private(configuration_path, (json.dumps(runtime, ensure_ascii=False) + '\n').encode())
+        validate(configuration_path)
     url = config['proxy-providers']['subscription']['url']
     parsed = urllib.parse.urlsplit(url)
     secrets = [url, urllib.parse.quote(url, safe='')]
@@ -425,13 +494,25 @@ def supervise():
         secrets.append(parsed.path)
     if parsed.query:
         secrets.append(parsed.query)
-    child = subprocess.Popen([str(BINARY), '-d', str(STATE), '-f', str(STATE / 'config.json')],
+    if selection:
+        secrets.append(runtime['secret'])
+    child = subprocess.Popen([str(BINARY), '-d', str(STATE), '-f', str(configuration_path)],
                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     def forward(signum, frame):
         if child.poll() is None:
             child.send_signal(signum)
     for signum in (signal.SIGTERM, signal.SIGINT):
         signal.signal(signum, forward)
+    failures = []
+    def reconcile():
+        try:
+            reconcile_dashboard(child, selection)
+        except Exception:
+            failures.append('Dashboard selection could not initialize')
+            child.terminate()
+    reconciliation = threading.Thread(target=reconcile) if selection else None
+    if reconciliation:
+        reconciliation.start()
     failed = False
     for line in child.stdout:
         if config['tun']['enable'] and 'Start TUN listening error:' in line:
@@ -441,7 +522,9 @@ def supervise():
             line = line.replace(secret, '[subscription redacted]')
         print(line, end='', flush=True)
     code = child.wait()
-    return 1 if failed else code
+    if reconciliation:
+        reconciliation.join(timeout=3)
+    return 1 if failed or failures else code
 
 
 def wait_ready():

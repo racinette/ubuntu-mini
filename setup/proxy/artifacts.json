@@ -1,5 +1,10 @@
 {
   "version": "v1.19.32",
+  "dashboard": {
+    "version": "v1.273.1",
+    "url": "https://github.com/MetaCubeX/metacubexd/releases/download/v1.273.1/compressed-dist.tgz",
+    "sha256": "a178e00b67acabcda2dcef00afa90be6a7bb261e466a67dad58c8478d9553603"
+  },
   "artifacts": {
     "linux-amd64": {
       "filename": "mihomo-linux-amd64-v1-v1.19.32.gz",

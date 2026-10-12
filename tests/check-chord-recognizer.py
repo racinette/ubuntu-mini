@@ -338,6 +338,35 @@ def main():
             with patch.object(state, 'workspace') as workspace:
                 frame(buttons=(button,)); assert not workspace.called
                 frame(); workspace.assert_called_once_with(step)
+        # Real bumper dispatch: no wrap at 4, no artificial upper bound, and no
+        # action before release. A late Shift moves the window without following.
+        assert config['workspace_numbers'] is None
+        for current, button, target, shift in (
+                (4, 311, 5, False), (9, 311, 10, False), (1500, 311, 1501, False),
+                (2, 310, 1, False), (1, 310, None, False),
+                (4, 311, 5, True), (1, 310, None, True),
+                (-1, 310, 1, False), (-1, 311, 1, False)):
+            reset()
+            workspaces = [{'num': 900, 'focused': False}, {'num': current, 'focused': True}]
+            with patch.object(mapper, 'ipc', return_value=workspaces) as ipc, patch.object(state, 'command') as command:
+                frame(buttons=(button,)); frame(buttons=(button,))
+                assert not command.called and not ipc.called
+                frame(shift=shift)
+                if target is None:
+                    assert not command.called
+                else:
+                    operation = 'move container to workspace number' if shift else 'workspace number'
+                    command.assert_called_once_with(f'{operation} {target}')
+                frame()
+                assert command.call_count == (0 if target is None else 1)
+        # Explicit personal workspace lists retain their existing circular order.
+        config['workspace_numbers'] = [1, 3, 8]
+        for current, step, target in ((8, 1, 1), (1, -1, 8), (2, 1, 1), (2, -1, 8)):
+            reset()
+            with patch.object(mapper, 'ipc', return_value=[{'num': current, 'focused': True}]), patch.object(state, 'command') as command:
+                state.workspace(step)
+                command.assert_called_once_with(f'workspace number {target}')
+        config['workspace_numbers'] = None
         reset()
         state.device = SimpleNamespace(ungrab=lambda: None)
         with patch.object(state, 'dispatch') as dispatch, patch.object(state, 'notify'):
@@ -604,7 +633,10 @@ def main():
                         {'selection_line_rate': [2, 101]}, {'selection_rate': [4, True]},
                         {'selection_rate': 'fast'}, {'scroll_rate': [18, 1]},
                         {'dpad_rate': [30, 4]}, {'dpad_line_rate': [4, True]},
-                        {'dpad_repeat_delay': 0}, {'dpad_acceleration_time': 0}):
+                        {'dpad_repeat_delay': 0}, {'dpad_acceleration_time': 0},
+                        {'workspace_numbers': []}, {'workspace_numbers': [1, 1]},
+                        {'workspace_numbers': [0, 1]}, {'workspace_numbers': [True, 2]},
+                        {'workspace_numbers': 'all'}, {'workspace_numbers': [[1]]}):
             personal = directory / 'bad.json'; personal.write_text(json.dumps(changes))
             with patch.object(mapper, 'Path', side_effect=path):
                 try: mapper.configuration(personal, codes)
@@ -615,7 +647,7 @@ def main():
         assert keyboard.events == [(codes.EV_KEY, codes.KEY_UP, 1)]
         frame(); assert keyboard.events[-1] == (codes.EV_KEY, codes.KEY_UP, 0)
         config['chords'] = saved
-        print(f'Passed: {len(expected)} named shortcuts, {orders} face-first press/release orders, unlimited prefixes, terminal-only Ctrl+C/Z/D and pair-prefix guards, wrong-order/simultaneous suppression, immediate/accelerated D-pad navigation, Xbox codes, Backspace holds, modifier restoration, terminal guards, shared contexts/both-stick neutral switch, scroll targeting/direction/speed/modifiers/failure handling, text navigation/speed, legend capture, lifecycle reset and profile validation.')
+        print(f'Passed: {len(expected)} named shortcuts, {orders} face-first press/release orders, unlimited prefixes, terminal-only Ctrl+C/Z/D and pair-prefix guards, wrong-order/simultaneous suppression, immediate/accelerated D-pad navigation, Xbox codes, Backspace holds, modifier restoration, terminal guards, open-ended workspaces and explicit-list compatibility, shared contexts/both-stick neutral switch, scroll targeting/direction/speed/modifiers/failure handling, text navigation/speed, legend capture, lifecycle reset and profile validation.')
 
 
 if __name__ == '__main__':

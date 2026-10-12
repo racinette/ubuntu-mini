@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Proxy dashboard
+Comment=Choose proxy servers and test latency
+Exec=minion-proxy-ui
+Icon=network-vpn
+Terminal=false
+Categories=Network;

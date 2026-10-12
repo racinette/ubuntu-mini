@@ -185,8 +185,10 @@ def configuration(path, codes):
     if not isinstance(config['resize_step'], int) or not 1 <= config['resize_step'] <= 25:
         raise ValueError('Invalid resize_step')
     numbers = config['workspace_numbers']
-    if not numbers or len(set(numbers)) != len(numbers) or any(type(n) is not int or not 1 <= n <= 1000 for n in numbers):
-        raise ValueError('workspace_numbers must contain unique positive numbers')
+    if numbers is not None and (not isinstance(numbers, list) or not numbers
+            or any(type(n) is not int or not 1 <= n <= 1000 for n in numbers)
+            or len(set(numbers)) != len(numbers)):
+        raise ValueError('workspace_numbers must be null or a list of unique positive numbers')
     if not isinstance(config['device'], dict) or set(config['device']) - {'name', 'vendor', 'product'}:
         raise ValueError('device supports name, vendor and product selectors')
     if len(config['toggle_buttons']) != 2:
@@ -563,7 +565,12 @@ class Mapper:
     def workspace(self, step):
         current = next(w for w in ipc('', 1) if w['focused'])['num']
         numbers = self.config['workspace_numbers']
-        target = numbers[(numbers.index(current) + step) % len(numbers)] if current in numbers else numbers[0 if step > 0 else -1]
+        if numbers is None:
+            target = max(1, current + step)
+            if target == current:
+                return
+        else:
+            target = numbers[(numbers.index(current) + step) % len(numbers)] if current in numbers else numbers[0 if step > 0 else -1]
         command = 'move container to workspace number' if self.triggers[0] else 'workspace number'
         self.command(f'{command} {target}')
 

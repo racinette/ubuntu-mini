@@ -11,6 +11,8 @@ import subprocess
 import tempfile
 import urllib.request
 
+from dashboard import install as install_dashboard
+
 HERE = Path(__file__).resolve().parent
 
 
@@ -29,6 +31,8 @@ def atomic_install(path, data, mode):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--check', action='store_true')
+    parser.add_argument('--user', help='Desktop account allowed to open the dashboard')
+    parser.add_argument('--dashboard-asset', type=Path, help='Previously downloaded dashboard archive; checksum is still verified')
     args = parser.parse_args()
     release = dict(line.split('=', 1) for line in Path('/etc/os-release').read_text().splitlines() if '=' in line)
     if (release.get('ID', '').strip('"') != 'ubuntu'
@@ -66,6 +70,7 @@ def main():
     state = Path('/var/lib/minion/proxy')
     state.mkdir(parents=True, exist_ok=True, mode=0o700)
     state.chmod(0o700)
+    install_dashboard(state, atomic_install, args.user, args.dashboard_asset)
     subprocess.run(['systemctl', 'daemon-reload'], check=True)
     print('Proxy service installed; existing configuration and activation state retained.')
     print('From the repository, configure with: sudo python3 setup/proxy/manage.py configure')

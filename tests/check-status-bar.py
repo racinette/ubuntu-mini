@@ -172,6 +172,11 @@ def main():
             status.clicks({})
             assert launch.call_args.args == (['minion-network'],)
             assert launch.call_args.kwargs['start_new_session'] is True
+        with patch.object(status.sys, 'stdin', io.StringIO('[\n{"name":"proxy","button":1}\n')), \
+                patch.object(status.subprocess, 'Popen') as launch:
+            status.clicks({})
+            assert launch.call_args.args == (['minion-proxy-ui'],)
+            assert launch.call_args.kwargs['start_new_session'] is True
         with patch.object(status.sys, 'stdin', io.StringIO('[\n{"name":"temperatures","button":1}\n')), \
                 patch.object(status, 'run') as run:
             status.clicks({'temperatures': 'CPU <die>: 65 °C\nSSD: 40 °C'})

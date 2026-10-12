@@ -39,12 +39,7 @@
     "BTN_SELECT",
     "BTN_START"
   ],
-  "workspace_numbers": [
-    1,
-    2,
-    3,
-    4
-  ],
+  "workspace_numbers": null,
   "stick_press": 0.55,
   "stick_release": 0.35,
   "trigger_press": 0.55,

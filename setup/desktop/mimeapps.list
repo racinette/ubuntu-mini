@@ -1,0 +1,5 @@
+[Default Applications]
+x-scheme-handler/http=firefox_firefox.desktop;chromium_chromium.desktop;
+x-scheme-handler/https=firefox_firefox.desktop;chromium_chromium.desktop;
+text/html=firefox_firefox.desktop;chromium_chromium.desktop;
+application/xhtml+xml=firefox_firefox.desktop;chromium_chromium.desktop;

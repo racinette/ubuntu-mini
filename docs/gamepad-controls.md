@@ -9,7 +9,7 @@ Post-install setup installs this profile automatically. In the WIN Mini's gamepa
 | X | Immediate Backspace; repeat while held |
 | L2, left trigger | Hold Shift |
 | R2, right trigger | Hold Ctrl |
-| L1 / R1 | Previous / next workspace, on release |
+| L1 / R1 | Previous / next numbered workspace, on release; stop at 1, no upper cap |
 | L2 + bumper | Send focused window to adjacent workspace without following it |
 | R3 | Switch both sticks between Window / Workspace controls, on release |
 | Start | Open terminal, on release |
@@ -36,7 +36,9 @@ L4 toggles display power while applications continue running. A second L4 press 
 
 For a background agent, enable Keep awake with R4, then turn the display off with L4. Keep awake does not unlock an existing lock. Super+L still locks only, and closing the lid or explicitly suspending still locks and suspends. Without Keep awake, the normal five-minute battery idle lock still applies after manually turning the display off. These bindings do not change the power button.
 
-Workspaces cycle through 1–4. Window focus and resize actions repeat after a short hold; Window mode uses continuous text movement and scrolling at a speed based on deflection. Dead zones prevent small movements from generating actions. Trigger hysteresis stabilizes held modifiers. Ordinary release actions use the modifiers held when released. X acts on press and uses normal keyboard repeat while held; R2+X deletes words where Ctrl+Backspace is supported.
+Workspace navigation is open-ended: R1 advances from 4 to 5, 5 to 6 and onward, creating the numbered workspace when needed. L1 moves back one number and stops at 1. L2+bumper sends the focused window to that adjacent number without following it, creating the destination when needed. Empty workspaces disappear when left; returning to their number recreates them. From an unnumbered workspace, either bumper starts at 1. Super+1–4 remain direct keyboard shortcuts.
+
+Window focus and resize actions repeat after a short hold; Window mode uses continuous text movement and scrolling at a speed based on deflection. Dead zones prevent small movements from generating actions. Trigger hysteresis stabilizes held modifiers. Ordinary release actions use the modifiers held when released. X acts on press and uses normal keyboard repeat while held; R2+X deletes words where Ctrl+Backspace is supported.
 
 ## Shortcut table
 
@@ -87,7 +89,7 @@ systemctl --user restart minion-gamepad.service
 minion-gamepad --status
 ```
 
-Setup preserves this file. Top-level settings override the defaults; a nested object replaces that entire object. Chord values are named actions such as `copy`, `close`, `home` and `equalize`, as shown in the default JSON. `actions` assigns named actions to buttons, including `legend` and `stick_context`. The earlier `selection` and `text_navigation` action names remain aliases for `stick_context`; both now switch the shared Window/Workspace context. X must remain Backspace and cannot appear in a chord. Set `chords` to `{}` to disable shortcuts and restore held D-pad arrows. D-pad acceleration uses `dpad_repeat_delay`, `dpad_acceleration_time`, `dpad_rate` and `dpad_line_rate`. Thresholds, repeat timing, workspace numbers and resize increments are configurable.
+Setup preserves this file. Top-level settings override the defaults; a nested object replaces that entire object. Chord values are named actions such as `copy`, `close`, `home` and `equalize`, as shown in the default JSON. `actions` assigns named actions to buttons, including `legend` and `stick_context`. The earlier `selection` and `text_navigation` action names remain aliases for `stick_context`; both now switch the shared Window/Workspace context. X must remain Backspace and cannot appear in a chord. Set `chords` to `{}` to disable shortcuts and restore held D-pad arrows. D-pad acceleration uses `dpad_repeat_delay`, `dpad_acceleration_time`, `dpad_rate` and `dpad_line_rate`. Thresholds, repeat timing and resize increments are configurable. `workspace_numbers: null` selects open-ended navigation; an explicit list such as `"workspace_numbers": [1, 2, 3, 4]` retains circular navigation through that list. Existing personal lists are preserved.
 
 Text navigation and selection speed is configurable with `selection_rate` (horizontal) and `selection_line_rate` (vertical), retaining the earlier setting names. Each is a pair of minimum and maximum steps per second, from 1 to 100. Scrolling speed uses `scroll_rate`, another minimum/maximum pair of wheel steps per second. Window focus and resizing retain their existing repeat timing.
 

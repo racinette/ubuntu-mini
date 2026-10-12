@@ -164,10 +164,12 @@ def configuration(path, codes):
     for prefix in ('stick', 'trigger'):
         if not 0 <= config[prefix + '_release'] < config[prefix + '_press'] <= 1:
             raise ValueError('Invalid ' + prefix + ' thresholds')
-    for name in ('repeat_delay', 'repeat_interval', 'toggle_hold'):
+    for name in ('repeat_delay', 'repeat_interval', 'toggle_hold',
+                 'dpad_repeat_delay', 'dpad_acceleration_time'):
         if not .05 <= config[name] <= 10:
             raise ValueError('Invalid ' + name)
-    for name in ('selection_rate', 'selection_line_rate', 'scroll_rate'):
+    for name in ('selection_rate', 'selection_line_rate', 'scroll_rate',
+                 'dpad_rate', 'dpad_line_rate'):
         rates = config[name]
         if (not isinstance(rates, list) or len(rates) != 2
                 or any(type(rate) is not int for rate in rates)
@@ -255,6 +257,7 @@ class Mapper:
         self.chord_armed = False
         self.pending_buttons = set()
         self.text_gesture = ReleaseGesture()
+        self.clear_dpad_navigation()
         self.gesture_in_legend = False
         self.unavailable_actions = []
         self.actions = deque(maxlen=24)
@@ -288,6 +291,7 @@ class Mapper:
         self.ready = False
         self.pending_buttons.clear()
         self.text_gesture.clear()
+        self.clear_dpad_navigation()
         self.gesture_in_legend = False
         self.chord_since = None
         self.chord_consumed = self.chord_armed = False
@@ -312,12 +316,14 @@ class Mapper:
         return self.legend is not None
 
     def legend_text(self):
-        order = ('UP', 'DOWN', 'LEFT', 'RIGHT', 'Y', 'A', 'B')
+        order = ('Y', 'A', 'B', 'UP', 'DOWN', 'LEFT', 'RIGHT')
         lines = ['Stick controls: ' + self.stick_mode]
         lines += ['+'.join(t for t in order if t in tokens) + '  :  ' + ACTION_LABELS[action]
                   for tokens, action in self.config['chords'].items()]
         lines += ['X: hold Backspace; A: Enter; B: Escape; Y: Tab',
-                  'D-pad: arrows; L2: Shift; R2: Ctrl',
+                  'D-pad: immediate arrows; hold to accelerate',
+                  'Combos: hold Y/A/B first, then D-pad; release all',
+                  'L2: Shift; R2: Ctrl',
                   'R3: switch Window / Workspace controls',
                   'Window: left scrolls; right navigates text',
                   'Window + right: L2 selects; R2 moves by words; both select words',
@@ -614,9 +620,45 @@ class Mapper:
         self.write_keys(desired)
         self.button_gestures(pressed, released, now, active)
         if self.permitted(active) and self.grabbed and self.ready:
-            self.shortcut_frame()
+            self.shortcut_frame(now)
 
-    def shortcut_frame(self):
+    def clear_dpad_navigation(self):
+        self.dpad_navigation = self.dpad_blocked = False
+        self.dpad_direction = frozenset()
+        self.dpad_since = self.dpad_time = None
+        self.dpad_credit = 0
+
+    def navigate_dpad(self, directions, now):
+        """Emit explicit steps with a hold-speed ramp, never kernel auto-repeat."""
+        directions = frozenset(directions)
+        if directions != self.dpad_direction:
+            self.dpad_direction = directions
+            self.dpad_since = self.dpad_time = now
+            self.dpad_credit = 0
+            steps = 1
+        else:
+            start = max(self.dpad_time, now - .1,
+                        self.dpad_since + self.config['dpad_repeat_delay'])
+            self.dpad_time = now
+            rates = self.config['dpad_line_rate' if directions & {'UP', 'DOWN'} else 'dpad_rate']
+            low, high = rates
+
+            def rate(at):
+                elapsed = at - self.dpad_since - self.config['dpad_repeat_delay']
+                return low + (high - low) * max(0, min(1, elapsed / self.config['dpad_acceleration_time']))
+
+            self.dpad_credit += max(0, now - start) * (rate(start) + rate(now)) / 2
+            steps = int(self.dpad_credit)
+            self.dpad_credit -= steps
+        modifiers = self.keys & {self.e.KEY_LEFTSHIFT, self.e.KEY_LEFTCTRL}
+        for _ in range(steps):
+            for direction in sorted(directions):
+                horizontal, vertical = self.config['chord_axes']
+                axis = horizontal if direction in ('LEFT', 'RIGHT') else vertical
+                key = self.config['dpad'][axis][direction in ('RIGHT', 'DOWN')]
+                self.shortcut(key, modifiers)
+
+    def shortcut_frame(self, now):
         held = {name for name, code in self.config['chord_faces'].items() if code in self.raw_keys}
         horizontal, vertical = self.config['chord_axes']
         if self.config['chords']:
@@ -624,6 +666,21 @@ class Mapper:
                 value = self.raw_axes.get(axis, 0)
                 if value:
                     held.add(negative if value < 0 else positive)
+        directions = held - set(self.config['chord_faces'])
+        # Only an already-held face button may prefix a combo. Inputs first
+        # observed together are consumed conservatively, without a shortcut.
+        if self.config['chords'] and (self.dpad_navigation or directions and not self.text_gesture.previous):
+            if not self.dpad_navigation:
+                self.dpad_navigation = True
+                self.gesture_in_legend = self.legend_open()
+            if not held:
+                self.clear_dpad_navigation()
+                self.gesture_in_legend = False
+            elif held - directions or self.gesture_in_legend != self.legend_open():
+                self.dpad_blocked = True
+            elif directions and not self.dpad_blocked:
+                self.navigate_dpad(directions, now)
+            return
         if held and not self.text_gesture.previous:
             self.gesture_in_legend = self.legend_open()
         captured = self.gesture_in_legend

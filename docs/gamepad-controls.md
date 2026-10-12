@@ -4,7 +4,7 @@ Post-install setup installs this profile automatically. In the WIN Mini's gamepa
 
 | Control | Action |
 | --- | --- |
-| D-pad single direction | Arrow key, on release |
+| D-pad first | Arrow immediately; hold to accelerate |
 | A / B / Y | Enter / Escape / Tab, on release |
 | X | Immediate Backspace; repeat while held |
 | L2, left trigger | Hold Shift |
@@ -33,7 +33,9 @@ Workspaces cycle through 1–4. Window focus and resize actions repeat after a s
 
 ## Shortcut table
 
-D-pad + Y/A/B execute the [24 named shortcuts](gamepad-chord-layout.md): editing, text navigation and desktop operations. Up+A closes the focused window, Left+A toggles fullscreen, Down+A toggles tiled/tabbed, and Right+A toggles floating. X is excluded from all chords. Inputs may be pressed in either order; the action runs once all participating controls are released, consuming their single actions. Invalid, unassigned and rolling gestures emit nothing. Single D-pad directions wait for release and do not repeat.
+Hold Y/A/B first, then use the D-pad to choose one of the [24 named shortcuts](gamepad-chord-layout.md): editing, text navigation and desktop operations. For example, hold A then Up to close the focused window, Left to toggle fullscreen, Down to toggle tiled/tabbed, or Right to toggle floating. The face prefix has no timeout. The action runs once all participating controls are released, consuming their single actions. X is excluded from all chords. Invalid, unassigned and rolling combos emit nothing.
+
+D-pad first sends an arrow immediately. Holding it starts repetition after 400 ms, increasing from 4 steps per second to 30 horizontally or 10 vertically over another 1.2 seconds. A diagonal sends both arrows at the slower vertical rate. Changing direction restarts the delay and acceleration; releasing stops immediately without an extra step. L2/R2 add Shift/Ctrl, including changes during a hold. Adding Y/A/B during navigation stops repetition and suppresses the gesture until all those controls are released; it cannot become a combo. A face and direction first observed in the same input frame are also suppressed. To make a combo, press the face button first.
 
 Copy/paste are terminal-aware. Editing actions ignore held triggers for their shortcut and restore them afterward; navigation shortcuts accept Shift/Ctrl. Application support determines Find, Save, Redo and search-match behavior. See the table for details.
 
@@ -76,7 +78,7 @@ systemctl --user restart minion-gamepad.service
 minion-gamepad --status
 ```
 
-Setup preserves this file. Top-level settings override the defaults; a nested object replaces that entire object. Chord values are named actions such as `copy`, `close`, `home` and `equalize`, as shown in the default JSON. `actions` assigns named actions to buttons, including `legend` and `stick_context`. The earlier `selection` and `text_navigation` action names remain aliases for `stick_context`; both now switch the shared Window/Workspace context. X must remain Backspace and cannot appear in a chord. Set `chords` to `{}` to disable shortcuts and restore held D-pad arrows. Thresholds, repeat timing, workspace numbers and resize increments are configurable.
+Setup preserves this file. Top-level settings override the defaults; a nested object replaces that entire object. Chord values are named actions such as `copy`, `close`, `home` and `equalize`, as shown in the default JSON. `actions` assigns named actions to buttons, including `legend` and `stick_context`. The earlier `selection` and `text_navigation` action names remain aliases for `stick_context`; both now switch the shared Window/Workspace context. X must remain Backspace and cannot appear in a chord. Set `chords` to `{}` to disable shortcuts and restore held D-pad arrows. D-pad acceleration uses `dpad_repeat_delay`, `dpad_acceleration_time`, `dpad_rate` and `dpad_line_rate`. Thresholds, repeat timing, workspace numbers and resize increments are configurable.
 
 Text navigation and selection speed is configurable with `selection_rate` (horizontal) and `selection_line_rate` (vertical), retaining the earlier setting names. Each is a pair of minimum and maximum steps per second, from 1 to 100. Scrolling speed uses `scroll_rate`, another minimum/maximum pair of wheel steps per second. Window focus and resizing retain their existing repeat timing.
 

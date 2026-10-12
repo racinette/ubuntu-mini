@@ -15,9 +15,9 @@ The default profile uses D-pad + Y/A/B for named actions. X is reserved for imme
 
 ## Enter a shortcut
 
-Hold the D-pad direction and face button so they overlap, in either order. Release all participating controls to execute once. A diagonal is one physical D-pad position. Constituent arrows, Enter, Escape and Tab are consumed. Holding a shortcut does not repeat it. A new press after release has begun cancels the gesture; finish releasing before starting another. Unassigned combinations do nothing.
+Hold Y/A/B first, then choose the D-pad direction. There is no deadline for completing the combo. Release all participating controls to execute once. A diagonal is one physical D-pad position. Constituent arrows, Enter, Escape and Tab are consumed. Holding a shortcut does not repeat it. A new press after release has begun cancels the gesture; finish releasing before starting another. Unassigned combinations do nothing. The table and profile names identify the participating controls; the face button always goes first.
 
-Single A/B/Y inputs produce Enter/Escape/Tab on release. Single D-pad directions produce arrows on release. X presses Backspace immediately, remains held for application key repeat, and releases immediately. R2+X gives Ctrl+Backspace. X never participates in shortcut recognition.
+Single A/B/Y inputs produce Enter/Escape/Tab on release. D-pad first sends arrows immediately, then repeats after 400 ms and accelerates while held. Horizontal repeats ramp from 4 to 30 steps per second and vertical repeats from 4 to 10 over another 1.2 seconds. Release stops immediately; direction changes restart the ramp. Adding A/B/Y during navigation stops it and consumes the remaining gesture instead of executing a combo. Simultaneous face/direction starts are suppressed. L2/R2 add Shift/Ctrl to navigation. X presses Backspace immediately, remains held for application key repeat, and releases immediately. R2+X gives Ctrl+Backspace. X never participates in shortcut recognition.
 
 ## Modifiers and application behavior
 
@@ -37,4 +37,4 @@ Switching waits for both sticks to return to neutral and suppresses both until t
 
 ## Verification
 
-`python3 tests/check-chord-recognizer.py` checks all 24 assignments in 480 press/release orders, single keys, immediate Backspace holds, modifier restoration, terminal guards, invalid/rolling gestures, neutral mode transitions, stick selection/repeat, legend capture, profile validation and lifecycle cleanup. It creates no input device. Real application and Sway checks are recorded in [testing](testing.md); physical controller comfort and suspend behavior still need device QA.
+`python3 tests/check-chord-recognizer.py` checks all 24 assignments in 168 face-first press/release orders, unlimited prefix holds, wrong-order/simultaneous suppression, immediate and accelerated D-pad navigation, single keys, immediate Backspace holds, modifier restoration, terminal guards, invalid/rolling gestures, neutral mode transitions, stick selection/repeat, legend capture, profile validation and lifecycle cleanup. It creates no input device. Real application and Sway checks are recorded in [testing](testing.md); physical controller comfort and suspend behavior still need device QA.

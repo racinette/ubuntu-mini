@@ -61,7 +61,7 @@ def main():
         state.ranges.update({axis: (0, 255) for axis in (config['shift_trigger'], config['ctrl_trigger'])})
         state.ranges.update({axis: (-32768, 32767) for axis in config['left_stick'] + config['right_stick']})
         frames = 0
-        def frame(tokens=(), shift=False, ctrl=False, buttons=(), active=True):
+        def frame(tokens=(), shift=False, ctrl=False, buttons=(), active=True, at=None):
             nonlocal frames
             previous = set(state.raw_keys)
             state.raw_keys = {XBOX_FACE_CODES[t] for t in tokens if t in XBOX_FACE_CODES} | set(buttons)
@@ -70,7 +70,8 @@ def main():
                                   vertical: -1 if 'UP' in tokens else 1 if 'DOWN' in tokens else 0,
                                   config['shift_trigger']: 255 if shift else 0,
                                   config['ctrl_trigger']: 255 if ctrl else 0})
-            state.frame(state.raw_keys - previous, previous - state.raw_keys, frames * .03, active)
+            state.frame(state.raw_keys - previous, previous - state.raw_keys,
+                        frames * .03 if at is None else at, active)
             frames += 1
         def reset():
             state.reset()
@@ -102,6 +103,8 @@ def main():
         for chord, action in expected.items():
             tokens = chord.split('+')
             for presses in itertools.permutations(tokens):
+                if presses[0] not in XBOX_FACE_CODES:
+                    continue
                 for releases in itertools.permutations(tokens):
                     reset()
                     with patch.object(state, 'dispatch') as dispatch:
@@ -117,7 +120,7 @@ def main():
                     assert not keyboard.events
                     orders += 1
         for invalid in (({'A', 'Y'}, set()), ({'A', 'B'}, set()),
-                        ({'UP', 'Y'}, {'Y'}, {'Y', 'B'}, {'B'}, set())):
+                        ({'Y'}, {'UP', 'Y'}, {'Y'}, {'Y', 'B'}, {'B'}, set())):
             reset()
             with patch.object(state, 'dispatch') as dispatch:
                 for held in invalid: frame(held)
@@ -125,9 +128,91 @@ def main():
         # X stays independent even beside a shortcut; it is never deferred or re-pressed.
         reset()
         with patch.object(state, 'dispatch') as dispatch:
-            frame({'X', 'UP', 'Y'}); frame({'X'}); frame()
+            frame({'X', 'Y'}); frame({'X', 'UP', 'Y'}); frame({'X'}); frame()
             dispatch.assert_called_once_with('copy')
         assert downs() == [codes.KEY_BACKSPACE]
+
+        # A face prefix has no timeout; directions alone act on press, not release.
+        reset()
+        with patch.object(state, 'dispatch') as dispatch:
+            frame({'Y'}, at=0); frame({'Y'}, at=60)
+            assert not keyboard.events and not dispatch.called
+            frame({'Y', 'UP'}, at=61); frame({'Y', 'UP'}, at=90)
+            assert not keyboard.events and not dispatch.called
+            frame(at=91); dispatch.assert_called_once_with('copy')
+        for direction, key in [('UP', codes.KEY_UP), ('DOWN', codes.KEY_DOWN),
+                               ('LEFT', codes.KEY_LEFT), ('RIGHT', codes.KEY_RIGHT)]:
+            reset(); frame({direction}, at=0)
+            assert downs() == [key] and not state.keys
+            frame({direction}, at=.39); assert downs() == [key]
+            frame(at=.4); assert downs() == [key] and not state.dpad_navigation
+
+        # Wrong-order and simultaneous controls cannot execute a named shortcut
+        # or leak Enter/Escape/Tab, even if held after the direction is released.
+        for chord in expected:
+            tokens = set(chord.split('+'))
+            face = tokens & set(XBOX_FACE_CODES)
+            directions = tokens - face
+            for simultaneous in (False, True):
+                reset()
+                with patch.object(state, 'dispatch') as dispatch:
+                    if not simultaneous:
+                        frame(directions, at=0)
+                    frame(tokens, at=.1)
+                    before = list(keyboard.events)
+                    frame(tokens, at=10); frame(face, at=11); frame(face, at=20); frame(at=21)
+                    assert keyboard.events == before and not dispatch.called
+                    assert not state.dpad_navigation and not state.text_gesture.previous
+                    assert not set(downs()) & {codes.KEY_ENTER, codes.KEY_ESC, codes.KEY_TAB}
+
+        # Explicit repeats accelerate, do not depend on polling frequency,
+        # respect current modifiers, stop at neutral and bound scheduling gaps.
+        def hold_dpad(direction, frequency):
+            reset(); frame({direction}, at=0)
+            counts = []
+            for second in range(3):
+                before = len(downs())
+                for step in range(1, frequency + 1):
+                    frame({direction}, at=second + step / frequency)
+                counts.append(len(downs()) - before)
+            return counts
+        horizontal = hold_dpad('LEFT', 100)
+        assert horizontal[0] < horizontal[1] <= horizontal[2] and 29 <= horizontal[2] <= 31
+        assert all(abs(a - b) <= 1 for a, b in zip(horizontal, hold_dpad('LEFT', 30)))
+        vertical = hold_dpad('UP', 100)
+        assert vertical[0] < vertical[1] <= vertical[2] and 9 <= vertical[2] <= 11
+        horizontal_axis = config['chord_axes'][0]
+        original_key = config['dpad'][horizontal_axis][0]
+        config['dpad'][horizontal_axis][0] = codes.KEY_HOME
+        reset(); frame({'LEFT'}, at=0)
+        assert downs() == [codes.KEY_HOME], 'Navigation ignored a personal D-pad mapping'
+        config['dpad'][horizontal_axis][0] = original_key
+        reset(); frame({'LEFT'}, at=0)
+        for step in range(1, 201): frame({'LEFT'}, at=step / 100)
+        before = len(downs()); frame({'LEFT'}, at=100)
+        assert len(downs()) - before <= 3, 'Stall produced a repeat backlog'
+        frame(at=100.1); before = list(keyboard.events)
+        frame(at=101); assert keyboard.events == before
+        frame({'RIGHT'}, at=102)
+        assert downs()[-1] == codes.KEY_RIGHT
+        before = len(downs()); frame({'RIGHT'}, at=102.39)
+        assert len(downs()) == before, 'New direction retained the old acceleration'
+        frame({'UP'}, at=102.4)
+        assert downs()[-1] == codes.KEY_UP
+        before = len(downs()); frame({'UP'}, at=102.79)
+        assert len(downs()) == before, 'Rolling direction retained acceleration'
+        frame({'A', 'UP'}, at=103)
+        before = list(keyboard.events)
+        with patch.object(state, 'dispatch') as dispatch:
+            frame({'UP'}, at=105); frame(at=106)
+            assert keyboard.events == before and not dispatch.called
+        for shift, ctrl in itertools.product((False, True), repeat=2):
+            reset(); frame({'LEFT'}, shift=shift, ctrl=ctrl, at=0)
+            for step in range(1, 201): frame({'LEFT'}, shift=shift, ctrl=ctrl, at=step / 100)
+            assert downs().count(codes.KEY_LEFT) > 20
+            assert state.keys == ({codes.KEY_LEFTSHIFT} if shift else set()) | ({codes.KEY_LEFTCTRL} if ctrl else set())
+            frame({'LEFT'}, at=2.01); assert not state.keys
+            frame(at=2.02); assert not state.dpad_navigation
 
         # Assert actual emitted shortcuts independently of the mapping table.
         key_cases = {
@@ -417,6 +502,7 @@ def main():
             assert not state.keys and state.stick_mode == 'window' and not state.stick_pending
             assert state.motion_time == [None, None] and state.motion_credit == [0, 0]
             assert not state.text_gesture.previous and not state.pending_buttons
+            assert not state.dpad_navigation and state.dpad_since is None and state.dpad_credit == 0
         state.device = None
 
         # Persistent legend, L3 toggling, and no action escaping the overlay.
@@ -437,8 +523,13 @@ def main():
         legend = state.legend_text()
         assert all(mapper.ACTION_LABELS[action] in legend for action in expected.values())
         with patch.object(state, 'dispatch') as dispatch:
-            frame({'UP', 'A'}); state.close_legend(); frame()
+            frame({'A'}); frame({'UP', 'A'}); state.close_legend(); frame()
             assert not dispatch.called, 'Gesture escaped a closed legend'
+        state.legend = process
+        frame({'DOWN'}, at=100)
+        state.close_legend(); before = list(keyboard.events)
+        frame({'DOWN'}, at=101); frame(at=102)
+        assert keyboard.events == before, 'Navigation escaped a closed legend'
         with patch.object(mapper.subprocess, 'Popen', return_value=process):
             # A fresh stdin is needed after opening the first overlay closed it.
             process.stdin = __import__('io').StringIO()
@@ -449,7 +540,9 @@ def main():
         for changes in ({'chords': {'UP+X': 'copy'}}, {'chords': {'UP+Y': 'KEY_E'}},
                         {'selection_rate': [40, 4]}, {'selection_rate': [0, 40]},
                         {'selection_line_rate': [2, 101]}, {'selection_rate': [4, True]},
-                        {'selection_rate': 'fast'}, {'scroll_rate': [18, 1]}):
+                        {'selection_rate': 'fast'}, {'scroll_rate': [18, 1]},
+                        {'dpad_rate': [30, 4]}, {'dpad_line_rate': [4, True]},
+                        {'dpad_repeat_delay': 0}, {'dpad_acceleration_time': 0}):
             personal = directory / 'bad.json'; personal.write_text(json.dumps(changes))
             with patch.object(mapper, 'Path', side_effect=path):
                 try: mapper.configuration(personal, codes)
@@ -460,7 +553,7 @@ def main():
         assert keyboard.events == [(codes.EV_KEY, codes.KEY_UP, 1)]
         frame(); assert keyboard.events[-1] == (codes.EV_KEY, codes.KEY_UP, 0)
         config['chords'] = saved
-        print(f'Passed: 24 named shortcuts, {orders} press/release orders, Xbox codes, Backspace holds, modifier restoration, terminal guards, shared contexts/both-stick neutral switch, scroll targeting/direction/speed/modifiers/failure handling, text navigation/speed, legend capture, lifecycle reset and profile validation.')
+        print(f'Passed: 24 named shortcuts, {orders} face-first press/release orders, unlimited prefixes, wrong-order/simultaneous suppression, immediate/accelerated D-pad navigation, Xbox codes, Backspace holds, modifier restoration, terminal guards, shared contexts/both-stick neutral switch, scroll targeting/direction/speed/modifiers/failure handling, text navigation/speed, legend capture, lifecycle reset and profile validation.')
 
 
 if __name__ == '__main__':

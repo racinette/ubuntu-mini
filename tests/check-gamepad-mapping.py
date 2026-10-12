@@ -195,23 +195,33 @@ else:raise ValueError('Mapped keyboard is missing')
             result = wait(browser, lambda s: any(e['type'] == 'keyup' and e['code'] == expected for e in s['events']), expected + ' was not delivered')
             arrow_results.append({'direction': expected, 'events': result['events']})
         report['arrows'] = arrow_results
-        browser_set(text='hello world', selection=[11, 11], focus='editor', clear=True)
+        browser_set(text='x' * 500, selection=[500, 500], focus='editor', clear=True)
         control('emit', [[3, 16, -1]])
+        immediate = wait(browser, lambda s: s['selection'] == [499, 499], 'D-pad did not act on press')
         time.sleep(.9)
-        if browser()['events'] or browser()['selection'] != [11, 11]:
-            raise ValueError('D-pad acted before release')
+        early = browser()['selection'][0]
+        time.sleep(1)
+        middle = browser()['selection'][0]
+        time.sleep(1)
+        late = browser()['selection'][0]
+        if not 0 < 499 - early < middle - late or middle - late < 20:
+            raise ValueError('D-pad hold did not accelerate')
         control('emit', [[3, 16, 0]])
-        released_arrow = wait(browser, lambda s: s['selection'] == [10, 10], 'Released D-pad did not move once')
-        if sum(e['type'] == 'keydown' and e['code'] == 'ArrowLeft' for e in released_arrow['events']) != 1:
-            raise ValueError('Released D-pad repeated')
-        report['dpad_release'] = released_arrow['events']
-        report['checks']['dpad_arrows_on_release'] = True
+        time.sleep(.2)
+        frozen = browser()['selection']; time.sleep(.5)
+        if browser()['selection'] != frozen or keyboard_keys():
+            raise ValueError('D-pad repeated or remained held after release')
+        report['dpad_acceleration'] = {'initial': immediate['selection'], 'early': early, 'middle': middle, 'late': late}
+        report['checks']['dpad_immediate_accelerating_hold_and_release'] = True
 
         inputs = {'UP': [3, 17, -1], 'DOWN': [3, 17, 1], 'LEFT': [3, 16, -1], 'RIGHT': [3, 16, 1],
                   'A': [1, 304, 1], 'B': [1, 305, 1], 'Y': [1, 308, 1]}
         def chord(name):
             events = [inputs[token] for token in name.split('+')]
-            return control('pulse', events, [[kind, code, 0] for kind, code, value in reversed(events)])
+            faces = [event for event in events if event[0] == 1]
+            directions = [event for event in events if event[0] == 3]
+            control('emit', faces)
+            return control('pulse', directions, [[kind, code, 0] for kind, code, value in reversed(events)])
         for tokens in (['A', 'Y'], ['A', 'B', 'Y'], ['A', 'B']):
             browser_set(text='preserved', selection=[9, 9], focus='editor', clear=True)
             events = [inputs[token] for token in tokens]
@@ -220,12 +230,31 @@ else:raise ValueError('Mapped keyboard is missing')
             if browser()['text'] != 'preserved' or browser()['events']:
                 raise ValueError('Invalid or reserved shortcut leaked single actions')
         browser_set(text='preserved', selection=[9, 9], focus='editor', clear=True)
-        control('emit', [inputs['UP'], inputs['Y']]); control('emit', [[3, 17, 0]])
+        control('emit', [inputs['Y']]); control('emit', [inputs['UP']]); control('emit', [[3, 17, 0]])
         control('emit', [inputs['B']]); control('emit', [[1, 308, 0], [1, 305, 0]])
         time.sleep(.15)
         if browser()['events']:
             raise ValueError('Rolling shortcut leaked single actions')
         report['checks']['invalid_reserved_and_rolling_shortcuts_consumed'] = True
+
+        browser_set(text='preserved', selection=[0, 9], focus='editor', clear=True)
+        control('emit', [inputs['Y']]); time.sleep(1)
+        if browser()['events']:
+            raise ValueError('Held face prefix acted before a direction')
+        control('emit', [inputs['UP']]); time.sleep(.7)
+        if browser()['events']:
+            raise ValueError('Held combo leaked arrows or Tab')
+        control('emit', [[3, 17, 0], [1, 308, 0]])
+        wait(lambda: graphical(directory, 'wl-paste --no-newline'), lambda text: text == 'preserved', 'Delayed prefix Copy failed')
+        browser_set(text='preserved', selection=[9, 9], focus='editor', clear=True)
+        control('emit', [inputs['LEFT']])
+        wait(browser, lambda s: s['selection'] == [8, 8], 'Wrong-order navigation did not act')
+        control('emit', [inputs['Y']]); time.sleep(.7)
+        control('emit', [[3, 16, 0]]); control('emit', [[1, 308, 0]])
+        wrong_order = browser()
+        if wrong_order['selection'] != [8, 8] or any(e['code'] == 'Tab' for e in wrong_order['events']):
+            raise ValueError('Wrong-order gesture leaked a combo or face action')
+        report['checks']['face_prefix_wait_and_wrong_order_navigation'] = True
 
         trigger_cases = []
         for axis, key_code in ((2, 42), (5, 29)):

@@ -22,6 +22,7 @@ python3 tests/check-idle-policy.py
 python3 tests/check-install-plan.py
 python3 tests/check-install-launch.py
 python3 tests/check-proxy.py
+python3 tests/check-proxy-bypass.py
 python3 tests/check-proxy-selection.py
 python3 tests/check-hhd-artifacts.py
 python3 tests/check-coding-clis.py
@@ -45,6 +46,8 @@ The development check verifies user privilege/environment isolation, immediate l
 The proxy selection check verifies selection by number, exact name, unique case-insensitive substring or prompt, ambiguous-match refusal, automatic selection, default restart/save-only behavior, private configuration and preservation on invalid choices or failed validation. It checks HTTPS status/timeout handling, latency ordering with original selection numbers, the unchecked `list --all` mode, uplink selection with an active TUN and unchanged selections during list checks. With `python3 tests/check-proxy-selection.py --mihomo /PATH/TO/NATIVE/MIHOMO`, it also exercises the real engine against synthetic URI/base64/VMess subscriptions. It checks exact Unicode/emoji/punctuation matching, rejection when a pinned node disappears and temporary-process cleanup. The native check uses OpenSSL to generate a temporary trusted test certificate, local HTTPS/CONNECT servers and private Unix sockets to verify successful HTTPS, stalled/unreachable connections, unsuccessful HTTP responses and rejection of an untrusted destination certificate. It needs no subscription account, external network, routes or system services; service restart calls are mocked.
 
 The idle policy check verifies lid-close suspend on every power source and uses power-supply fixtures and isolated processes to verify charger detection, removal and restoration of battery timers, display wake on AC, child cleanup and unexpected exit handling. It covers Keep awake across charger changes, restoration of battery timers, runtime-state toggles, display-off without locking, and refusal to blank when the wake listener cannot be signaled. It feeds ordinary repeats and up to 100 repeated firmware macros through the rear-button reader, verifies one action after release, separate subsequent taps, and the display-wake action for L4. It checks rear-device key consumption and unchanged Super+L/power-button policy. The status check covers the Keep awake indicator, click action and live refresh. These checks change no host settings. Physical rear-button, lid and idle behavior still require the device checklist.
+
+`python3 tests/check-proxy-bypass.py --mihomo /PATH/TO/NATIVE/MIHOMO` also checks Russian bypass precedence, repeated enable/disable, retained personal settings and failed-download preservation. Its native checks use local HTTP fixtures to prove domain and IP rules connect directly while unmatched traffic follows the proxy fallback, without changing host routes or services.
 
 ## Optional proxy container test
 

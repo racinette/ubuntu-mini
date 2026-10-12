@@ -7,6 +7,7 @@ from contextlib import contextmanager
 import getpass
 import hashlib
 import http.client
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -32,6 +33,15 @@ MAX_SUBSCRIPTION = 4 * 1024 * 1024
 CHECK_URL = 'https://www.gstatic.com/generate_204'
 LAN = ['127.0.0.0/8', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16',
        '169.254.0.0/16', '224.0.0.0/4', '::1/128', 'fc00::/7', 'fe80::/10', 'ff00::/8']
+RU_PROVIDERS = {
+    'minion-ru-domains': {'type': 'http', 'behavior': 'domain', 'format': 'text',
+        'url': 'https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/category-ru.list',
+        'path': './rules/ru-domains.list', 'interval': 86400, 'proxy': 'PROXY'},
+    'minion-ru-ips': {'type': 'http', 'behavior': 'ipcidr', 'format': 'text',
+        'url': 'https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geoip/ru.list',
+        'path': './rules/ru-ips.list', 'interval': 86400, 'proxy': 'PROXY'},
+}
+RU_RULES = [f'RULE-SET,{name},DIRECT' for name in RU_PROVIDERS]
 
 
 class ProxyError(Exception):
@@ -158,14 +168,18 @@ def validate(config, directory=None):
         raise ProxyError('Mihomo rejected the configuration; diagnostic output withheld to protect credentials')
 
 
-def configure(url, mode):
+def configure(url, mode, bypass_ru=False):
     identity = device_identity()
     payload = fetch_subscription(validate_url(url), identity)
     # Validate before replacing either of the installed configuration/cache files.
     with tempfile.TemporaryDirectory(prefix='.configure-', dir=STATE) as temporary:
         scratch = Path(temporary)
         write_private(scratch / 'providers/subscription.txt', payload)
-        content = (json.dumps(configuration(url, mode, identity), indent=2) + '\n').encode()
+        config = configuration(url, mode, identity)
+        if bypass_ru:
+            config = ru_bypass_config(config, True)
+            cache_ru_rules()
+        content = (json.dumps(config, indent=2) + '\n').encode()
         write_private(scratch / 'config.json', content)
         validate(scratch / 'config.json', scratch)
         write_private(STATE / 'providers/subscription.txt', payload)
@@ -371,6 +385,62 @@ def save_config(config):
         write_private(path, content)
         validate(path)
         write_private(STATE / 'config.json', content)
+
+
+def ru_bypass_config(config, enabled):
+    """Insert regional bypasses before the fallback, preserving personal rules."""
+    config = json.loads(json.dumps(config))
+    providers = config.setdefault('rule-providers', {})
+    for name, definition in RU_PROVIDERS.items():
+        if name in providers and providers[name] != definition:
+            raise ProxyError('Russian bypass provider names conflict with personal configuration')
+        providers.pop(name, None)
+    rules = [rule for rule in config['rules'] if rule not in RU_RULES]
+    if enabled:
+        providers.update(json.loads(json.dumps(RU_PROVIDERS)))
+        position = next((i for i, rule in enumerate(rules) if rule.split(',')[0] == 'MATCH'), len(rules))
+        rules[position:position] = RU_RULES
+    config['rules'] = rules
+    if not providers:
+        config.pop('rule-providers', None)
+    return config
+
+
+def cache_ru_rules():
+    """Fetch both lists before writing; use the active proxy when available."""
+    active = subprocess.run(['systemctl', 'is-active', '--quiet', UNIT], capture_output=True).returncode == 0
+    proxies = {'https': 'http://127.0.0.1:7890'} if active else {}
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler(proxies))
+    downloads = []
+    for definition in RU_PROVIDERS.values():
+        try:
+            with opener.open(definition['url'], timeout=30) as response:
+                payload = response.read(MAX_SUBSCRIPTION + 1)
+        except (OSError, urllib.error.URLError):
+            raise ProxyError('Could not fetch Russian bypass lists; configuration retained') from None
+        if len(payload) > MAX_SUBSCRIPTION:
+            raise ProxyError('Russian bypass list exceeds the 4 MiB limit')
+        lines = [line.strip() for line in payload.decode('utf-8').splitlines()
+                 if line.strip() and not line.lstrip().startswith('#')]
+        if not lines:
+            raise ProxyError('Russian bypass list is empty')
+        for line in lines:
+            if definition['behavior'] == 'ipcidr':
+                ipaddress.ip_network(line)
+            elif not re.fullmatch(r'(?:\+\.)?[a-zA-Z0-9_.-]+', line):
+                raise ProxyError('Russian domain list contains an unsupported entry')
+        downloads.append((STATE / definition['path'], payload))
+    for path, payload in downloads:
+        write_private(path, payload)
+
+
+def set_ru_bypass(enabled):
+    config = ru_bypass_config(load_config(), enabled)
+    if enabled:
+        cache_ru_rules()
+    save_config(config)
+    print('Russian domain/IP bypass ' + ('enabled' if enabled else 'disabled') + '.')
+    print('Saved only. Activate with: sudo systemctl restart ' + UNIT)
 
 
 def match_server(server, names):
@@ -610,6 +680,7 @@ def main():
     setup = sub.add_parser('configure', help='Privately enter and validate an HTTPS subscription')
     setup.add_argument('--subscription-file', type=Path, help='Root-owned mode-600 file containing only the URL')
     setup.add_argument('--mode', choices=('proxy', 'tun'), default='tun')
+    setup.add_argument('--bypass-ru', action='store_true', help='Bypass Russian domains and IP ranges')
     listing = sub.add_parser('list', help='List cached servers with HTTPS connectivity checks')
     listing.add_argument('--all', '--no-check', dest='no_check', action='store_true',
                          help='Original unchecked list of all cached names/numbers; works offline')
@@ -621,6 +692,8 @@ def main():
     selection.add_argument('--no-restart', action='store_true', help='Only save the selection; keep the service as it is')
     mode = sub.add_parser('mode', help='Change mode; restart the service separately to activate')
     mode.add_argument('mode', choices=('proxy', 'tun'))
+    bypass = sub.add_parser('bypass-ru', help='Save Russian domain/IP bypass rules; restart separately')
+    bypass.add_argument('state', choices=('on', 'off'))
     sub.add_parser('validate', help='Validate the existing private configuration')
     sub.add_parser('ready', help='Wait for configured listeners/interface to initialize')
     sub.add_parser('activate-dns', help='Service entry point for temporary tunnel DNS')
@@ -636,7 +709,7 @@ def main():
     try:
         if args.command == 'configure':
             url = private_file(args.subscription_file) if args.subscription_file else getpass.getpass('Subscription URL (hidden): ').strip()
-            configure(url, args.mode)
+            configure(url, args.mode, args.bypass_ru)
         elif args.command == 'list':
             list_servers(not args.no_check, args.timeout, args.url)
         elif args.command == 'select':
@@ -646,6 +719,8 @@ def main():
             config['tun']['enable'] = args.mode == 'tun'
             save_config(config)
             print('Mode: ' + args.mode + '. Activate with: sudo systemctl restart ' + UNIT)
+        elif args.command == 'bypass-ru':
+            set_ru_bypass(args.state == 'on')
         elif args.command == 'validate':
             load_config()
             validate(STATE / 'config.json')

@@ -41,6 +41,21 @@ The local HTTP/SOCKS listener binds only to `127.0.0.1:7890`. The dashboard and 
 
 Setup installs a checksum-pinned [MetaCubeXD static release](https://github.com/MetaCubeX/metacubexd), retaining its API identity on reruns. Installation does not start or restart the proxy. Restart an already configured service after upgrading to activate the dashboard. No second proxy engine is installed.
 
+## Russian website and IP bypass
+
+To route Russian services directly while keeping the proxy for other public destinations:
+
+```bash
+sudo python3 setup/proxy/manage.py bypass-ru on
+sudo systemctl restart minion-proxy.service
+```
+
+This fetches MetaCubeX's Mihomo-compatible `category-ru` domain list and `ru` IP ranges, caches both locally and adds `DIRECT` rules before the final `MATCH,PROXY` fallback. Earlier personal rules retain priority. The dashboard preserves these rules and the current server selection. The lists cover Russian services, including domains outside `.ru`, and Russian IP ranges; classification is maintained upstream and may be incomplete. This is not a list of blocked websites.
+
+Mihomo refreshes the lists daily through the selected proxy and retains its cache when refresh fails. Enabling bypass requires both initial downloads to succeed. Ordinary setup reruns preserve the saved configuration. For a fresh configuration, use `configure --bypass-ru`; running `configure` without that flag regenerates the default routing without Russian bypasses. Disable with `bypass-ru off`, then restart the service.
+
+[Hiddify's Russian lists](https://github.com/hiddify/hiddify-geo/blob/main/.github/workflows/main.yml) use sing-box `.srs` files for `category-ru` domains and Russian IPs. We use [MetaCubeX's rule sets](https://github.com/MetaCubeX/meta-rules-dat) in Mihomo's native format rather than importing a HAPP/Hiddify application profile. These builds can differ in entries and update timing.
+
 ## Choose a subscription server
 
 The dashboard is the everyday picker. The following CLI commands remain available for administration. A deliberate CLI selection (including `--auto`) takes precedence at the next service start; subsequent dashboard selections are remembered until another explicit CLI selection. `--no-restart` still delays activation. The saved CLI policy is retained separately from the private generated dashboard runtime configuration. A previously pinned CLI choice appears as **Configured selection** in the dashboard and retains its exact-name filter and reject-if-missing behavior. A direct dashboard server choice uses Mihomo's native selection/cache behavior; if that server disappears, the selector falls back to its first available option, so choose another server if needed. `list` reports the saved CLI policy, which can differ from a later dashboard choice.

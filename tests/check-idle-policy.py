@@ -160,7 +160,7 @@ with tempfile.TemporaryDirectory() as temporary, \
 # Scope both press and release to the rear keyboard so Print on the physical
 # keyboard keeps its screenshot binding. No power-button policy is introduced.
 sway_config = (project / 'setup/desktop/sway.conf').read_text()
-assert 'bindsym $mod+l exec minion-lock' in sway_config
+assert 'bindsym --to-code $mod+l exec minion-lock' in sway_config
 for key, command in [('Print', 'off'), ('Pause', 'toggle-awake')]:
     matches = [line for line in sway_config.splitlines()
                if line.startswith('bindsym --input-device=12068:309:Mouse_for_Windows') and f' {key} ' in line]

@@ -54,5 +54,29 @@
     "snap_sha256": "08c29ab048cc3839da037c733dee6a48283c961236731112947b143be0e0010f",
     "assert": "firefox_8995.assert",
     "assert_sha256": "1803a7b7bde27b18ebb1c84d239da30141dae295612fc44b346511b4c9ece751"
+  },
+  {
+    "name": "core26",
+    "revision": "462",
+    "snap": "core26_462.snap",
+    "snap_sha256": "ba8756f9c3bbb758f4c71e60daeb978ac74e84794c0422ad33ba4e50f046c1b4",
+    "assert": "core26_462.assert",
+    "assert_sha256": "27d9871e2a6730f14ee526978d7675ccd3a155179bda35ddfa28e59f08ab671d"
+  },
+  {
+    "name": "cups",
+    "revision": "1262",
+    "snap": "cups_1262.snap",
+    "snap_sha256": "1af1c235f8a3f9f5cf7119921550ab1c3c35166dd235cd70cd907c54cb752d0c",
+    "assert": "cups_1262.assert",
+    "assert_sha256": "8b5e5dad1684ab11ef0b8545e36b40924eebb207ba7948d33853913a764880af"
+  },
+  {
+    "name": "chromium",
+    "revision": "3554",
+    "snap": "chromium_3554.snap",
+    "snap_sha256": "42173466008e372f4364aa510d83391fe939959c1db6546ec24cbfe95af4fef3",
+    "assert": "chromium_3554.assert",
+    "assert_sha256": "c7befd3dab59d92cb95258ae1b99ec0db4353e0ca53c62cd5272e5d300f5e994"
   }
 ]

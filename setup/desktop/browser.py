@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install Firefox from the Snap Store, or from an explicit verified asset cache."""
+"""Install Firefox and Chromium from the Snap Store or a verified asset cache."""
 import argparse
 import hashlib
 import json
@@ -10,6 +10,8 @@ import tempfile
 import urllib.request
 from urllib.parse import urlsplit
 
+BROWSERS = ('firefox', 'chromium')
+
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--asset-url', help='Optional pinned artifact cache; otherwise use the Snap Store')
 args = p.parse_args()
@@ -17,12 +19,16 @@ if os.geteuid() != 0: raise SystemExit('Run as root inside the target')
 if not args.asset_url:
     # Snap resolves and verifies the current stable browser and its dependencies.
     # Keep an existing installation and its selected channel on rerun.
-    if subprocess.run(['snap', 'list', 'firefox'], capture_output=True).returncode != 0:
-        subprocess.run(['snap', 'install', 'firefox', '--channel=latest/stable'], check=True)
-    print('Firefox is installed; existing revisions and channels are retained on rerun')
+    for browser in BROWSERS:
+        if subprocess.run(['snap', 'list', browser], capture_output=True).returncode != 0:
+            subprocess.run(['snap', 'install', browser, '--channel=latest/stable'], check=True)
+    print('Firefox and Chromium are installed; existing revisions and channels are retained on rerun')
     raise SystemExit(0)
 manifest = json.loads(Path(__file__).with_name('browser-snaps.json').read_text())
-if len(manifest) != 7: raise SystemExit('The complete seven-Snap manifest is required')
+required = {'snapd', 'core24', 'core26', 'cups', 'bare', 'gtk-common-themes', 'mesa-2404', 'gnome-46-2404', *BROWSERS}
+names = [item['name'] for item in manifest]
+if len(set(names)) != len(names) or not required.issubset(names):
+    raise SystemExit('The complete Firefox/Chromium runtime manifest is required')
 # Inspect before fetching: a rerun preserves installed revisions and channels.
 pending = [item for item in manifest if subprocess.run(
     ['snap', 'list', item['name']], capture_output=True).returncode != 0]
@@ -52,4 +58,4 @@ with tempfile.TemporaryDirectory(prefix='minion-browser-') as scratch:
         if check.returncode == 0: continue
         subprocess.run(['snap', 'install', root / item['snap']], check=True)
         subprocess.run(['snap', 'switch', '--channel=latest/stable', item['name']], check=True)
-print('Firefox and its signed runtime dependencies are installed')
+print('Firefox, Chromium and their signed runtime dependencies are installed')

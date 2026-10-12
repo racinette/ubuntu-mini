@@ -163,10 +163,15 @@ def main():
             assert status.run('fixture') is None
         with patch.object(status.subprocess, 'run', side_effect=FileNotFoundError):
             assert status.run('fixture') is None
-        with patch.object(status.sys, 'stdin', io.StringIO('[\n{"name":"wifi","button":1}\n')), \
+        with patch.object(status.sys, 'stdin', io.StringIO('[\n{"name":"wifi","button":3}\n')), \
                 patch.object(status, 'run') as run:
             status.clicks({'wifi': '<Guest> & friends'})
             assert run.call_args.args[-3:] == ('--', 'Wi-Fi', '&lt;Guest&gt; &amp; friends')
+        with patch.object(status.sys, 'stdin', io.StringIO('[\n{"name":"wifi","button":1}\n')), \
+                patch.object(status.subprocess, 'Popen') as launch:
+            status.clicks({})
+            assert launch.call_args.args == (['minion-network'],)
+            assert launch.call_args.kwargs['start_new_session'] is True
         with patch.object(status.sys, 'stdin', io.StringIO('[\n{"name":"temperatures","button":1}\n')), \
                 patch.object(status, 'run') as run:
             status.clicks({'temperatures': 'CPU <die>: 65 °C\nSSD: 40 °C'})

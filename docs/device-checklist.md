@@ -107,8 +107,10 @@ journalctl --user -u minion-gamepad.service -b
 - [ ] Speakers, headphones, jack detection and microphone work. Volume/mute keys, media keys and the bar agree with actual playback; repeat after waking.
 - [ ] On the WIN Mini 2023, a fresh setup seeds internal-microphone input at 10% (Capture and Internal Mic Boost both 0 dB). Record and replay speech to check clarity. Setup reruns preserve a subsequently chosen level and other audio routes; see [microphone defaults](post-install-setup.md#desktop-controls).
 - [ ] Pair a Bluetooth device if used, then test reconnect after reboot and suspend.
+- [ ] Clicking the bar's Wi-Fi text opens the nearby-network chooser; selecting a saved network reuses its profile, and a new secured network prompts for its password. Refresh, hidden/enterprise profile editing and enabling a disabled radio work. Opening/closing the chooser alone leaves the connection unchanged.
 - [ ] Test any dock, external storage and card reader you intend to use, including reconnection after suspend.
 - [ ] Firefox opens, accepts keyboard/touchpad input, and can copy/paste, upload a file and open a download in the file manager. Test screen sharing and its chooser in the application you intend to use.
+- [ ] Chromium is installed alongside Firefox, opens from Super+D or `chromium`, and can run a headless browser automation check with its sandbox enabled. Setup reruns retain both browsers' revisions/channels and profiles.
 - [ ] Notifications and desktop authorization prompts appear and can be answered. Print Screen and the screenshot shortcut put a usable image on the clipboard.
 - [ ] Battery percentage and charging/full/discharging states follow AC connection changes. Wi-Fi signal, audio/mute, proxy state and right-stick mode match actual state. Missing sensors do not stall the bar; click details and HHD launching work.
 - [ ] Routine notifications without an explicit sender timeout disappear after five seconds; Keep awake popups disappear after 2.5 seconds. Critical alerts remain available for dismissal. Tapping or right-clicking dismisses a popup, and existing personal Mako settings survive setup reruns.

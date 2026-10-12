@@ -1,0 +1,177 @@
+#!/usr/bin/python3
+"""Choose nearby Wi-Fi networks using NetworkManager and its secret agent."""
+import subprocess
+import sys
+
+import gi
+
+gi.require_version('Gtk', '3.0')
+gi.require_version('NM', '1.0')
+from gi.repository import Gio, GLib, Gtk, NM
+
+AP_FLAGS = getattr(NM, '80211ApFlags')
+AP_SECURITY = getattr(NM, '80211ApSecurityFlags')
+
+
+def nearby_networks(client):
+    """Keep the strongest AP per SSID/security/device, preferring the active AP."""
+    networks = {}
+    for device in client.get_devices():
+        if not isinstance(device, NM.DeviceWifi):
+            continue
+        active = device.get_active_access_point()
+        for ap in device.get_access_points():
+            ssid = ap.get_ssid()
+            if ssid is None:
+                continue  # Hidden networks are configured in the connection editor.
+            key = (device.get_path(), bytes(ssid.get_data()), int(ap.get_flags()),
+                   int(ap.get_wpa_flags()), int(ap.get_rsn_flags()))
+            connected = (device.get_state() == NM.DeviceState.ACTIVATED and active is not None
+                         and active.get_path() == ap.get_path())
+            entry = (device, ap, NM.utils_ssid_to_utf8(ssid.get_data()), connected)
+            previous = networks.get(key)
+            if previous is None or (connected, ap.get_strength()) > (previous[3], previous[1].get_strength()):
+                networks[key] = entry
+    return sorted(networks.values(), key=lambda entry: (not entry[3], -entry[1].get_strength(), entry[2]))
+
+
+def saved_connection(client, device, ap):
+    candidates = [connection for connection in device.filter_connections(client.get_connections())
+                  if ap.connection_valid(connection)]
+    return max(candidates, key=lambda connection: (
+        connection.get_setting_connection().get_autoconnect_priority(),
+        connection.get_setting_connection().get_timestamp()), default=None)
+
+
+class Networks(Gtk.Application):
+    def __init__(self):
+        super().__init__(application_id='org.minion.Networks', flags=Gio.ApplicationFlags.FLAGS_NONE)
+        self.window = None
+        self.busy = False
+        self.message = ''
+        self.rows = {}
+
+    def do_activate(self):
+        if self.window is not None:
+            self.window.present()
+            return
+        self.client = NM.Client.new(None)
+        self.window = Gtk.ApplicationWindow(application=self, title='Wi-Fi networks')
+        self.window.set_default_size(540, 420)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, margin=12)
+        self.window.add(box)
+        self.status = Gtk.Label(xalign=0, wrap=True)
+        box.pack_start(self.status, False, False, 0)
+        controls = Gtk.Box(spacing=8)
+        for label, callback in [('Refresh', self.scan), ('Enable Wi-Fi', self.enable),
+                                ('Saved / hidden networks…', self.edit)]:
+            button = Gtk.Button(label=label)
+            button.set_size_request(-1, 36)
+            button.connect('clicked', callback)
+            controls.pack_start(button, True, True, 0)
+        box.pack_start(controls, False, False, 0)
+        self.list = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroll.add(self.list)
+        box.pack_start(scroll, True, True, 0)
+        self.refresh()
+        self.window.show_all()
+        GLib.timeout_add_seconds(3, self.refresh)
+        self.scan()
+
+    def refresh(self, *_):
+        for button in self.rows.values():
+            button.set_sensitive(False)
+        if not self.client.get_nm_running():
+            self.status.set_text('NetworkManager is unavailable.')
+            return True
+        if not self.client.wireless_get_enabled():
+            self.status.set_text('Wi-Fi is off. Choose Enable Wi-Fi to turn it on.')
+            return True
+        networks = nearby_networks(self.client)
+        self.status.set_text(self.message or ('Choose a network to connect.' if networks else 'No nearby networks found. Try Refresh.'))
+        current = {ap.get_path() for device, ap, ssid, connected in networks}
+        for path in set(self.rows) - current:
+            self.rows.pop(path).destroy()
+        for index, (device, ap, ssid, connected) in enumerate(networks):
+            secured = bool(ap.get_flags() & AP_FLAGS.PRIVACY or ap.get_wpa_flags() or ap.get_rsn_flags())
+            suffix = 'Secured' if secured else 'Open'
+            label = f'{ssid}\n{"Connected · " if connected else ""}{ap.get_strength()}% · {suffix} · {device.get_iface()}'
+            button = self.rows.get(ap.get_path())
+            if button is None:
+                button = Gtk.Button()
+                button.set_size_request(-1, 52)
+                button.connect('clicked', self.connect_network, device, ap, ssid)
+                self.list.pack_start(button, False, False, 0)
+                self.rows[ap.get_path()] = button
+            button.set_label(label)
+            button.set_sensitive(not self.busy and not connected)
+            self.list.reorder_child(button, index)
+        self.list.show_all()
+        return True
+
+    def scan(self, *_):
+        for device in self.client.get_devices():
+            if isinstance(device, NM.DeviceWifi) and self.client.wireless_get_enabled():
+                device.request_scan_async(None, self.scan_finished)
+
+    def scan_finished(self, device, result):
+        try:
+            device.request_scan_finish(result)
+        except GLib.Error as error:
+            self.message = 'Refresh unavailable: ' + error.message
+        self.refresh()
+
+    def enable(self, *_):
+        self.client.wireless_set_enabled(True)
+        self.message = ''
+        self.scan()
+        self.refresh()
+
+    def edit(self, *_):
+        subprocess.Popen(['nm-connection-editor'], start_new_session=True)
+
+    def connect_network(self, button, device, ap, ssid):
+        connection = saved_connection(self.client, device, ap)
+        enterprise = (ap.get_wpa_flags() | ap.get_rsn_flags()) & AP_SECURITY.KEY_MGMT_802_1X
+        if connection is None and enterprise:
+            self.message = 'Add this enterprise network in Saved / hidden networks, then select it here.'
+            self.edit()
+            self.refresh()
+            return
+        self.busy = True
+        self.message = 'Connecting to ' + ssid + '…'
+        self.refresh()
+        if connection is None:
+            # NetworkManager fills in AP settings and asks nm-applet for secrets.
+            self.client.add_and_activate_connection_async(None, device, ap.get_path(), None,
+                                                         self.activation_started, True)
+        else:
+            self.client.activate_connection_async(connection, device, ap.get_path(), None,
+                                                  self.activation_started, False)
+
+    def activation_started(self, client, result, added):
+        try:
+            active = (client.add_and_activate_connection_finish(result) if added
+                      else client.activate_connection_finish(result))
+            active.connect('notify::state', self.activation_changed)
+            self.activation_changed(active)
+        except GLib.Error as error:
+            self.busy = False
+            self.message = 'Could not connect: ' + error.message
+            self.refresh()
+
+    def activation_changed(self, active, *_):
+        state = active.get_state()
+        if state == NM.ActiveConnectionState.ACTIVATED:
+            self.busy = False
+            self.message = 'Connected to ' + active.get_id()
+        elif state in (NM.ActiveConnectionState.DEACTIVATING, NM.ActiveConnectionState.DEACTIVATED):
+            self.busy = False
+            self.message = 'Connection ended. Check the password or try another network.'
+        self.refresh()
+
+
+if __name__ == '__main__':
+    raise SystemExit(Networks().run(sys.argv))

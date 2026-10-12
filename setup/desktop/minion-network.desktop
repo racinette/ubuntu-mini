@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Wi-Fi networks
+Comment=Choose a Wi-Fi network or edit saved connections
+Exec=minion-network
+Icon=network-wireless
+Terminal=false
+Categories=Settings;Network;

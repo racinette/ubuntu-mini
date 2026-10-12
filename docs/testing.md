@@ -9,6 +9,7 @@ Run from the repository root:
 ```bash
 python3 tests/check-setup-layout.py
 python3 tests/check-microphone-defaults.py
+python3 tests/check-network-picker.py
 python3 tests/check-browser-download-mode.py
 python3 tests/check-chord-recognizer.py
 python3 tests/check-status-bar.py
@@ -23,6 +24,8 @@ python3 tests/check-development.py
 ```
 
 The microphone-default check covers WIN Mini model matching, the tested 10% input level, user ownership, fresh state creation, merging other routes and retaining saved levels byte-for-byte on reruns. It changes no host audio settings. The format follows [WirePlumber 0.4's per-route volume storage](https://github.com/PipeWire/wireplumber/blob/0.4.17/src/scripts/policy-device-routes.lua).
+
+The Wi-Fi picker check uses fake NetworkManager objects to check AP grouping, literal SSID handling, saved-profile reuse, new-connection delegation to the secret agent and enterprise-profile handling. It never changes host connections. The browser-download check covers independent Firefox/Chromium retention, complete cached dependencies, local artifact transport and rejection of damaged Chromium files before installation. Live new-network authentication still needs an actual network/password test.
 
 The setup check verifies the root entry point, source staging and coordinator paths without installing packages. The browser check isolates Snap command selection and existing-browser retention. The chord check feeds independent Xbox face codes through all 27 named shortcuts in 196 face-first press/release orders, and checks unlimited face-prefix holds, terminal-only Ctrl+C/Z/D with complete A+B prefixes, suppression of wrong-order and simultaneous inputs, immediate D-pad arrows with hold acceleration, polling-rate consistency, direction changes, neutral stop and bounded repeats after scheduling gaps, immediate Backspace holds, fixed versus trigger-modified shortcuts, terminal guards, invalid/rolling gestures, selection/neutral transitions, persistent legend capture, profile validation, lifecycle cleanup and held-arrow compatibility with shortcuts disabled. Stick-context checks cover Window startup/reset, both-stick neutral switching, focused-window wheel targeting, full 120-unit detents and legacy equivalents, batch magnitude, direction/speed, ordered modifier frames, modifier suppression/restoration, failure handling, simultaneous scrolling/selection, plain arrows, all Shift/Ctrl trigger combinations in all four directions, changing modifiers during continuous movement, the earlier profile action alias, speed by deflection, consistency across polling rates, slower vertical movement, single-step nudges, neutral stop, reversal, immediate slowdown and bounded repeats after scheduling gaps. It creates no host input device and reads Linux key codes from `/usr/include/linux/input-event-codes.h`.
 

@@ -8,6 +8,9 @@ swayidle
 wl-clipboard
 network-manager
 network-manager-gnome
+python3-gi
+gir1.2-gtk-3.0
+gir1.2-nm-1.0
 bluez
 blueman
 pipewire

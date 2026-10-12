@@ -27,7 +27,7 @@ def load_setup():
 
 def main():
     sources = setup_sources()
-    assert len(sources) == 46
+    assert len(sources) == 48
     assert all(p.is_file() for p in sources)
     assert all(p == PROJECT / 'setup.sh' or p.is_relative_to(PROJECT / 'setup') for p in sources)
     assert {p.name for p in sources}.isdisjoint({'first-boot.py', 'minion-first-boot.service'})

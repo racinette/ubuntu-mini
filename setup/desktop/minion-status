@@ -216,6 +216,14 @@ def launch_power_controls():
         pass
 
 
+def launch_network_controls():
+    try:
+        subprocess.Popen(['minion-network'], stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    except OSError:
+        pass
+
+
 def keyboard_layout():
     output = run('swaymsg', '-r', '-t', 'get_inputs')
     try:
@@ -270,7 +278,9 @@ def clicks(details):
             launch_power_controls()
         elif name == 'awake' and button == 1:
             run('minion-idle-controls', 'toggle-awake')
-        elif (name in ('wifi', 'temperatures') and button == 1) or (name == 'power' and button == 3):
+        elif name == 'wifi' and button == 1:
+            launch_network_controls()
+        elif (name == 'temperatures' and button == 1) or (name in ('wifi', 'power') and button == 3):
             title = {'wifi': 'Wi-Fi', 'temperatures': 'Temperatures', 'power': 'Power controls'}[name]
             run('notify-send', '-a', 'minion', '--', title, html.escape(details.get(name, 'Status is unavailable')))
 

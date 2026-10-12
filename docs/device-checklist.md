@@ -109,6 +109,7 @@ journalctl --user -u minion-gamepad.service -b
 - [ ] Firefox opens, accepts keyboard/touchpad input, and can copy/paste, upload a file and open a download in the file manager. Test screen sharing and its chooser in the application you intend to use.
 - [ ] Notifications and desktop authorization prompts appear and can be answered. Print Screen and the screenshot shortcut put a usable image on the clipboard.
 - [ ] Battery percentage and charging/full/discharging states follow AC connection changes. Wi-Fi signal, audio/mute, proxy state and right-stick mode match actual state. Missing sensors do not stall the bar; click details and HHD launching work.
+- [ ] Routine notifications without an explicit sender timeout disappear after five seconds; Keep awake popups disappear after 2.5 seconds. Critical alerts remain available for dismissal. Tapping or right-clicking dismisses a popup, and existing personal Mako settings survive setup reruns.
 
 ## Development tools and coding agents
 

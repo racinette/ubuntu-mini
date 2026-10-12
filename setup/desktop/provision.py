@@ -56,6 +56,12 @@ for name in ('minion-session', 'minion-session-ready', 'minion-lock', 'minion-id
     write('/usr/local/bin/' + name, HERE.joinpath(name).read_text(), 0o755)
 write('/etc/minion/sway.conf', HERE.joinpath('sway.conf').read_text())
 write('/etc/minion/gamepad.json', HERE.joinpath('gamepad.json').read_text())
+# Seed notification defaults without replacing the user's existing settings.
+mako_config = Path(user.pw_dir) / '.config/mako/config'
+if not mako_config.exists():
+    write(mako_config, HERE.joinpath('mako.conf').read_text(), 0o600)
+    for path in (mako_config, mako_config.parent, mako_config.parent.parent):
+        os.chown(path, user.pw_uid, user.pw_gid)
 write('/etc/systemd/logind.conf.d/60-minion-power.conf', '''[Login]
 # Lid close suspends on every power source, including when docked.
 HandleLidSwitch=suspend

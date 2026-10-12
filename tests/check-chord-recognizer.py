@@ -204,10 +204,11 @@ def main():
                 counts.append(len(downs()) - before)
             return counts
         horizontal = hold_dpad('LEFT', 100)
-        assert horizontal[0] < horizontal[1] <= horizontal[2] and 29 <= horizontal[2] <= 31
+        assert horizontal[0] < horizontal[1] <= horizontal[2] and 24 <= horizontal[2] <= 26
         assert all(abs(a - b) <= 1 for a, b in zip(horizontal, hold_dpad('LEFT', 30)))
         vertical = hold_dpad('UP', 100)
-        assert vertical[0] < vertical[1] <= vertical[2] and 9 <= vertical[2] <= 11
+        assert vertical[0] < vertical[1] <= vertical[2] and 24 <= vertical[2] <= 26
+        assert vertical == horizontal, 'D-pad directions have different held repeat rates'
         horizontal_axis = config['chord_axes'][0]
         original_key = config['dpad'][horizontal_axis][0]
         config['dpad'][horizontal_axis][0] = codes.KEY_HOME

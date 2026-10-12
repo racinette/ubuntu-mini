@@ -6,6 +6,8 @@ case ":$PATH:" in
 esac
 [[ ${MINION_SHELL_LOADED-} ]] && return
 MINION_SHELL_LOADED=1
+# Foot 1.16.2 can duplicate Enter/Backspace with Codex keyboard enhancement.
+export CODEX_TUI_DISABLE_KEYBOARD_ENHANCEMENT=1
 if [[ -d "$HOME/.cargo/bin" ]]; then
   case ":$PATH:" in
     *":$HOME/.cargo/bin:"*) ;;

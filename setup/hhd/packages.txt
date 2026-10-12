@@ -11,6 +11,8 @@ python3-gi
 python3-dbus
 squashfs-tools
 acpi-call-dkms
+mokutil
+openssl
 linux-headers-generic-hwe-24.04
 libgtk-3-0t64
 libnss3

@@ -41,7 +41,7 @@ curl -I https://www.gstatic.com/generate_204
 
 ## Touchscreen coordinates
 
-**Known issue:** Firefox scrolls with touch, single taps appear ineffective, and double taps select text at the wrong screen position. Check coordinate mapping before changing gesture settings.
+**Observed fix:** Firefox taps missed controls until the WIN Mini touchscreen was explicitly associated with `eDP-1`. Setup now supplies this mapping; verify it on your installation before changing gesture settings. Center and four-corner single taps passed on the device, including after reboot; other gestures and suspend/wake still need checks.
 
 - [ ] Save output and input descriptions. Identify the physical touchscreen, its associated output, the output transform and scale.
 - [ ] Tap controls at the center and all four corners in Firefox and another native Wayland application. The activated control must match the touched position.
@@ -54,7 +54,7 @@ swaymsg -t get_outputs
 swaymsg -t get_inputs
 ```
 
-After installing the optional diagnostic packages, `sudo libinput debug-events` and `sudo evtest` can help distinguish device events from compositor mapping. Keep any eventual display/touch override in the personal configuration described in [setup](post-install-setup.md#screen-size-and-fn-keys), with the original setting and a way to revert it recorded.
+After installing the optional diagnostic packages, `sudo libinput debug-events` and `sudo evtest` can help distinguish device events from compositor mapping. Keep device-specific adjustments to the default display/touch mapping in the personal configuration described in [setup](post-install-setup.md#screen-size-and-fn-keys), with the original setting and a way to revert it recorded.
 
 ## Handheld power controls and temperatures
 
@@ -76,7 +76,7 @@ dkms status
 modinfo -F signer acpi_call
 ```
 
-When checking module acceptance, `sudo modprobe acpi_call` should succeed. If it fails, capture the error and relevant kernel log before making changes. Do not include HHD's local API token in diagnostic notes.
+When checking module acceptance, `sudo modprobe acpi_call` should succeed. If it fails, capture the error and relevant kernel log before making changes. For `Key was rejected by service`, check the signing certificate and follow [Secure Boot enrollment](power-controls.md#secure-boot-module-enrollment) if needed. Do not include HHD's local API token in diagnostic notes.
 
 ## Controller navigation and shortcuts
 

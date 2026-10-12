@@ -8,12 +8,75 @@ from pathlib import Path
 import platform
 import shutil
 import subprocess
+import sys
 import tempfile
 import urllib.request
 
 HERE = Path(__file__).resolve().parent
 PREFIX = Path('/usr/local/lib/minion-hhd')
 CACHE = Path('/var/cache/minion/hhd')
+MOK_CERTIFICATE = Path('/var/lib/shim-signed/mok/MOK.der')
+
+
+def check_acpi_module():
+    """Check the running kernel; offer enrollment of its matching local key."""
+    def probe(*command):
+        return subprocess.run(command, text=True, capture_output=True, timeout=30)
+
+    loaded = probe('modprobe', 'acpi_call')
+    if loaded.returncode == 0:
+        print('acpi_call loads successfully on the running kernel.', flush=True)
+        return
+    print('acpi_call could not load: ' + (loaded.stderr.strip() or loaded.stdout.strip()), flush=True)
+    print('HHD power controls need a working module; desktop setup can continue.', flush=True)
+    secure_boot = probe('mokutil', '--sb-state')
+    if secure_boot.returncode or 'SecureBoot enabled' not in secure_boot.stdout or not MOK_CERTIFICATE.is_file():
+        print('Check matching kernel headers, DKMS and module signing after reboot.', flush=True)
+        return
+
+    # Only offer the certificate which actually signed this kernel's module.
+    signature = probe('modinfo', '-F', 'sig_key', 'acpi_call')
+    certificate = probe('openssl', 'x509', '-inform', 'DER', '-in', str(MOK_CERTIFICATE),
+                        '-noout', '-serial', '-ext', 'subjectKeyIdentifier')
+    key_id = signature.stdout.strip().replace(':', '').lower()
+    lines = certificate.stdout.splitlines()
+    # PKCS#7 signer identifiers may use issuer/serial or a subject key ID.
+    cert_ids = {line.split('=', 1)[1].strip().lower() for line in lines if line.startswith('serial=')}
+    if lines:
+        cert_ids.add(lines[-1].strip().replace(':', '').lower())
+    if (signature.returncode or certificate.returncode or not key_id or key_id not in cert_ids):
+        print('The local certificate does not match the module signing key; investigate before enrollment.', flush=True)
+        return
+    enrolled = probe('mokutil', '--test-key', str(MOK_CERTIFICATE))
+    # mokutil can report enrollment but return 1 when its additional trusted
+    # kernel-keyring lookup is unavailable. Do not requeue an enrolled key.
+    if enrolled.returncode == 0 or str(MOK_CERTIFICATE) + ' is already enrolled' in enrolled.stdout:
+        print('The signing key is enrolled. Reboot and retry modprobe; inspect the kernel log if it still fails.', flush=True)
+        return
+    if str(MOK_CERTIFICATE) + ' is not enrolled' not in enrolled.stdout:
+        print('Could not determine signing-key enrollment. Inspect mokutil --test-key before importing it.', flush=True)
+        return
+    pending = probe('mokutil', '--list-new')
+    pending_ids = ''.join(pending.stdout.lower().replace(':', '').split())
+    if pending.returncode == 0 and key_id in pending_ids:
+        print('Signing-key enrollment is already queued. Complete Enroll MOK on the next boot.', flush=True)
+        return
+
+    print('Secure Boot needs enrollment of the local acpi_call signing key.', flush=True)
+    print('Enrollment trusts kernel modules signed by this key and keeps Secure Boot enabled.', flush=True)
+    if not sys.stdin.isatty():
+        print('No interactive terminal. Run this command yourself before reboot:', flush=True)
+        print('sudo mokutil --import ' + str(MOK_CERTIFICATE), flush=True)
+        return
+    print('Choose a temporary password below, then after reboot use the physical keyboard:', flush=True)
+    print('Enroll MOK -> Continue -> Yes -> temporary password -> Reboot.', flush=True)
+    # mokutil reads the password from the terminal without echo. Never generate,
+    # pass on the command line, capture or log an enrollment password ourselves.
+    requested = subprocess.run(['mokutil', '--import', str(MOK_CERTIFICATE)])
+    if requested.returncode == 0:
+        print('Enrollment queued; confirm Enroll MOK on reboot, then retry sudo modprobe acpi_call.', flush=True)
+    else:
+        print('Enrollment was not queued. Retry sudo mokutil --import ' + str(MOK_CERTIFICATE), flush=True)
 
 
 def digest(path):
@@ -93,6 +156,7 @@ def main():
         subprocess.run([str(v) for v in command], check=True, env=env)
 
     run('apt-get', 'install', '-y', '--no-install-recommends', *(HERE / 'packages.txt').read_text().split())
+    check_acpi_module()
     PREFIX.mkdir(parents=True, exist_ok=True)
     marker = PREFIX / 'artifacts.json'
     previous = json.loads(marker.read_text()) if marker.is_file() else {}

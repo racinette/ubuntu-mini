@@ -10,7 +10,28 @@ HHD stores settings and profiles under `/etc/hhd/`. Existing settings are preser
 
 The installer pins HHD 4.1.12 (including Adjustor) and HHD UI 3.4.2 in `setup/hhd/artifacts.json`, verifies downloads with SHA-256 and caches them in `/var/cache/minion/hhd/`. Native Python dependencies come from Ubuntu APT; HHD uses an isolated runtime with access to those packages. The UI is extracted once into a root-owned directory, with the standard Chromium sandbox helper, so launching needs no FUSE mount. Installed files live under `/usr/local/lib/minion-hhd/`, independently of the checkout. The shell/browser `--asset-dir` and `--asset-url` options do not redirect HHD downloads.
 
-Ubuntu's `acpi-call-dkms` package and matching HWE headers are installed for the ACPI power backend. Secure Boot acceptance of that DKMS module must be checked on the handheld; a container cannot validate its signing or firmware enrollment. The installer does not change Secure Boot policy. Fan-driver availability also remains an on-device check.
+Ubuntu's `acpi-call-dkms` package and matching HWE headers are installed for the ACPI power backend. Setup tests loading `acpi_call` on the running kernel. If Secure Boot is enabled and the module's matching local signing certificate is not enrolled, interactive setup starts an enrollment password prompt. Unattended setup prints the enrollment command instead. Already enrolled or pending keys are retained; a mismatched certificate is not offered. Setup keeps Secure Boot enabled and leaves boot-screen confirmation and reboot to you. A module-load failure is reported without preventing desktop installation; a newly installed kernel may need a reboot before the module is available. Fan-driver availability also remains an on-device check.
+
+## Secure Boot module enrollment
+
+On the WIN Mini, `sudo modprobe acpi_call` initially failed with `Key was rejected by service`: DKMS had signed the module, but the local signing certificate was not enrolled. Enrolling the existing certificate allowed the module to load with Secure Boot still enabled. Check your own device before requesting enrollment:
+
+```bash
+mokutil --sb-state
+modinfo -F signer acpi_call
+mokutil --test-key /var/lib/shim-signed/mok/MOK.der
+sudo modprobe acpi_call
+```
+
+If setup already queued enrollment, continue with the reboot instructions below. Otherwise, if the module is signed with the local Ubuntu DKMS key and that certificate is not enrolled, request enrollment:
+
+```bash
+sudo mokutil --import /var/lib/shim-signed/mok/MOK.der
+```
+
+Enter your sudo password if prompted, then choose and confirm a temporary enrollment password. Save your work and reboot. At the blue MOK screen, press a key if a countdown appears, then use the physical keyboard to choose **Enroll MOK → Continue → Yes**, enter the temporary password and choose **Reboot**. Verify the certificate identity when offered. Enrollment trusts modules signed by this key; setup can queue the request, but boot-screen confirmation requires your physical approval. See [Ubuntu's Secure Boot guidance](https://documentation.ubuntu.com/security/security-features/platform-protections/secure-boot/).
+
+After returning to Ubuntu, repeat `mokutil --test-key` and `sudo modprobe acpi_call`, then check `lsmod | rg '^acpi_call '`. Enrollment and loading establish module acceptance; testing requested power limits against hardware readback remains a separate check. Missing certificate files or a different module signer need investigation before following this procedure. Keep signing keys and enrollment passwords private.
 
 To inspect or stop the service:
 

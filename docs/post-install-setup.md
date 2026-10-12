@@ -30,7 +30,7 @@ Setup also installs and enables [Handheld Daemon power controls](power-controls.
 
 After reboot, enter your LUKS passphrase if you configured encryption, then log in using your existing account password. Super+Enter opens Foot, Super+D opens the application launcher, Super+B opens Firefox, Super+E opens Thunar, Super+1 through Super+4 switch workspaces, and Super+L locks the session. The configuration uses Bash and local-only Atuin without requiring an account.
 
-Work through the [device checklist](device-checklist.md) after installation. It includes the known touchscreen issue, HHD and temperature checks, controller behavior, suspend, networking, proxy access and development tools.
+Work through the [device checklist](device-checklist.md) after installation. It includes touchscreen mapping, HHD and temperature checks, controller behavior, suspend, networking, proxy access and development tools.
 
 ## Coding CLIs
 
@@ -47,6 +47,8 @@ agent --version
 ```
 
 Launch `codex`, `claude` or `agent` as your normal user and follow that tool's sign-in prompts. Setup does not sign in, transfer credentials or start model sessions. Each tool needs its own supported account or API access. Native installations can update through their upstream mechanisms; rerunning Minion setup retains an existing installation.
+
+Minion's interactive Bash profile exports `CODEX_TUI_DISABLE_KEYBOARD_ENHANCEMENT=1`. With Foot 1.16.2, extended keyboard events caused duplicate Enter, gamepad A and Backspace actions in Codex; disabling enhancement resolved them on the device and survived reboot. Codex uses ordinary terminal input with this workaround, so some extended key combinations may be unavailable. After upgrading the terminal or Codex, test without it using `env -u CODEX_TUI_DISABLE_KEYBOARD_ENHANCEMENT codex`. A fresh terminal picks up the default after setup or a rerun.
 
 Official installation instructions: [Codex](https://learn.chatgpt.com/docs/codex/cli), [Claude Code](https://code.claude.com/docs/en/setup), [Cursor Agent](https://cursor.com/docs/cli/installation).
 
@@ -135,6 +137,8 @@ L3 opens a persistent shortcut legend; B/Escape or another L3 tap dismisses it. 
 ## Screen size and Fn keys
 
 The desktop defaults to 2× output scaling for the WIN Mini's 7-inch 1920×1080 panel. This enlarges controls and text together, with a 960×540 logical workspace. It does not change the console, encryption prompt or text login greeter. For a smaller desktop UI, add `output * scale 1.5` to `~/.config/sway/minion.conf` and press Super+Shift+C. Personal output settings are loaded after the defaults. External monitors also inherit 2× unless overridden, for example `output HDMI-A-1 scale 1`; use `swaymsg -t get_outputs` to find the actual output name.
+
+The WIN Mini touchscreen (`8746:65521:ILTP7807:00_222A:FFF1`) is explicitly mapped to the built-in `eDP-1` output. On the device, missing this association caused Firefox taps to miss controls; the mapping restored single-tap activation at the center and all four corners, including after reboot. It leaves calibration and display rotation unchanged. If your hardware reports different identifiers, inspect `swaymsg -t get_inputs` and `swaymsg -t get_outputs`, then override the mapping in `~/.config/sway/minion.conf`.
 
 Fn+F1/F2 adjust the screen backlight. Setup explicitly installs `brightness-udev` and adds your account to the `video` group so `brightnessctl` can write to it without sudo. Brightness and volume controls also work while the screen is locked. Playback keys use `playerctl` with an active MPRIS-capable player: stop, previous, play/pause and next. Print Screen copies a screenshot to the clipboard. Insert and Scroll Lock are passed through to applications; ordinary F1–F12 remain available to applications.
 

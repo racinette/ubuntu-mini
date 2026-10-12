@@ -3,5 +3,7 @@ curl
 git
 ripgrep
 bubblewrap
+apparmor-profiles
+apparmor-utils
 socat
 xdg-utils

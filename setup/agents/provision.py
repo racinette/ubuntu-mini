@@ -20,6 +20,25 @@ INSTALLERS = (
 SYSTEM_PATH = '/usr/local/bin:/usr/bin:/bin'
 
 
+def install_bubblewrap_profile(
+        source=Path('/usr/share/apparmor/extra-profiles/bwrap-userns-restrict'),
+        target=Path('/etc/apparmor.d/bwrap-userns-restrict'),
+        enabled=Path('/sys/module/apparmor/parameters/enabled')):
+    """Enable Ubuntu's bubblewrap exception while retaining global userns policy."""
+    if not target.exists():
+        contents = source.read_bytes()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with target.open('xb') as stream:
+            stream.write(contents)
+        target.chmod(0o644)
+    else:
+        print(f'Retaining existing bubblewrap AppArmor profile: {target}', flush=True)
+    if enabled.exists() and enabled.read_text().strip() == 'Y':
+        subprocess.run(['/usr/sbin/apparmor_parser', '-r', str(target)], check=True)
+    else:
+        print('AppArmor is inactive; bubblewrap profile installed for future boots.', flush=True)
+
+
 def install_codex_defaults(target=Path('/etc/codex/config.toml')):
     """Seed system defaults without replacing existing system or user settings."""
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -100,6 +119,7 @@ def main():
         raise SystemExit('Run as root inside the installed target')
     subprocess.run(['apt-get', 'install', '-y', '--no-install-recommends',
                     *HERE.joinpath('packages.txt').read_text().split()], check=True)
+    install_bubblewrap_profile()
     install_codex_defaults()
     env = user_environment(user)
     for installer in INSTALLERS:

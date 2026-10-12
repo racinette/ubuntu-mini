@@ -136,6 +136,7 @@ docker info
 docker buildx version
 docker compose version
 codex --version
+codex sandbox -- /bin/true
 claude --version
 agent --version
 ```

@@ -30,6 +30,44 @@ with tempfile.TemporaryDirectory(prefix='minion-cli-check-') as temporary:
     assert not {'SUDO_USER', 'CODEX_HOME', 'XDG_CONFIG_HOME', 'ANTHROPIC_API_KEY', 'BASH_ENV'} & env.keys()
     assert env['CODEX_NON_INTERACTIVE'] == '1'
 
+    # Profile loading is part of installation, not a system-wide sysctl change.
+    source = Path(temporary) / 'packaged-profile'
+    source.write_text('profile fixture {}\n')
+    profile = Path(temporary) / 'apparmor.d/bwrap-userns-restrict'
+    enabled = Path(temporary) / 'apparmor-enabled'
+    enabled.write_text('Y\n')
+    with patch.object(provision.subprocess, 'run') as run:
+        provision.install_bubblewrap_profile(source, profile, enabled)
+        run.assert_called_once_with(['/usr/sbin/apparmor_parser', '-r', str(profile)], check=True)
+    assert profile.read_bytes() == source.read_bytes() and profile.stat().st_mode & 0o777 == 0o644
+    profile.write_text('# Personal profile edits\nprofile fixture {}\n')
+    saved = profile.read_bytes()
+    with patch.object(provision.subprocess, 'run') as run, contextlib.redirect_stdout(io.StringIO()):
+        provision.install_bubblewrap_profile(source, profile, enabled)
+        run.assert_called_once_with(['/usr/sbin/apparmor_parser', '-r', str(profile)], check=True)
+    assert profile.read_bytes() == saved
+    enabled.write_text('N\n')
+    with patch.object(provision.subprocess, 'run') as run, contextlib.redirect_stdout(io.StringIO()):
+        provision.install_bubblewrap_profile(source, profile, enabled)
+        run.assert_not_called()
+    absent = Path(temporary) / 'absent'
+    try:
+        provision.install_bubblewrap_profile(absent, absent.with_name('never-created'), enabled)
+    except FileNotFoundError:
+        pass
+    else:
+        raise AssertionError('Missing packaged profile was silently accepted')
+    assert not absent.with_name('never-created').exists()
+    enabled.write_text('Y\n')
+    with patch.object(provision.subprocess, 'run', side_effect=subprocess.CalledProcessError(1, 'apparmor_parser')), \
+         contextlib.redirect_stdout(io.StringIO()):
+        try:
+            provision.install_bubblewrap_profile(source, profile, enabled)
+        except subprocess.CalledProcessError:
+            pass
+        else:
+            raise AssertionError('Failed AppArmor profile load was silently accepted')
+
     # Foot starts interactive, non-login Bash. PATH must work without .profile,
     # and sourcing the integration twice must not duplicate the directory.
     result = subprocess.run(['/bin/bash', '--noprofile', '--norc', '-ic',
@@ -93,9 +131,25 @@ with tempfile.TemporaryDirectory(prefix='minion-cli-check-') as temporary:
     with patch.object(provision.platform, 'freedesktop_os_release', return_value={'ID': 'ubuntu', 'VERSION_ID': '24.04'}), \
          patch.object(provision.platform, 'machine', return_value='x86_64'), \
          patch.object(provision, 'target_user', return_value=user), \
+         patch.object(provision, 'install_bubblewrap_profile', side_effect=AssertionError('Check changed AppArmor')), \
          patch.object(provision.subprocess, 'run', side_effect=AssertionError('Check ran a command')), \
          patch.object(sys, 'argv', ['provision.py', 'fixture', '--check']), \
          contextlib.redirect_stdout(io.StringIO()):
         provision.main()
 
-print('Passed: user privilege/environment isolation, existing command retention, partial/missing installation refusal, Bash PATH and read-only preflight.')
+    with patch.object(provision.platform, 'freedesktop_os_release', return_value={'ID': 'ubuntu', 'VERSION_ID': '24.04'}), \
+         patch.object(provision.platform, 'machine', return_value='x86_64'), \
+         patch.object(provision, 'target_user', return_value=user), \
+         patch.object(provision.os, 'geteuid', return_value=0), \
+         patch.object(provision.subprocess, 'run') as packages, \
+         patch.object(provision, 'install_bubblewrap_profile') as apparmor, \
+         patch.object(provision, 'install_codex_defaults'), \
+         patch.object(provision, 'install_cli') as install, \
+         patch.object(sys, 'argv', ['provision.py', 'fixture']), \
+         contextlib.redirect_stdout(io.StringIO()):
+        provision.main()
+        assert {'bubblewrap', 'apparmor-profiles', 'apparmor-utils'} <= set(packages.call_args.args[0])
+        apparmor.assert_called_once_with()
+        assert install.call_count == len(provision.INSTALLERS)
+
+print('Passed: user privilege/environment isolation, existing command retention, partial/missing installation refusal, bubblewrap profile installation/retention/loading/failure handling, Bash PATH and read-only preflight.')

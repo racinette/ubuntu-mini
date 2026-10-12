@@ -97,6 +97,7 @@ def backup_configuration(path, user):
         '/etc/systemd/system/minion-hhd.service', '/etc/hhd',
         '/usr/local/lib/minion-proxy', '/var/lib/minion/proxy',
         '/usr/local/share/minion/bashrc.bash', '/etc/codex/config.toml',
+        '/etc/apparmor.d/bwrap-userns-restrict',
         '/etc/apt/sources.list.d/docker.sources', '/etc/apt/keyrings/docker.asc')]
     paths.extend(Path('/etc/systemd/user').glob('minion-*.service'))
     paths.extend(Path('/usr/local/bin').glob('minion-*'))

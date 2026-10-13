@@ -6,6 +6,10 @@ Firefox-first browser preferences were applied on the WIN Mini: `xdg-settings ge
 
 ## Host checks
 
+On 2026-10-13, CLI provisioning gained user-level commit/PR attribution preferences for Claude Code and Cursor Agent, applied on fresh setup and reruns. Isolated checks passed fresh config creation, preservation of unrelated model/plugin/permission settings and unknown attribution keys, user ownership, unchanged matching reruns, invalid-file refusal and read-only preflight. On the WIN Mini, Claude already had empty commit/PR attribution; Cursor's two enabled switches were disabled. A local backup was saved and JSON comparisons confirmed all unrelated settings survived; a second application left both files unchanged. No model request, commit or PR was generated for verification. [Private settings report](../.local/device-checks/attribution-defaults-result.json).
+
+On 2026-10-13, the WIN Mini lacked `pipewire-alsa`, leaving plain ALSA clients without default-device routing through PipeWire. Installing that package fixed normal-user capture: `arecord -D default -d 1 -f S16_LE -r 16000 /dev/null` returned zero without ALSA errors, without restarting services or rebooting. The desktop package list now includes it. Setup-layout and diff checks passed. This verifies device opening and capture; voice-mode behavior in individual applications has not been retested. [Private capture report](../.local/device-checks/pipewire-alsa-result.json).
+
 The sensor firmware check uses isolated targets to verify model matching, pinned download URLs, checksum refusal before installation, retention of existing plain/compressed firmware and installation of the accompanying license. It does not probe host hardware. Normal setup enables the sensor driver but leaves gyro input mapping and automatic rotation unconfigured.
 
 Run from the repository root:

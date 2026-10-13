@@ -3,6 +3,7 @@
 import contextlib
 import importlib.util
 import io
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -29,6 +30,46 @@ with tempfile.TemporaryDirectory(prefix='minion-cli-check-') as temporary:
     assert env['HTTPS_PROXY'] == 'http://127.0.0.1:7890'
     assert not {'SUDO_USER', 'CODEX_HOME', 'XDG_CONFIG_HOME', 'ANTHROPIC_API_KEY', 'BASH_ENV'} & env.keys()
     assert env['CODEX_NON_INTERACTIVE'] == '1'
+
+    # Attribution preferences update existing configs without losing unrelated
+    # model, permission or plugin choices; reruns avoid rewriting matching files.
+    with patch.object(provision.os, 'geteuid', return_value=1234), contextlib.redirect_stdout(io.StringIO()):
+        provision.install_attribution_defaults(user)
+    claude = Path(temporary) / '.claude/settings.json'
+    cursor = Path(temporary) / '.cursor/cli-config.json'
+    assert json.loads(claude.read_text()) == {'attribution': {'commit': '', 'pr': ''}}
+    cursor_data = json.loads(cursor.read_text())
+    assert cursor_data['version'] == 1 and cursor_data['permissions'] == {'allow': [], 'deny': []}
+    assert cursor_data['attribution'] == {'attributeCommitsToAgent': False, 'attributePRsToAgent': False}
+    assert all(p.stat().st_mode & 0o777 == 0o600 for p in (claude, cursor))
+    claude.write_text(json.dumps({'model': 'personal-model', 'enabledPlugins': {'example': True},
+                                 'attribution': {'commit': 'co-author', 'pr': 'branding', 'sessionUrl': False}}))
+    cursor_data.update(model={'modelId': 'personal-model'}, permissions={'allow': ['Shell(ls)'], 'deny': []})
+    cursor_data['attribution'].update(attributeCommitsToAgent=True, attributePRsToAgent=True, futureSetting='keep')
+    cursor.write_text(json.dumps(cursor_data))
+    with patch.object(provision.os, 'geteuid', return_value=0), \
+         patch.object(provision.os, 'fchown') as chown, contextlib.redirect_stdout(io.StringIO()):
+        provision.install_attribution_defaults(user)
+    assert chown.call_count == 2
+    assert all(call.args[1:] == (user.pw_uid, user.pw_gid) for call in chown.call_args_list)
+    claude_data = json.loads(claude.read_text())
+    assert claude_data['model'] == 'personal-model' and claude_data['enabledPlugins'] == {'example': True}
+    assert claude_data['attribution'] == {'commit': '', 'pr': '', 'sessionUrl': False}
+    updated_cursor = json.loads(cursor.read_text())
+    assert updated_cursor['model'] == cursor_data['model'] and updated_cursor['permissions'] == cursor_data['permissions']
+    assert updated_cursor['attribution'] == {'attributeCommitsToAgent': False, 'attributePRsToAgent': False, 'futureSetting': 'keep'}
+    before = [(p.read_bytes(), p.stat().st_mtime_ns) for p in (claude, cursor)]
+    provision.install_attribution_defaults(user)
+    assert before == [(p.read_bytes(), p.stat().st_mtime_ns) for p in (claude, cursor)]
+    for invalid in ('{broken', '[]', '{"attribution": false}'):
+        claude.write_text(invalid)
+        try:
+            provision.install_attribution_defaults(user)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError('Invalid settings were overwritten')
+        assert claude.read_text() == invalid
 
     # Profile loading is part of installation, not a system-wide sysctl change.
     source = Path(temporary) / 'packaged-profile'
@@ -132,6 +173,7 @@ with tempfile.TemporaryDirectory(prefix='minion-cli-check-') as temporary:
          patch.object(provision.platform, 'machine', return_value='x86_64'), \
          patch.object(provision, 'target_user', return_value=user), \
          patch.object(provision, 'install_bubblewrap_profile', side_effect=AssertionError('Check changed AppArmor')), \
+         patch.object(provision, 'install_attribution_defaults', side_effect=AssertionError('Check changed attribution')), \
          patch.object(provision.subprocess, 'run', side_effect=AssertionError('Check ran a command')), \
          patch.object(sys, 'argv', ['provision.py', 'fixture', '--check']), \
          contextlib.redirect_stdout(io.StringIO()):
@@ -144,6 +186,7 @@ with tempfile.TemporaryDirectory(prefix='minion-cli-check-') as temporary:
          patch.object(provision.subprocess, 'run') as packages, \
          patch.object(provision, 'install_bubblewrap_profile') as apparmor, \
          patch.object(provision, 'install_codex_defaults'), \
+         patch.object(provision, 'install_attribution_defaults') as attribution, \
          patch.object(provision, 'install_cli') as install, \
          patch.object(sys, 'argv', ['provision.py', 'fixture']), \
          contextlib.redirect_stdout(io.StringIO()):
@@ -151,5 +194,6 @@ with tempfile.TemporaryDirectory(prefix='minion-cli-check-') as temporary:
         assert {'bubblewrap', 'apparmor-profiles', 'apparmor-utils'} <= set(packages.call_args.args[0])
         apparmor.assert_called_once_with()
         assert install.call_count == len(provision.INSTALLERS)
+        attribution.assert_called_once_with(user)
 
-print('Passed: user privilege/environment isolation, existing command retention, partial/missing installation refusal, bubblewrap profile installation/retention/loading/failure handling, Bash PATH and read-only preflight.')
+print('Passed: user privilege/environment isolation, attribution merge/ownership/idempotence/invalid-file refusal, existing command retention, partial/missing installation refusal, bubblewrap profile installation/retention/loading/failure handling, Bash PATH and read-only preflight.')

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Install the official coding CLIs for the selected desktop user."""
 import argparse
+import json
 import os
 from pathlib import Path
 import platform
@@ -18,6 +19,47 @@ INSTALLERS = (
     ('agent', 'https://cursor.com/install', 'bash', ()),
 )
 SYSTEM_PATH = '/usr/local/bin:/usr/bin:/bin'
+
+
+def install_attribution_defaults(user):
+    """Disable CLI commit/PR attribution, merging into the desktop user's files."""
+    settings = (
+        ('.claude/settings.json', {'commit': '', 'pr': ''}, {}),
+        ('.cursor/cli-config.json',
+         {'attributeCommitsToAgent': False, 'attributePRsToAgent': False},
+         {'version': 1, 'editor': {'vimMode': False}, 'permissions': {'allow': [], 'deny': []}}),
+    )
+    for name, attribution, initial in settings:
+        target = Path(user.pw_dir) / name
+        if target.exists():
+            data = json.loads(target.read_text())
+        else:
+            data = initial.copy()
+        if not isinstance(data, dict) or not isinstance(data.get('attribution', {}), dict):
+            raise ValueError(f'Expected JSON objects in {target} and its attribution setting')
+        merged = {**data.get('attribution', {}), **attribution}
+        if data.get('attribution') == merged:
+            continue
+        data['attribution'] = merged
+        if not target.parent.exists():
+            target.parent.mkdir(mode=0o700, parents=True)
+            if os.geteuid() == 0:
+                os.chown(target.parent, user.pw_uid, user.pw_gid)
+        mode = target.stat().st_mode & 0o777 if target.exists() else 0o600
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(mode='w', dir=target.parent, delete=False) as stream:
+                temporary = Path(stream.name)
+                os.fchmod(stream.fileno(), mode)
+                if os.geteuid() == 0:
+                    os.fchown(stream.fileno(), user.pw_uid, user.pw_gid)
+                json.dump(data, stream, indent=2)
+                stream.write('\n')
+            temporary.replace(target)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+        print(f'Disabled commit/PR attribution: {target}', flush=True)
 
 
 def install_bubblewrap_profile(
@@ -124,6 +166,7 @@ def main():
     env = user_environment(user)
     for installer in INSTALLERS:
         install_cli(user, env, *installer)
+    install_attribution_defaults(user)
     print(f'Coding CLIs ready for {user.pw_name}. Open a new terminal; run codex, claude or agent to sign in.')
 
 

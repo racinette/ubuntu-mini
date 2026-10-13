@@ -107,6 +107,7 @@ def backup_configuration(path, user):
     paths.extend(Path('/usr/local/bin').glob('minion-*'))
     paths.append(Path('/usr/local/share/applications/minion-network.desktop'))
     paths.append(Path(user.pw_dir) / '.bashrc')
+    paths.extend(Path(user.pw_dir) / name for name in ('.claude/settings.json', '.cursor/cli-config.json'))
     paths.append(Path(user.pw_dir) / '.local/state/wireplumber/default-routes')
     with tarfile.open(path, 'w:gz', dereference=False) as archive:
         for source in paths:

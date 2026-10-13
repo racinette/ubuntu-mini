@@ -19,3 +19,5 @@ zip
 unzip
 xz-utils
 zstd
+ripgrep
+clangd

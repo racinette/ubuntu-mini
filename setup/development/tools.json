@@ -14,5 +14,9 @@
   "shellcheck",
   "shfmt",
   "jq",
-  "aqua:neovim/neovim"
+  "aqua:neovim/neovim",
+  "npm:bash-language-server",
+  "npm:vscode-langservers-extracted",
+  "npm:yaml-language-server",
+  "aqua:tamasfe/taplo"
 ]

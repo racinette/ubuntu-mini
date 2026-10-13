@@ -204,6 +204,7 @@ def main():
     subprocess.run(['apt-get', 'install', '-y', '--no-install-recommends',
                     *HERE.joinpath('packages.txt').read_text().split()], check=True)
     install_toolchains(user)
+    run_as_user(user, user_environment(user), '/usr/bin/python3', HERE / 'viewer.py')
     install_docker(user, 'amd64')
     print('Development toolchains ready. Log in again for Docker group access.', flush=True)
 

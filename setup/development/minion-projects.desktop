@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Project viewer
+Comment=Read and navigate code with Neovim
+Exec=foot --title="Project viewer" minion-projects --home
+Icon=text-x-script
+Terminal=false
+Categories=Development;Utility;
+Keywords=code;read;project;neovim;

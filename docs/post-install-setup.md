@@ -82,11 +82,19 @@ Ordinary `sudo ./setup.sh` preinstalls the following for your desktop account. F
 | Python | Current CPython, uv/uvx, Ruff, Pyright | uv-managed Python and tools; mise for Pyright |
 | Build tools | Current CMake and Ninja | mise |
 | Other tools | Neovim, GitHub CLI, Git LFS, ShellCheck, shfmt, jq | mise |
+| Project viewer | Neovim reading profile, file tree, fuzzy file/text search | Pinned nvim-tree, mini.nvim and nvim-lspconfig plugins; Ubuntu ripgrep |
+| Additional language servers | Bash, JSON/HTML/CSS, YAML, TOML and C/C++ | mise for bash-language-server, vscode-langservers-extracted, yaml-language-server and Taplo; Ubuntu for clangd |
 | Containers | Docker Engine/CLI, containerd, Buildx, Compose plugin | Docker's signed Ubuntu stable repository |
 
 Ubuntu packages provide the native build prerequisites (`build-essential`, Make, pkg-config, OpenSSL/libffi and common Python build headers), GDB, strace, tmux, rsync and archive utilities. These OS dependencies follow Ubuntu's supported package versions; the Go, Rust, Node and Python toolchains above are installed separately from Ubuntu's runtime packages. Ubuntu's `/usr/bin/python3` is retained for OS services; the development `python` and `python3` commands live in your account. Conda/Miniforge is optional and is not installed by default alongside uv.
 
 Open a new terminal after setup. Bash activates mise automatically, includes Cargo's commands and uses uv's user-local Python. All per-user downloads, installers and builds run without root privileges. HTTPS bootstrap scripts for mise, uv and rustup are downloaded completely before execution. These follow upstream channels rather than the project's pinned desktop artifact manifest. mise uses its registry/backends and their upstream integrity checks.
+
+Choose **Project viewer** in the application launcher to browse your home directory, or run `minion-projects /path/to/project` from a terminal. With no argument it opens the current directory. This uses a separate Neovim profile (`NVIM_APPNAME=minion-view`), leaving ordinary `nvim` independent. Source files are read-only and unmodifiable in this profile; the file tree exposes navigation rather than filesystem editing commands. LLM tools can still change files normally, and the viewer checks for external changes when focused or idle.
+
+Press **F1** for the controls: **F2** toggles the file tree, **F3/Ctrl+P** finds files, **F4/Ctrl+F** searches project text, **F5/F6** lists file/project symbols, **Enter** or `gd` follows a definition, `gr` lists references and `K` shows documentation. **Esc/Backspace** returns to the previous code location; **Tab** cycles open files. In the tree, D-pad arrows browse, Enter opens a file or folder, Backspace browses the parent directory and Esc closes the tree. Mouse-wheel and gamepad stick scrolling work in code windows. Press `q` to quit. Picker queries use the physical keyboard, with arrows/Enter/Esc for selection.
+
+Language servers cover Go, Rust, JavaScript/TypeScript, Python, shell, JSON, YAML, TOML and C/C++. JavaScript/TypeScript uses TypeScript 7's native language server (`tsc --lsp`). Native syntax highlighting also works for other Neovim-supported file types. Servers attach according to their project/filetype rules; Rust projects need `Cargo.toml`, and accurate C/C++ navigation benefits from the project's `compile_commands.json`. Plugins and language servers are downloaded during setup rather than first launch. The plugin manifest records exact revisions. Personal `~/.config/minion-view/init.lua` settings survive setup reruns; the launcher is refreshed. To update only the viewer's pinned plugins and seed its profile after the language tools are installed, run `/usr/bin/python3 setup/development/viewer.py` as your normal user.
 
 ```bash
 go version

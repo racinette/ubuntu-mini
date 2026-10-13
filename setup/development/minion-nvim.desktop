@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Neovim
+Comment=Browse, edit and navigate project code
+Exec=foot --title="Neovim" /usr/bin/env @NVIM_ENV@ nvim
+Icon=text-x-script
+Terminal=false
+Categories=Development;Utility;
+Keywords=code;edit;project;neovim;

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Install the target user's Neovim project viewer and pinned plugins."""
+"""Install the target user's default Neovim configuration and pinned plugins."""
 import json
 import os
 from pathlib import Path
 import subprocess
+import shutil
 import tempfile
 import time
 
@@ -27,12 +28,19 @@ def install():
     if os.geteuid() == 0:
         raise SystemExit('Run this installer as the desktop user, not root')
     home = Path.home()
-    config = Path(os.environ.get('XDG_CONFIG_HOME', home / '.config')) / 'minion-view'
-    data = Path(os.environ.get('XDG_DATA_HOME', home / '.local/share')) / 'minion-view'
+    config_base = Path(os.environ.get('XDG_CONFIG_HOME', home / '.config'))
+    data_base = Path(os.environ.get('XDG_DATA_HOME', home / '.local/share'))
+    config = config_base / 'nvim'
+    data = data_base / 'nvim'
     plugins = data / 'site/pack/minion/start'
+    legacy_plugins = data_base / 'minion-view/site/pack/minion/start'
     plugins.mkdir(parents=True, exist_ok=True)
-    for plugin in json.loads(HERE.joinpath('viewer-plugins.json').read_text()):
+    for plugin in json.loads(HERE.joinpath('nvim-plugins.json').read_text()):
         target = plugins / plugin['name']
+        previous = legacy_plugins / plugin['name']
+        if not target.exists() and previous.exists():
+            if git(previous, 'rev-parse', 'HEAD') == plugin['commit'] and not git(previous, 'status', '--porcelain'):
+                shutil.copytree(previous, target, symlinks=True)
         if target.exists():
             current = git(target, 'rev-parse', 'HEAD')
             if git(target, 'status', '--porcelain'):
@@ -59,9 +67,8 @@ def install():
                 raise
         print(f'Installed {plugin["name"]} {plugin["tag"]}', flush=True)
     files = [
-        ('viewer.lua', config / 'init.lua', 0o600, True),
-        ('minion-projects', home / '.local/bin/minion-projects', 0o755, False),
-        ('minion-projects.desktop', home / '.local/share/applications/minion-projects.desktop', 0o644, False),
+        ('nvim.lua', config / 'init.lua', 0o600, True),
+        ('minion-nvim.desktop', home / '.local/share/applications/minion-nvim.desktop', 0o644, False),
     ]
     for source, target, mode, seed in files:
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -69,11 +76,12 @@ def install():
             continue
         content = HERE.joinpath(source).read_bytes()
         if source.endswith('.desktop'):
-            # Desktop launchers inherit a system PATH without ~/.local/bin.
-            launcher = str(home / '.local/bin/minion-projects')
+            # Desktop launchers do not activate mise or Cargo through Bash.
+            environment = f'PATH={home}/.local/bin:{home}/.local/share/mise/shims:{home}/.cargo/bin:/usr/local/bin:/usr/bin:/bin'
             for character in ('\\', '"', '$', '`'):
-                launcher = launcher.replace(character, '\\' + character)
-            content = content.replace(b' minion-projects --home', f' "{launcher}" --home'.encode())
+                environment = environment.replace(character, '\\' + character)
+            content = content.replace(b'@NVIM_ENV@', f'"{environment}"'.encode())
+            content += f'Path={home}\n'.encode()
         with tempfile.NamedTemporaryFile(dir=target.parent, prefix='.minion-', delete=False) as stream:
             temporary = Path(stream.name)
             try:
@@ -83,7 +91,14 @@ def install():
                 temporary.replace(target)
             finally:
                 temporary.unlink(missing_ok=True)
-    print('Project viewer installed. Run minion-projects or choose Project viewer in the launcher.', flush=True)
+    # Retire the old entry point only when it still belongs to this setup.
+    wrapper = home / '.local/bin/minion-projects'
+    if wrapper.is_file() and 'NVIM_APPNAME' in wrapper.read_text() and 'minion-view' in wrapper.read_text():
+        wrapper.unlink()
+    old_desktop = home / '.local/share/applications/minion-projects.desktop'
+    if old_desktop.is_file() and 'minion-projects' in old_desktop.read_text():
+        old_desktop.unlink()
+    print('Neovim installed. Run nvim . to browse a project, or select Neovim in the launcher.', flush=True)
 
 
 if __name__ == '__main__':

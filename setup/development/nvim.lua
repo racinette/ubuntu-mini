@@ -1,4 +1,4 @@
--- A separate NVIM_APPNAME=minion-view profile. Ordinary nvim remains independent.
+-- Default Neovim configuration for project browsing, editing and navigation.
 vim.g.loaded_netrw = 1
 vim.g.loaded_netrwPlugin = 1
 vim.g.mapleader = ' '
@@ -24,7 +24,7 @@ vim.opt.modeline = false
 vim.opt.exrc = false
 vim.opt.laststatus = 3
 vim.opt.showmode = false
-vim.opt.statusline = ' READ ONLY  F1 Help  F2 Tree  F3 Files  F4 Search %= %y %l:%c '
+vim.opt.statusline = ' F1 Help  F2 Tree  F3 Files  F4 Search %= %y %l:%c %m%r '
 vim.cmd('syntax enable')
 
 for _, plugin in ipairs({ 'mini.nvim', 'nvim-tree.lua', 'nvim-lspconfig' }) do
@@ -40,7 +40,9 @@ require('mini.extra').setup()
 local pick, extra = MiniPick.builtin, MiniExtra.pickers
 local tree = require('nvim-tree.api')
 local root_markers = { '.git', 'Cargo.toml', 'go.mod', 'pyproject.toml', 'package.json', 'CMakeLists.txt' }
-local project_root = vim.fs.root(vim.fn.getcwd(), root_markers)
+local start_path = vim.fn.argc() > 0 and vim.fn.fnamemodify(vim.fn.argv(0), ':p') or vim.fn.getcwd()
+local project_root = vim.fs.root(start_path, root_markers)
+if not project_root and vim.fn.isdirectory(start_path) == 1 then project_root = start_path end
 if project_root then vim.api.nvim_set_current_dir(project_root) end
 require('nvim-tree').setup({
   sync_root_with_cwd = true,
@@ -53,7 +55,8 @@ require('nvim-tree').setup({
   actions = { open_file = { quit_on_open = true, window_picker = { enable = false } } },
   git = { enable = true },
   on_attach = function(buf)
-    -- Supply navigation-only bindings instead of the file manager's defaults.
+    tree.map.on_attach.default(buf)
+    -- Add handheld navigation to the usual file-tree controls.
     local function map(key, action, description)
       vim.keymap.set('n', key, action, { buffer = buf, silent = true, nowait = true, desc = description })
     end
@@ -75,10 +78,8 @@ require('nvim-tree').setup({
   end,
 })
 
-local function readonly(args)
+local function select_project(args)
   if vim.bo[args.buf].buftype == '' then
-    vim.bo[args.buf].readonly = true
-    vim.bo[args.buf].modifiable = false
     -- Choose a project when browsing from home, but keep searches there while
     -- following definitions into dependency sources and standard libraries.
     if not project_root then
@@ -87,7 +88,7 @@ local function readonly(args)
     end
   end
 end
-vim.api.nvim_create_autocmd({ 'BufReadPost', 'BufNewFile' }, { callback = readonly })
+vim.api.nvim_create_autocmd({ 'BufReadPost', 'BufNewFile' }, { callback = select_project })
 vim.api.nvim_create_autocmd({ 'FocusGained', 'BufEnter', 'CursorHold' }, {
   callback = function() if vim.fn.getcmdwintype() == '' then vim.cmd('checktime') end end,
 })
@@ -117,7 +118,6 @@ local mappings = {
   ['<Esc>'] = { back, 'Previous location' },
   ['<Tab>'] = { '<Cmd>bnext<CR>', 'Next open file' },
   ['<S-Tab>'] = { '<Cmd>bprevious<CR>', 'Previous open file' },
-  ['q'] = { '<Cmd>qa<CR>', 'Quit viewer' },
 }
 for key, mapping in pairs(mappings) do
   vim.keymap.set('n', key, mapping[1], { silent = true, desc = mapping[2] })
@@ -125,7 +125,7 @@ end
 
 vim.keymap.set('n', '<F1>', function()
   local lines = {
-    'Project viewer — Neovim', '',
+    'Neovim — project navigation', '',
     'F2          Open/close file tree',
     'F3 / Ctrl+P Find a file by name',
     'F4 / Ctrl+F Search text across the project',
@@ -138,8 +138,9 @@ vim.keymap.set('n', '<F1>', function()
     '/, n, N     Search this file; next/previous match',
     'Arrows      Navigate; Left/Right browse folders',
     'Stick/wheel Scroll; touchpad clicks select code',
-    'q           Quit (or close the tree)', '',
-    'Files open read-only. Ordinary nvim can still edit.',
+    'i / Esc     Start editing / return to normal mode',
+    ':w          Save file',
+    ':q / :qa    Quit window / Neovim', '',
     'Pickers: type to filter, arrows to move, Enter to open, Esc to cancel.',
     'Tree: Backspace browses the parent directory; R refreshes.',
   }
@@ -154,7 +155,7 @@ vim.keymap.set('n', '<F1>', function()
   for _, key in ipairs({ '<Esc>', '<CR>', 'q', '<F1>' }) do
     vim.keymap.set('n', key, function() vim.api.nvim_win_close(win, true) end, { buffer = buf })
   end
-end, { desc = 'Viewer help' })
+end, { desc = 'Project navigation help' })
 
 local servers = {
   'gopls', 'rust_analyzer', 'tsc', 'pyright', 'bashls', 'jsonls', 'yamlls', 'taplo', 'clangd', 'html', 'cssls',
@@ -166,6 +167,8 @@ vim.diagnostic.config({ virtual_text = false, signs = false, underline = true })
 
 vim.api.nvim_create_autocmd('VimEnter', {
   callback = function()
-    if vim.fn.argc() == 0 then tree.tree.open() end
+    if vim.fn.argc() == 0 or vim.fn.isdirectory(vim.fn.argv(0)) == 1 then
+      tree.tree.open({ path = project_root or vim.fn.getcwd() })
+    end
   end,
 })

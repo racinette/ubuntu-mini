@@ -27,7 +27,7 @@ Clone as your normal user and run setup through `sudo`. The repository contains 
 | `setup/shell/` | Shell provisioning, verified download manifest and user defaults |
 | `setup/proxy/` | Verified Mihomo service and repo-based subscription management |
 | `setup/hhd/` | Pinned Handheld Daemon power controls, desktop UI and boot service |
-| `setup/development/` | Current toolchains, language servers, Neovim project viewer; Docker Engine and Compose |
+| `setup/development/` | Current toolchains, language servers, Neovim project browsing and editing; Docker Engine and Compose |
 | `setup/agents/` | Official Codex, Claude Code and Cursor Agent CLI installers for the desktop user |
 | `tests/` | Host checks, disposable VM control, local mirror and acceptance tests |
 | `tests/fixtures/` | Synthetic controller, browser pages and shell/input fixtures |

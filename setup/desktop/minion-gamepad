@@ -8,6 +8,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import runpy
 import select
 import signal
 import socket
@@ -16,6 +17,7 @@ import subprocess
 import time
 
 log = logging.getLogger('minion-gamepad')
+workspace_policy = runpy.run_path(str(Path(__file__).with_name('minion-workspaces')))
 
 ACTION_COMMANDS = {
     'terminal': 'exec foot',
@@ -258,7 +260,6 @@ class Mapper:
         self.sticks = [None, None]
         self.next_repeat = [0, 0]
         self.motion_time, self.motion_credit = [None, None], [0, 0]
-        self.scroll_target, self.scroll_check = None, 0
         self.ready = False
         self.running = True
         self.chord_since = None
@@ -296,7 +297,6 @@ class Mapper:
         self.sticks = [None, None]
         self.next_repeat = [0, 0]
         self.motion_time, self.motion_credit = [None, None], [0, 0]
-        self.scroll_target, self.scroll_check = None, 0
         self.ready = False
         self.pending_buttons.clear()
         self.text_gesture.clear()
@@ -563,13 +563,12 @@ class Mapper:
             return False
 
     def workspace(self, step):
-        current = next(w for w in ipc('', 1) if w['focused'])['num']
         numbers = self.config['workspace_numbers']
         if numbers is None:
-            target = max(1, current + step)
-            if target == current:
-                return
+            state = workspace_policy['workspace_state'](ipc('', 4))
+            target = workspace_policy['workspace_target'](state['current'], step, state['last'])
         else:
+            current = next(w for w in ipc('', 1) if w['focused'])['num']
             target = numbers[(numbers.index(current) + step) % len(numbers)] if current in numbers else numbers[0 if step > 0 else -1]
         command = 'move container to workspace number' if self.triggers[0] else 'workspace number'
         self.command(f'{command} {target}')
@@ -744,24 +743,9 @@ class Mapper:
         self.motion_credit[index] -= steps
         return steps
 
-    def scroll(self, direction, steps, now, fresh):
-        if fresh or now >= self.scroll_check:
-            self.scroll_check = now + .2
-            try:
-                window = self.focused_window()
-                rect = window['rect']
-                if rect['width'] <= 0 or rect['height'] <= 0:
-                    raise ValueError('Focused window has no visible area')
-                target = (window['id'], rect['x'] + rect['width'] // 2,
-                          rect['y'] + rect['height'] // 2)
-                if fresh or target != self.scroll_target:
-                    self.scroll_target = None
-                    if self.command(f'seat seat0 cursor set {target[1]} {target[2]}'):
-                        self.scroll_target = target
-            except (OSError, ValueError, EOFError, KeyError) as error:
-                self.scroll_target = None
-                log.warning('Cannot target scrolling: %s', error)
-        if not steps or self.scroll_target is None:
+    def scroll(self, direction, steps):
+        # Wheel events follow the pointer's existing position, like a mouse wheel.
+        if not steps:
             return
         axis, precise, sign = {
             'up': (self.e.REL_WHEEL, self.e.REL_WHEEL_HI_RES, 1),
@@ -803,7 +787,6 @@ class Mapper:
         if self.stick_pending:
             self.sticks = [None, None]
             self.motion_time, self.motion_credit = [None, None], [0, 0]
-            self.scroll_target = None
             if all(abs(self.axis(code)) <= self.config['stick_release'] for code in
                    self.config['left_stick'] + self.config['right_stick']):
                 self.stick_mode, self.stick_pending = self.stick_pending, None
@@ -818,12 +801,9 @@ class Mapper:
             if magnitude <= self.config['stick_release']:
                 self.sticks[index] = None
                 self.motion_time[index], self.motion_credit[index] = None, 0
-                if index == 0:
-                    self.scroll_target = None
                 continue
             if self.legend_open():
                 self.motion_time[index], self.motion_credit[index] = None, 0
-                self.scroll_target = None
                 continue
             direction = ('left' if x < 0 else 'right') if abs(x) >= abs(y) else ('up' if y < 0 else 'down')
             fresh = direction != self.sticks[index] and magnitude >= self.config['stick_press']
@@ -837,7 +817,7 @@ class Mapper:
                     'selection_line_rate' if direction in ('up', 'down') else 'selection_rate']
                 steps = self.motion_steps(index, now, magnitude, fresh, rates)
                 if index == 0:
-                    self.scroll(direction, steps, now, fresh)
+                    self.scroll(direction, steps)
                     continue
                 modifiers = self.keys & {self.e.KEY_LEFTSHIFT, self.e.KEY_LEFTCTRL}
                 for _ in range(steps):

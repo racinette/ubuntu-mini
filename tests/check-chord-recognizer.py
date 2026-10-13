@@ -338,27 +338,53 @@ def main():
             with patch.object(state, 'workspace') as workspace:
                 frame(buttons=(button,)); assert not workspace.called
                 frame(); workspace.assert_called_once_with(step)
-        # Real bumper dispatch: no wrap at 4, no artificial upper bound, and no
-        # action before release. A late Shift moves the window without following.
+        normalize = mapper.workspace_policy['normalize']
+        with patch.object(mapper.subprocess, 'check_output', side_effect=[
+                json.dumps([{'num': 1, 'name': '1'}, {'num': 3, 'name': '3: code'},
+                            {'num': 5, 'name': '5'}, {'num': -1, 'name': 'chat'}]),
+                '[{"success":true},{"success":true}]']) as output:
+            normalize()
+            output.assert_called_with(['swaymsg', '-r', 'rename workspace "3: code" to "2: code"; rename workspace "5" to "3"'])
+        with patch.object(mapper.subprocess, 'check_output', return_value=json.dumps([
+                {'num': 1, 'name': '1'}, {'num': 2, 'name': '2'}])) as output:
+            normalize()
+            assert output.call_count == 1
+        # Explicit duplicate prefixes retain their personal naming scheme.
+        with patch.object(mapper.subprocess, 'check_output', return_value=json.dumps([
+                {'num': 3, 'name': '3: a'}, {'num': 3, 'name': '3: b'}])) as output:
+            normalize()
+            assert output.call_count == 1
+
+        # Forward navigation offers N+1; backward wrap from 1 skips that empty slot.
+        # Only occupied workspaces extend N; a late Shift moves without following.
         assert config['workspace_numbers'] is None
-        for current, button, target, shift in (
-                (4, 311, 5, False), (9, 311, 10, False), (1500, 311, 1501, False),
-                (2, 310, 1, False), (1, 310, None, False),
-                (4, 311, 5, True), (1, 310, None, True),
-                (-1, 310, 1, False), (-1, 311, 1, False)):
+        for current, highest, button, target, shift in (
+                (3, 3, 311, 4, False), (4, 3, 311, 1, False),
+                (1, 3, 310, 3, False), (3, 3, 310, 2, False),
+                (4, 3, 310, 3, False), (1, 1, 310, 1, False),
+                (1, 3, 311, 2, False), (2, 3, 311, 3, False),
+                (9, 9, 311, 10, False), (1500, 1500, 311, 1501, False),
+                (1, 0, 311, 1, False), (1, 0, 310, 1, False),
+                (4, 3, 311, 1, True), (1, 3, 310, 3, True),
+                (4, 3, 310, 3, True), (1, 1, 310, 1, True),
+                (3, 3, 311, 4, True),
+                (7, 3, 311, 1, False), (7, 3, 310, 4, False),
+                (-1, 3, 310, 1, False), (-1, 3, 311, 1, False)):
             reset()
-            workspaces = [{'num': 900, 'focused': False}, {'num': current, 'focused': True}]
-            with patch.object(mapper, 'ipc', return_value=workspaces) as ipc, patch.object(state, 'command') as command:
+            workspaces = [{'type': 'workspace', 'num': highest, 'name': str(highest),
+                           'nodes': [{'focused': current == highest}]}] if highest else []
+            if current != highest:
+                workspaces.append({'type': 'workspace', 'num': current, 'name': str(current),
+                                   'focused': True})
+            tree = {'nodes': workspaces}
+            with patch.object(mapper, 'ipc', return_value=tree) as ipc, patch.object(state, 'command') as command:
                 frame(buttons=(button,)); frame(buttons=(button,))
                 assert not command.called and not ipc.called
                 frame(shift=shift)
-                if target is None:
-                    assert not command.called
-                else:
-                    operation = 'move container to workspace number' if shift else 'workspace number'
-                    command.assert_called_once_with(f'{operation} {target}')
+                operation = 'move container to workspace number' if shift else 'workspace number'
+                command.assert_called_once_with(f'{operation} {target}')
                 frame()
-                assert command.call_count == (0 if target is None else 1)
+                assert command.call_count == 1
         # Explicit personal workspace lists retain their existing circular order.
         config['workspace_numbers'] = [1, 3, 8]
         for current, step, target in ((8, 1, 1), (1, -1, 8), (2, 1, 1), (2, -1, 8)):
@@ -417,7 +443,6 @@ def main():
             assert state.stick_mode == 'window' and not state.stick_pending
         assert (directory / 'stick-mode').read_text().strip() == 'window'
 
-        window = {'id': 42, 'rect': {'x': -960, 'y': 20, 'width': 960, 'height': 500}}
         # The virtual device exposes both mouse and keyboard capabilities.
         capabilities = mapper.output_capabilities(config, codes)
         assert codes.BTN_LEFT in capabilities[codes.EV_KEY]
@@ -434,11 +459,11 @@ def main():
                     (config['left_stick'][1], 32767, codes.REL_WHEEL, codes.REL_WHEEL_HI_RES, -1)):
                 reset(); frame(shift=shift, ctrl=ctrl)
                 held = set(state.keys); keyboard.events.clear()
-                with patch.object(state, 'focused_window', return_value=window), patch.object(
+                with patch.object(state, 'focused_application', return_value='gui'), patch.object(
                         state, 'command', return_value=True) as command:
                     state.raw_axes[axis] = value
                     state.tick(0, True)
-                    command.assert_called_once_with('seat seat0 cursor set -480 270')
+                    command.assert_not_called()
                     relative = [event for event in keyboard.events if event[0] == codes.EV_REL]
                     assert relative == [(codes.EV_REL, precise, sign * 120), (codes.EV_REL, wheel, sign)]
                     first_wheel = keyboard.events.index(relative[0])
@@ -449,11 +474,13 @@ def main():
                     assert state.keys == held
                     state.raw_axes[axis] = 0
                     command.reset_mock(); keyboard.events.clear(); state.tick(1, True)
-                    assert not command.called and not keyboard.events and state.scroll_target is None
+                    assert not command.called and not keyboard.events
                 frame(); assert not state.keys
         reset()
-        with patch.object(state, 'focused_window', return_value=window), patch.object(state, 'command', return_value=True):
-            state.scroll('down', 3, 0, True)
+        with patch.object(state, 'focused_window') as focused, patch.object(state, 'command') as command:
+            state.scroll('down', 3)
+            focused.assert_not_called()
+            command.assert_not_called()
             assert keyboard.events == [(codes.EV_REL, codes.REL_WHEEL_HI_RES, -360),
                                        (codes.EV_REL, codes.REL_WHEEL, -3)]
 
@@ -471,29 +498,23 @@ def main():
         reset(); frame(shift=True, ctrl=True)
         state.raw_axes[config['left_stick'][1]] = 32767
         state.raw_axes[config['right_stick'][0]] = 32767
-        with patch.object(state, 'focused_window', return_value=window), patch.object(state, 'command', return_value=True) as command:
+        with patch.object(state, 'focused_application', return_value='gui'), patch.object(state, 'command') as command:
             for step in range(101):
                 state.tick(step / 100, True)
             assert 39 <= sum(key == codes.KEY_RIGHT for key in downs()) <= 41
             assert 18 <= -sum(value for kind, code, value in keyboard.events
                              if kind == codes.EV_REL and code == codes.REL_WHEEL) <= 19
             assert state.keys == {codes.KEY_LEFTSHIFT, codes.KEY_LEFTCTRL}
+            command.assert_not_called()
         frame(); assert not state.keys
 
-        # Missing windows or rejected cursor positioning must not scroll elsewhere.
+        # Held scrolling needs no focused window or cursor-positioning command.
         reset(); state.raw_axes[config['left_stick'][1]] = 32767
         with patch.object(state, 'focused_window', side_effect=ValueError('No window')), patch.object(state, 'command') as command:
-            state.tick(0, True); assert not command.called
-        reset(); state.raw_axes[config['left_stick'][1]] = 32767
-        with patch.object(state, 'focused_window', return_value=window), patch.object(state, 'command', return_value=False) as command:
-            state.tick(0, True)
-            command.assert_called_once_with('seat seat0 cursor set -480 270')
-        # Retarget held scrolling when the focused window changes.
-        other = {'id': 43, 'rect': {'x': 0, 'y': 0, 'width': 600, 'height': 400}}
-        reset(); state.raw_axes[config['left_stick'][1]] = 32767
-        with patch.object(state, 'focused_window', side_effect=(window, other)), patch.object(state, 'command', return_value=True) as command:
-            state.tick(0, True); state.tick(.21, True)
-            assert 'seat seat0 cursor set 300 200' in [call.args[0] for call in command.call_args_list]
+            state.tick(0, True); state.tick(.1, True); state.tick(.2, True)
+            command.assert_not_called()
+            assert sum(value for kind, code, value in keyboard.events
+                       if kind == codes.EV_REL and code == codes.REL_WHEEL) == -4
 
         # Text navigation uses exactly the trigger modifiers, in all directions.
         for shift, ctrl in itertools.product((False, True), repeat=2):
@@ -647,7 +668,7 @@ def main():
         assert keyboard.events == [(codes.EV_KEY, codes.KEY_UP, 1)]
         frame(); assert keyboard.events[-1] == (codes.EV_KEY, codes.KEY_UP, 0)
         config['chords'] = saved
-        print(f'Passed: {len(expected)} named shortcuts, {orders} face-first press/release orders, unlimited prefixes, terminal-only Ctrl+C/Z/D and pair-prefix guards, wrong-order/simultaneous suppression, immediate/accelerated D-pad navigation, Xbox codes, Backspace holds, modifier restoration, terminal guards, open-ended workspaces and explicit-list compatibility, shared contexts/both-stick neutral switch, scroll targeting/direction/speed/modifiers/failure handling, text navigation/speed, legend capture, lifecycle reset and profile validation.')
+        print(f'Passed: {len(expected)} named shortcuts, {orders} face-first press/release orders, unlimited prefixes, terminal-only Ctrl+C/Z/D and pair-prefix guards, wrong-order/simultaneous suppression, immediate/accelerated D-pad navigation, Xbox codes, Backspace holds, modifier restoration, terminal guards, workspace compaction, dynamic wraparound and explicit-list compatibility, shared contexts/both-stick neutral switch, pointer-preserving wheel scrolling/direction/speed/modifiers, text navigation/speed, legend capture, lifecycle reset and profile validation.')
 
 
 if __name__ == '__main__':

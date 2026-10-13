@@ -309,6 +309,9 @@ else:raise ValueError('Mapped keyboard is missing')
                 for e in s['events']), 'Word navigation/selection modifiers were not delivered')
             control('emit', [[3, 3, 0], [3, 2, 0], [3, 5, 0]])
             wait(keyboard_keys, lambda keys: not keys, 'Word movement left a modifier held')
+        # Place the pointer over the fixture: the mapper leaves it in place.
+        rect = next(n['rect'] for n in tree() if n['app_id'] == 'firefox_firefox')
+        graphical(directory, f"swaymsg 'seat seat0 cursor set {rect['x'] + rect['width'] // 2} {rect['y'] + rect['height'] // 2}'")
         scroll_results = []
         for modifiers in (False, True):
             for axis, value, coordinate, sign in ((1, 32767, 1, 1), (1, -32768, 1, -1),

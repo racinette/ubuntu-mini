@@ -102,6 +102,32 @@ local function lsp(action)
   end
   action()
 end
+local function definition()
+  local win = vim.api.nvim_get_current_win()
+  local from = vim.fn.getpos('.')
+  from[1] = vim.api.nvim_get_current_buf()
+  local tagname = vim.fn.expand('<cword>')
+  local function choose(item)
+    if not item then return end
+    local state = MiniPick.get_picker_state()
+    local target = state and state.windows.target or win
+    MiniPick.default_choose(item)
+    vim.fn.settagstack(target, { items = { { tagname = tagname, from = from } } }, 't')
+  end
+  vim.lsp.buf.definition({ on_list = function(list)
+    if not vim.api.nvim_win_is_valid(win) then return end
+    for _, item in ipairs(list.items) do
+      item.path = item.filename
+      item.text = string.format('%s:%d:%d │ %s', vim.fn.fnamemodify(item.filename, ':.'),
+        item.lnum, item.col, item.text or '')
+    end
+    if #list.items == 1 then
+      return vim.api.nvim_win_call(win, function() choose(list.items[1]) end)
+    end
+    vim.api.nvim_set_current_win(win)
+    MiniPick.start({ source = { name = 'Definitions', items = list.items, choose = choose } })
+  end })
+end
 local mappings = {
   ['<F2>'] = { tree.tree.toggle, 'File tree' },
   ['<F3>'] = { pick.files, 'Find file' },
@@ -110,8 +136,8 @@ local mappings = {
   ['<C-f>'] = { pick.grep_live, 'Search project text' },
   ['<F5>'] = { function() extra.lsp({ scope = 'document_symbol' }) end, 'File symbols' },
   ['<F6>'] = { function() extra.lsp({ scope = 'workspace_symbol_live' }) end, 'Search project symbols' },
-  ['<CR>'] = { function() lsp(vim.lsp.buf.definition) end, 'Go to definition' },
-  ['gd'] = { function() lsp(vim.lsp.buf.definition) end, 'Go to definition' },
+  ['<CR>'] = { function() lsp(definition) end, 'Go to definition' },
+  ['gd'] = { function() lsp(definition) end, 'Go to definition' },
   ['gr'] = { function() lsp(function() extra.lsp({ scope = 'references' }) end) end, 'Find references' },
   ['K'] = { function() lsp(vim.lsp.buf.hover) end, 'Documentation/type' },
   ['<BS>'] = { back, 'Previous location' },
@@ -132,7 +158,7 @@ vim.keymap.set('n', '<F1>', function()
     'F3 / Ctrl+P Find a file by name',
     'F4 / Ctrl+F Search text across the project',
     'F5 / F6     File symbols / search project symbols',
-    'Enter / gd  Follow definition',
+    'Enter / gd  Follow definition (picker for multiple matches)',
     'gr          Find references',
     'K           Documentation and type information',
     'Esc / BS    Return to previous location',

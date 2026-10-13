@@ -49,7 +49,9 @@ def main():
         'A+B': 'interrupt', 'UP+A+B': 'suspend_job', 'DOWN+A+B': 'end_input',
     }
     assert profile['chords'] == expected
-    assert profile['actions']['BTN_THUMBL'] == 'legend' and profile['actions']['BTN_THUMBR'] == 'stick_context'
+    assert profile['actions']['BTN_THUMBL'] == 'left_stick_context'
+    assert profile['actions']['BTN_THUMBR'] == 'right_stick_context'
+    assert profile['hold_actions'] == {'BTN_MODE': 'legend'}
     with tempfile.TemporaryDirectory(prefix='minion-shortcut-test-') as temporary:
         directory = Path(temporary)
         def path(value):
@@ -333,6 +335,19 @@ def main():
                 frame(buttons=(button,)); frame(buttons=(button,))
                 assert not dispatch.called
                 frame(); dispatch.assert_called_once_with(action)
+        # Menu hold fires once at the threshold, consumes release, and short
+        # presses stay distinct even if a release frame arrives after the deadline.
+        reset()
+        with patch.object(state, 'dispatch') as dispatch:
+            frame(buttons=(316,), at=10)
+            frame(buttons=(316,), at=10.74); assert not dispatch.called
+            frame(buttons=(316,), at=10.75); dispatch.assert_called_once_with('legend')
+            frame(buttons=(316,), at=15); frame(at=16)
+            dispatch.assert_called_once_with('legend')
+            frame(buttons=(316,), at=20); frame(at=20.2)
+            assert dispatch.call_args.args == ('launcher',) and dispatch.call_count == 2
+            frame(buttons=(316,), at=30); frame(at=31)
+            assert dispatch.call_args.args == ('legend',) and dispatch.call_count == 3
         for button, step in ((310, -1), (311, 1)):
             reset()
             with patch.object(state, 'workspace') as workspace:
@@ -411,37 +426,70 @@ def main():
             def close(self): pass
         state.device = Device()
         reset()
-        assert state.stick_mode == 'window'
+        assert state.stick_modes == ['scroll', 'windows']
         with patch.object(state, 'notify'), patch.object(state, 'command') as command:
-            frame(buttons=(318,)); assert state.stick_pending is None
-            frame(); assert state.stick_pending == 'workspace' and state.stick_mode == 'window'
-            # Both sticks must be centered; returning only one is insufficient.
-            state.raw_axes[config['right_stick'][0]] = 32767
+            # Default movement scrolls and focuses windows in the same frame.
             state.raw_axes[config['left_stick'][0]] = -32768
+            state.raw_axes[config['right_stick'][0]] = 32767
             state.tick(0, True)
-            assert not keyboard.events and not command.called
+            assert any(kind == codes.EV_REL for kind, code, value in keyboard.events)
+            command.assert_called_once_with('focus right')
+            frame(buttons=(318,)); assert state.stick_pending == [None, None]
+            frame(); assert state.stick_pending == [None, 'resize']
+            command.reset_mock(); keyboard.events.clear(); state.tick(.1, True)
+            assert any(kind == codes.EV_REL for kind, code, value in keyboard.events)
+            assert not command.called and state.stick_modes == ['scroll', 'windows']
+            # Centering only the right stick applies its change immediately.
             state.raw_axes[config['right_stick'][0]] = 0
-            state.tick(.1, True)
-            assert state.stick_pending == 'workspace' and not command.called
-            state.raw_axes[config['left_stick'][0]] = 0
             state.tick(.2, True)
-            assert state.stick_mode == 'workspace' and state.stick_pending is None
+            assert state.stick_modes == ['scroll', 'resize'] and state.stick_pending == [None, None]
             state.raw_axes[config['right_stick'][0]] = 32767
             state.tick(.3, True); command.assert_called_with('resize grow width 5 ppt')
-            state.raw_axes[config['right_stick'][0]] = 0
-            state.raw_axes[config['left_stick'][0]] = -32768
-            state.tick(.4, True); command.assert_called_with('focus left')
-            frame(shift=True)
-            state.raw_axes[config['left_stick'][0]] = 32767
-            state.tick(.5, True); command.assert_called_with('move right')
-            frame(); frame(buttons=(318,)); frame()
-            assert state.stick_pending == 'window'
+            frame(buttons=(317,)); frame()
+            assert state.stick_pending == ['text', None]
             command.reset_mock(); state.tick(1, True)
-            assert not command.called and state.stick_mode == 'workspace'
+            command.assert_called_once_with('resize grow width 5 ppt')
+            assert state.stick_modes == ['scroll', 'resize']
             state.raw_axes[config['left_stick'][0]] = 0
-            state.tick(2, True)
-            assert state.stick_mode == 'window' and not state.stick_pending
-        assert (directory / 'stick-mode').read_text().strip() == 'window'
+            state.tick(1.1, True)
+            assert state.stick_modes == ['text', 'resize']
+            state.raw_axes[config['left_stick'][0]] = 32767
+            keyboard.events.clear(); state.tick(1.2, True)
+            assert codes.KEY_RIGHT in downs()
+            # Right can return to Windows while left keeps navigating text.
+            frame(buttons=(318,)); frame()
+            assert state.stick_pending == [None, 'windows']
+            keyboard.events.clear(); command.reset_mock(); state.tick(1.3, True)
+            assert codes.KEY_RIGHT in downs() and not command.called
+            state.raw_axes[config['right_stick'][0]] = 0
+            state.tick(1.4, True)
+            assert state.stick_modes == ['text', 'windows']
+            state.raw_axes[config['left_stick'][0]] = 0
+            state.raw_axes[config['right_stick'][0]] = -32768
+            state.tick(1.5, True); command.assert_called_with('focus left')
+            frame(shift=True)
+            state.raw_axes[config['right_stick'][0]] = 32767
+            state.tick(1.6, True); command.assert_called_with('move right')
+            frame(); frame(buttons=(317,)); frame(); state.tick(1.7, True)
+            assert state.stick_modes == ['scroll', 'windows'] and state.stick_pending == [None, None]
+            # A second click cancels only that stick's pending change.
+            frame(buttons=(318,)); frame()
+            assert state.stick_pending == [None, 'resize']
+            frame(buttons=(318,)); frame()
+            assert state.stick_pending == [None, None] and state.stick_modes == ['scroll', 'windows']
+        assert (directory / 'stick-mode').read_text().strip() == 'L:Scroll R:Windows'
+        for left, right in itertools.product(*mapper.STICK_MODES):
+            reset(); state.stick_modes = [left, right]
+            state.raw_axes[config['left_stick'][0]] = 32767
+            state.raw_axes[config['right_stick'][0]] = 32767
+            with patch.object(state, 'command') as command:
+                state.tick(0, True)
+            expected_commands = ['focus right' if right == 'windows' else 'resize grow width 5 ppt']
+            assert [call.args[0] for call in command.call_args_list] == expected_commands
+            assert any(kind == codes.EV_REL for kind, code, value in keyboard.events) == (left == 'scroll')
+            assert (codes.KEY_RIGHT in downs()) == (left == 'text')
+            assert not state.keys
+        reset()
 
         # The virtual device exposes both mouse and keyboard capabilities.
         capabilities = mapper.output_capabilities(config, codes)
@@ -494,18 +542,19 @@ def main():
         assert 1 <= slow_scroll <= 3 and 18 <= fast_scroll <= 19
         assert abs(scrolled(32767, 30) - fast_scroll) <= 1
         assert scrolled(17000) == 0
-        # Both sticks retain independent continuous speeds when used together.
+        # Scrolling and window movement operate concurrently in the default layout.
         reset(); frame(shift=True, ctrl=True)
         state.raw_axes[config['left_stick'][1]] = 32767
         state.raw_axes[config['right_stick'][0]] = 32767
         with patch.object(state, 'focused_application', return_value='gui'), patch.object(state, 'command') as command:
             for step in range(101):
                 state.tick(step / 100, True)
-            assert 39 <= sum(key == codes.KEY_RIGHT for key in downs()) <= 41
+            assert codes.KEY_RIGHT not in downs()
             assert 18 <= -sum(value for kind, code, value in keyboard.events
                              if kind == codes.EV_REL and code == codes.REL_WHEEL) <= 19
             assert state.keys == {codes.KEY_LEFTSHIFT, codes.KEY_LEFTCTRL}
-            command.assert_not_called()
+            assert 2 <= command.call_count <= 6
+            assert all(call.args == ('move right',) for call in command.call_args_list)
         frame(); assert not state.keys
 
         # Held scrolling needs no focused window or cursor-positioning command.
@@ -519,11 +568,11 @@ def main():
         # Text navigation uses exactly the trigger modifiers, in all directions.
         for shift, ctrl in itertools.product((False, True), repeat=2):
             modifiers = ({codes.KEY_LEFTSHIFT} if shift else set()) | ({codes.KEY_LEFTCTRL} if ctrl else set())
-            for axis, value, key in ((config['right_stick'][0], -32768, codes.KEY_LEFT),
-                                     (config['right_stick'][0], 32767, codes.KEY_RIGHT),
-                                     (config['right_stick'][1], -32768, codes.KEY_UP),
-                                     (config['right_stick'][1], 32767, codes.KEY_DOWN)):
-                reset(); state.stick_mode = 'window'; frame(shift=shift, ctrl=ctrl)
+            for axis, value, key in ((config['left_stick'][0], -32768, codes.KEY_LEFT),
+                                     (config['left_stick'][0], 32767, codes.KEY_RIGHT),
+                                     (config['left_stick'][1], -32768, codes.KEY_UP),
+                                     (config['left_stick'][1], 32767, codes.KEY_DOWN)):
+                reset(); state.stick_modes = ['text', 'windows']; frame(shift=shift, ctrl=ctrl)
                 state.raw_axes[axis] = value
                 with patch.object(state, 'shortcut', wraps=state.shortcut) as shortcut:
                     state.tick(0, True)
@@ -533,8 +582,8 @@ def main():
                 state.tick(.1, True); frame()
                 assert not state.keys
         # Triggers change navigation/selection while the stick remains deflected.
-        reset(); state.stick_mode = 'window'
-        state.raw_axes[config['right_stick'][0]] = 32767
+        reset(); state.stick_modes = ['text', 'windows']
+        state.raw_axes[config['left_stick'][0]] = 32767
         with patch.object(state, 'shortcut', wraps=state.shortcut) as shortcut:
             state.tick(0, True)
             for index, (shift, ctrl) in enumerate(((True, False), (True, True), (False, True), (False, False)), 1):
@@ -546,22 +595,22 @@ def main():
                 assert state.keys == modifiers
         # Existing personal profiles using either old action name toggle the context.
         for action in ('selection', 'text_navigation'):
-            reset(); state.stick_mode = 'workspace'
+            reset(); state.stick_modes = ['text', 'resize']
             with patch.object(state, 'notify'):
                 state.dispatch(action)
                 state.tick(0, True)
-            assert state.stick_mode == 'window'
+            assert state.stick_modes == ['scroll', 'windows']
 
         # Continuous selection scales with deflection, not the input polling rate.
         def selected(axis, value, frequency=100):
-            reset(); state.stick_mode = 'window'
+            reset(); state.stick_modes = ['text', 'windows']
             state.raw_axes[axis] = value
             for step in range(frequency + 1):
                 state.tick(step / frequency, True)
             assert not state.keys
             return sum(key in (codes.KEY_RIGHT, codes.KEY_DOWN) for key in downs())
 
-        horizontal, vertical = config['right_stick']
+        horizontal, vertical = config['left_stick']
         with patch.object(state, 'command') as command:
             light = selected(horizontal, 19660)
             fast = selected(horizontal, 32767)
@@ -569,7 +618,7 @@ def main():
             assert abs(selected(horizontal, 32767, 30) - fast) <= 1
             assert abs(selected(horizontal, 32767, 60) - fast) <= 1
             assert 9 <= selected(vertical, 32767) <= 11
-            reset(); state.stick_mode = 'window'
+            reset(); state.stick_modes = ['text', 'windows']
             state.raw_axes[horizontal] = 17000
             state.tick(0, True); state.tick(.1, True)
             assert not keyboard.events
@@ -594,7 +643,8 @@ def main():
             assert not state.keys and not command.called
 
         for reason in ('reset', 'disconnect', 'inactive', 'paused', 'passthrough'):
-            reset(); state.device = Device(); state.stick_mode = 'workspace'; frame({'X'}, shift=True, ctrl=True)
+            reset(); state.device = Device(); state.stick_modes = ['text', 'resize']; frame({'X'}, shift=True, ctrl=True)
+            state.stick_pending = ['scroll', None]
             frame({'X', 'UP', 'A'}, shift=True, ctrl=True)
             if reason == 'reset': state.reset()
             elif reason == 'disconnect': state.detach()
@@ -603,19 +653,26 @@ def main():
                 (directory / 'paused').touch(); state.tick(0, True); (directory / 'paused').unlink()
             else:
                 with patch.object(state, 'notify'): state.toggle()
-            assert not state.keys and state.stick_mode == 'window' and not state.stick_pending
+            assert not state.keys and state.stick_modes == ['scroll', 'windows'] and state.stick_pending == [None, None]
             assert state.motion_time == [None, None] and state.motion_credit == [0, 0]
             assert not state.text_gesture.previous and not state.pending_buttons
+            assert not state.button_since
             assert not state.dpad_navigation and state.dpad_since is None and state.dpad_credit == 0
         state.device = None
 
-        # Persistent legend, L3 toggling, and no action escaping the overlay.
+        # Persistent legend on Menu hold, short-press dismissal and isolation.
         reset()
         process = SimpleNamespace(stdin=__import__('io').StringIO(), poll=lambda: None,
                                   terminate=lambda: None, wait=lambda **kw: 0)
+        def menu_hold(at):
+            frame(buttons=(316,), at=at)
+            frame(buttons=(316,), at=at + .8)
+            frame(at=at + .9)
         with patch.object(mapper.subprocess, 'Popen', return_value=process):
-            frame(buttons=(317,)); assert not state.legend_open()
-            frame(); assert state.legend_open() and not keyboard.events
+            frame(buttons=(316,), at=200); assert not state.legend_open()
+            frame(buttons=(316,), at=200.8)
+            assert state.legend_open() and not keyboard.events
+            frame(at=201); assert state.legend_open() and state.launcher is None
         with patch.object(state, 'command') as command:
             state.device = Device()
             state.raw_axes[config['left_stick'][0]] = 32767
@@ -645,8 +702,25 @@ def main():
         with patch.object(mapper.subprocess, 'Popen', return_value=process):
             # A fresh stdin is needed after opening the first overlay closed it.
             process.stdin = __import__('io').StringIO()
-            frame(buttons=(317,)); frame(); assert state.legend_open()
-            frame(buttons=(317,)); frame(); assert not state.legend_open()
+            menu_hold(300); assert state.legend_open()
+            frame(buttons=(316,), at=301); frame(at=301.2)
+            assert not state.legend_open() and state.launcher is None
+            process.stdin = __import__('io').StringIO()
+            menu_hold(302); assert state.legend_open()
+            menu_hold(304); assert not state.legend_open() and state.launcher is None
+        # A second Menu tap closes only the launcher owned by this mapper.
+        with patch.object(mapper.subprocess, 'Popen', return_value=process) as popen:
+            frame(buttons=(316,), at=306); frame(at=306.2)
+            assert state.launcher is process
+            frame(buttons=(316,), at=307); frame(at=307.2)
+            assert state.launcher is None and popen.call_count == 1
+            # Holding Menu replaces the owned launcher with the legend.
+            frame(buttons=(316,), at=308); frame(at=308.2)
+            process.stdin = __import__('io').StringIO()
+            menu_hold(309)
+            assert state.launcher is None and state.legend_open()
+            state.reset()
+            assert not state.legend_open() and state.launcher is None and not state.button_since
 
         # User profiles cannot bring X back into shortcuts or load old character outputs.
         for changes in ({'chords': {'UP+X': 'copy'}}, {'chords': {'UP+Y': 'KEY_E'}},
@@ -655,6 +729,10 @@ def main():
                         {'selection_rate': 'fast'}, {'scroll_rate': [18, 1]},
                         {'dpad_rate': [30, 4]}, {'dpad_line_rate': [4, True]},
                         {'dpad_repeat_delay': 0}, {'dpad_acceleration_time': 0},
+                        {'action_hold': 0}, {'hold_actions': {'BTN_MODE': 'unknown'}},
+                        {'hold_actions': {'BTN_THUMBL': 'unknown'}},
+                        {'hold_actions': {'BTN_TL': 'legend'}},
+                        {'hold_actions': {'BTN_START': 'legend'}},
                         {'workspace_numbers': []}, {'workspace_numbers': [1, 1]},
                         {'workspace_numbers': [0, 1]}, {'workspace_numbers': [True, 2]},
                         {'workspace_numbers': 'all'}, {'workspace_numbers': [[1]]}):
@@ -668,7 +746,7 @@ def main():
         assert keyboard.events == [(codes.EV_KEY, codes.KEY_UP, 1)]
         frame(); assert keyboard.events[-1] == (codes.EV_KEY, codes.KEY_UP, 0)
         config['chords'] = saved
-        print(f'Passed: {len(expected)} named shortcuts, {orders} face-first press/release orders, unlimited prefixes, terminal-only Ctrl+C/Z/D and pair-prefix guards, wrong-order/simultaneous suppression, immediate/accelerated D-pad navigation, Xbox codes, Backspace holds, modifier restoration, terminal guards, workspace compaction, dynamic wraparound and explicit-list compatibility, shared contexts/both-stick neutral switch, pointer-preserving wheel scrolling/direction/speed/modifiers, text navigation/speed, legend capture, lifecycle reset and profile validation.')
+        print(f'Passed: {len(expected)} named shortcuts, {orders} face-first press/release orders, unlimited prefixes, terminal-only Ctrl+C/Z/D and pair-prefix guards, wrong-order/simultaneous suppression, immediate/accelerated D-pad navigation, Xbox codes, Backspace holds, modifier restoration, terminal guards, workspace compaction, dynamic wraparound and explicit-list compatibility, independent stick modes/individual neutral switches, Menu hold and launcher toggling, pointer-preserving wheel scrolling/direction/speed/modifiers, text navigation/speed, legend capture, lifecycle reset and profile validation.')
 
 
 if __name__ == '__main__':

@@ -39,13 +39,13 @@ Editing shortcuts have fixed modifiers and restore any held triggers afterward. 
 
 Desktop actions call Sway directly. Equalize balances tiled siblings recursively within the focused workspace, retains layout/focus, and leaves floating windows alone. Application size constraints can limit balancing. Screenshot copies the whole display image to the clipboard, like Print Screen.
 
-## Legend and right stick
+## Legend and sticks
 
-Tap L3 to open a persistent, searchable legend generated from the active profile. Browse it with D-pad up/down; B/Escape, Enter or another L3 tap dismisses it. Shortcut chords and stick window actions are suppressed while it is open.
+Hold Menu/Xbox for 0.75 seconds to open a persistent, searchable legend generated from the active profile. It opens once during the hold and consumes the release. Browse it with D-pad up/down; B/Escape, Enter, a short Menu tap or another Menu hold dismisses it. Shortcut chords and stick actions are suppressed while it is open. Short Menu taps otherwise toggle the launcher.
 
-R3 switches both sticks between Window and Workspace controls. Window is the default: left scrolls, right navigates text; L2 adds Shift for selection and R2 adds Ctrl for word movement horizontally. Both triggers select words where supported. Text navigation and scrolling speed increase with stick deflection; up/down text movement runs more slowly than left/right. Workspace uses left-stick focus, L2+left-stick move and right-stick resize, with the existing repeat timing.
+L3 switches only the left stick between Scroll and Text. R3 switches only the right stick between Windows (focus, or move with L2) and Resize. Scroll/Windows are the defaults, and all four combinations work independently. In Text, L2 adds Shift for selection and R2 adds Ctrl for word movement horizontally; both triggers select words where supported. Text navigation and scrolling speed increase with stick deflection; up/down text movement runs more slowly than left/right. Focus, move and resize retain the existing repeat timing.
 
-Switching waits for both sticks to return to neutral and suppresses both until then. The bar shows `Window` or `Workspace`; status reports `stick_mode` and `stick_pending`. The legend closes and the context returns to Window on lock, inactive session, disconnect, input resynchronization, passthrough or service restart. Entering Window mode alone holds no keyboard modifiers; L2 and R2 control Shift and Ctrl. The [control reference](gamepad-controls.md#stick-contexts-and-legend) describes scrolling target and application behavior.
+Switching waits only for the affected stick to return to neutral and suppresses only that stick until then. The bar shows both behaviors, such as `L:Text R:Windows`; status reports `stick_modes` and `stick_pending` with separate left/right entries. Owned overlays close and both sticks return to Scroll/Windows on lock, inactive session, disconnect, input resynchronization, passthrough or service restart. Switching alone holds no keyboard modifiers; L2 and R2 control Shift and Ctrl. The [control reference](gamepad-controls.md#stick-contexts-and-legend) describes scrolling target and application behavior.
 
 ## Verification
 

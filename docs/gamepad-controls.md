@@ -11,24 +11,24 @@ Post-install setup installs this profile automatically. In the WIN Mini's gamepa
 | R2, right trigger | Hold Ctrl |
 | L1 / R1 | Previous / next numbered workspace, on release; wrap in both directions |
 | L2 + bumper | Send focused window to adjacent workspace without following it |
-| R3 | Switch both sticks between Window / Workspace controls, on release |
+| R3 | Switch right stick between window focus/move / resize, on release |
 | Start | Open terminal, on release |
 | Select | Window picker, on release |
-| Menu / Xbox | Application launcher, on release |
-| L3 | Show / dismiss shortcut legend, on release |
+| Menu / Xbox | Tap: toggle launcher; hold 0.75 s: toggle shortcut legend |
+| L3 | Switch left stick between scroll / text navigation, on release |
 | L4 | Toggle display power, without locking or suspending |
 | R4 | Toggle Keep awake |
 
-The sticks start in **Window** mode. R3 switches both sticks together:
+The left stick starts in **Scroll**, and the right in **Windows** (focus/move). L3 and R3 switch their own stick independently; all four combinations are available:
 
-| Control | Window | Workspace |
+| Control | Primary behavior | Secondary behavior |
 | --- | --- | --- |
-| Left stick | Scroll vertically/horizontally | Focus window |
-| L2 + left stick | Scroll | Move window |
-| Right stick | Move the caret with arrows | Resize window |
-| L2 + right stick | Select text with Shift+arrows | Resize window |
-| R2 + right stick | Ctrl+arrows; words horizontally | Resize window |
-| L2 + R2 + right stick | Ctrl+Shift+arrows; select words horizontally | Resize window |
+| Left stick | Scroll vertically/horizontally | Move the caret with arrows |
+| L2 + left stick | Scroll | Select text with Shift+arrows |
+| R2 + left stick | Scroll | Ctrl+arrows; words horizontally |
+| L2 + R2 + left stick | Scroll | Ctrl+Shift+arrows; select words horizontally |
+| Right stick | Focus window | Resize window |
+| L2 + right stick | Move window | Resize window |
 
 On the WIN Mini 2023, L4 and R4 emit Print Screen and Pause on the separate `12068:309:Mouse_for_Windows` keyboard. A session reader coalesces both ordinary key-repeat events and firmware macro repetitions into one action on release, allowing a 75 ms gap between sequences within a hold. Sway consumes the rear keys while preserving the physical keyboard's Print Screen screenshot shortcut. A device-specific uaccess rule grants the active local user access to this rear keyboard, without adding the user to the input group. No firmware remapping is needed. Other devices or firmware mappings need their own matching and input handling.
 
@@ -38,7 +38,7 @@ For a background agent, enable Keep awake with R4, then turn the display off wit
 
 Numbered workspaces form a dynamic ring. If N is the highest occupied workspace, the bumpers cycle through 1 to N+1; N+1 is an extra empty workspace. R1 from N+1 wraps to 1, and L1 from 1 wraps directly to the last occupied workspace N, skipping the extra empty slot. Opening or moving a window into the extra workspace grows the ring. Sway removes empty workspaces when they are left; a session service immediately renumbers the remaining numbered workspaces consecutively, preserving window contents, focus and any name suffix. For example, when 2 disappears from 1, 2, 3, the former 3 becomes 2. Closing the highest workspace shrinks the ring. L2+bumper sends the focused window to the adjacent workspace without following it, using the same wraparound. From an unnumbered workspace, either bumper starts at 1. Super+1–4 remain direct keyboard shortcuts.
 
-Window focus and resize actions repeat after a short hold; Window mode uses continuous text movement and scrolling at a speed based on deflection. Dead zones prevent small movements from generating actions. Trigger hysteresis stabilizes held modifiers. Ordinary release actions use the modifiers held when released. X acts on press and uses normal keyboard repeat while held; R2+X deletes words where Ctrl+Backspace is supported.
+Window focus and resize actions repeat after a short hold; text movement and scrolling run continuously at a speed based on deflection. Dead zones prevent small movements from generating actions. Trigger hysteresis stabilizes held modifiers. Ordinary release actions use the modifiers held when released. X acts on press and uses normal keyboard repeat while held; R2+X deletes words where Ctrl+Backspace is supported.
 
 ## Shortcut table
 
@@ -52,17 +52,17 @@ Terminal controls use the free A+B prefix: release A+B for Ctrl+C (interrupt), h
 
 ## Stick contexts and legend
 
-In Window mode, the left stick scrolls and the right stick navigates text like the D-pad. Hold L2 (Shift) to extend selection, R2 (Ctrl) for word movement horizontally, or both for word selection. Ctrl+up/down follows the application's own navigation behavior. Triggers can be pressed or released while the stick remains deflected to switch between movement and selection.
+The default Scroll/Windows combination lets the left stick scroll while the right stick selects windows. L3 changes the left stick to Text, where it navigates text like the D-pad. Hold L2 (Shift) to extend selection, R2 (Ctrl) for word movement horizontally, or both for word selection. Ctrl+up/down follows the application's own navigation behavior. Triggers can be pressed or released while the stick remains deflected to switch between movement and selection.
 
 A quick nudge moves once. Holding the stick moves continuously, with light deflection for precision and full deflection for speed. Text movement ranges from 4 to 40 horizontal steps per second and 2 to 10 vertical steps per second. The same speeds apply while selecting. Scrolling ranges from 1 to 18 wheel steps per second in either axis; the dominant axis wins on diagonals. Returning to neutral stops immediately. Text navigation and selection use the focused application's keyboard behavior, such as in a browser text box or editor; they do not provide universal pointer-drag or terminal scrollback selection.
 
-Scrolling sends full mouse-wheel detents through the virtual input device and leaves the pointer in place. Position the pointer over the window or pane you want to scroll using the touchpad; that pane receives the wheel events, even if another window has keyboard focus. Changing keyboard focus does not retarget scrolling. Each detent carries 120 high-resolution units plus its legacy wheel event, so applications receive normal wheel distances. Controller Shift/Ctrl are temporarily released around wheel events and restored afterward, so triggers keep ordinary scrolling rather than zooming or changing axes. Physical keyboard modifiers still follow the application's behavior. Wheel scrolling in terminals depends on the running program and its mouse/scrollback handling.
+Scrolling sends full mouse-wheel detents through the virtual input device and leaves the pointer in place. Sway uses `mouse_warping container`: selecting a window with the right stick, keyboard or window picker moves the pointer to its center once if the pointer is outside it. If the pointer is already inside, its position is preserved. Left-stick scrolling then reaches the selected window without further pointer movement. Within split editors, use the touchpad to choose a pane; wheel events still follow that pointer position, even if another pane has keyboard focus. Each detent carries 120 high-resolution units plus its legacy wheel event, so applications receive normal wheel distances. Controller Shift/Ctrl are temporarily released around wheel events and restored afterward, so triggers keep ordinary scrolling rather than zooming or changing axes. Physical keyboard modifiers still follow the application's behavior. Wheel scrolling in terminals depends on the running program and its mouse/scrollback handling.
 
-In Workspace mode, the left stick focuses windows, L2+left stick moves them, and the right stick resizes them. Right-stick left/right shrink/grow width; up/down shrink/grow height. These actions retain their fixed repeat timing.
+In Windows, the right stick focuses windows and L2+right stick moves them. R3 switches that stick to Resize, independently of whether the left stick scrolls or navigates text. Right-stick left/right shrink/grow width; up/down shrink/grow height. These actions retain their fixed repeat timing.
 
-R3 requests a context change. Both sticks must return to neutral before it takes effect; both are suppressed while a change is pending. The bar shows `Window` or `Workspace`. `minion-gamepad --status` reports `stick_mode` and `stick_pending`. Toggling the context alone leaves no keyboard modifier held. Locking, leaving the active desktop, disconnecting, input resynchronization, restarting the service or entering passthrough restores Window.
+L3 requests a left-stick change; R3 requests a right-stick change. Only the affected stick must return to neutral before its change takes effect, and only that stick is suppressed while pending. The other stick continues operating. Another click cancels that stick's pending change. The bar shows both behaviors, such as `L:Scroll R:Windows`. `minion-gamepad --status` reports `stick_modes` and `stick_pending` objects with `left` and `right` entries. Switching alone leaves no keyboard modifier held. Locking, leaving the active desktop, disconnecting, input resynchronization, restarting the service or entering passthrough restores Scroll/Windows.
 
-L3 opens a persistent Fuzzel legend derived from the active shortcut profile. D-pad up/down browse, typing filters the list, and B/Escape, Enter or another L3 tap dismisses it. It remains visible until dismissed. While open, shortcut chords and both sticks are suppressed. The legend closes when mapping is suspended or reset.
+Hold Menu/Xbox for at least 0.75 seconds to open a persistent Fuzzel legend derived from the active shortcut profile. It opens once at the hold threshold, stays visible until dismissed and consumes the release without opening the launcher. D-pad up/down browse and typing filters the list. A short Menu tap, another Menu hold, B/Escape or Enter dismisses it. A short Menu tap otherwise toggles the application launcher; a second tap closes the launcher opened by this mapper. Holding Menu while that launcher is open replaces it with the legend. While the legend is open, shortcut chords and both sticks are suppressed. Mapping suspension or reset closes owned overlays.
 
 The window picker lists windows across workspaces, with the current window first. D-pad up/down selects, A focuses the selected window, and B cancels. Typing filters by application, title or workspace. The launcher uses the same navigation keys. Optional buttons missing from a controller are reported in status.
 
@@ -89,7 +89,7 @@ systemctl --user restart minion-gamepad.service
 minion-gamepad --status
 ```
 
-Setup preserves this file. Top-level settings override the defaults; a nested object replaces that entire object. Chord values are named actions such as `copy`, `close`, `home` and `equalize`, as shown in the default JSON. `actions` assigns named actions to buttons, including `legend` and `stick_context`. The earlier `selection` and `text_navigation` action names remain aliases for `stick_context`; both now switch the shared Window/Workspace context. X must remain Backspace and cannot appear in a chord. Set `chords` to `{}` to disable shortcuts and restore held D-pad arrows. D-pad acceleration uses `dpad_repeat_delay`, `dpad_acceleration_time`, `dpad_rate` and `dpad_line_rate`. Thresholds, repeat timing and resize increments are configurable. `workspace_numbers: null` selects the dynamic ring and automatic renumbering; an explicit list such as `"workspace_numbers": [1, 2, 3, 4]` retains circular navigation through that list. Existing personal lists are preserved and disable automatic renumbering.
+Setup preserves this file. Top-level settings override the defaults; a nested object replaces that entire object. Chord values are named actions such as `copy`, `close`, `home` and `equalize`, as shown in the default JSON. `actions` assigns named actions to buttons, including `legend`, `left_stick_context` and `right_stick_context`. `hold_actions` assigns alternate actions to the same buttons after `action_hold` seconds, consuming the short-press action. Passthrough toggle buttons cannot have hold actions. The older `stick_context`, `selection` and `text_navigation` actions remain compatible and request changes to both sticks, each waiting for its own neutral position. X must remain Backspace and cannot appear in a chord. Set `chords` to `{}` to disable shortcuts and restore held D-pad arrows. D-pad acceleration uses `dpad_repeat_delay`, `dpad_acceleration_time`, `dpad_rate` and `dpad_line_rate`. Thresholds, repeat timing and resize increments are configurable. `workspace_numbers: null` selects the dynamic ring and automatic renumbering; an explicit list such as `"workspace_numbers": [1, 2, 3, 4]` retains circular navigation through that list. Existing personal lists are preserved and disable automatic renumbering.
 
 Text navigation and selection speed is configurable with `selection_rate` (horizontal) and `selection_line_rate` (vertical), retaining the earlier setting names. Each is a pair of minimum and maximum steps per second, from 1 to 100. Scrolling speed uses `scroll_rate`, another minimum/maximum pair of wheel steps per second. Window focus and resizing retain their existing repeat timing.
 

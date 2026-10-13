@@ -57,11 +57,14 @@ ACTION_LABELS = {
     'screenshot': 'Screenshot', 'terminal': 'Terminal', 'window_picker': 'Window picker',
     'launcher': 'Application launcher', 'legend': 'Shortcut legend',
     'stick_context': 'Window / workspace controls',
+    'left_stick_context': 'Left stick: scroll / text navigation',
+    'right_stick_context': 'Right stick: focus and move windows / resize',
     'text_navigation': 'Window / workspace controls', 'selection': 'Window / workspace controls',
     'interrupt': 'Interrupt / cancel (Ctrl+C)',
     'suspend_job': 'Suspend terminal job (Ctrl+Z)',
     'end_input': 'End terminal input (Ctrl+D)',
 }
+STICK_MODES = (('scroll', 'text'), ('windows', 'resize'))
 
 # Xbox/xpad uses Linux's historical BTN_X=BTN_NORTH, BTN_Y=BTN_WEST
 # aliases. The directional code names do not match Xbox button positions.
@@ -173,7 +176,7 @@ def configuration(path, codes):
     for prefix in ('stick', 'trigger'):
         if not 0 <= config[prefix + '_release'] < config[prefix + '_press'] <= 1:
             raise ValueError('Invalid ' + prefix + ' thresholds')
-    for name in ('repeat_delay', 'repeat_interval', 'toggle_hold',
+    for name in ('repeat_delay', 'repeat_interval', 'toggle_hold', 'action_hold',
                  'dpad_repeat_delay', 'dpad_acceleration_time'):
         if not .05 <= config[name] <= 10:
             raise ValueError('Invalid ' + name)
@@ -206,8 +209,11 @@ def configuration(path, codes):
 
     config['buttons'] = {code(k, 'BTN_'): code(v, 'KEY_') for k, v in config['buttons'].items()}
     config['actions'] = {code(k, 'BTN_'): v for k, v in config['actions'].items()}
-    if any(v not in ACTION_LABELS for v in config['actions'].values()):
+    config['hold_actions'] = {code(k, 'BTN_'): v for k, v in config['hold_actions'].items()}
+    if any(v not in ACTION_LABELS for v in (*config['actions'].values(), *config['hold_actions'].values())):
         raise ValueError('Unknown desktop button action')
+    if not set(config['hold_actions']) <= set(config['actions']):
+        raise ValueError('Hold actions require a matching short-press action')
     config['dpad'] = {code(k, 'ABS_'): [code(v, 'KEY_') for v in values] for k, values in config['dpad'].items()}
     if any(len(values) != 2 for values in config['dpad'].values()):
         raise ValueError('Each D-pad axis needs negative and positive keys')
@@ -241,6 +247,8 @@ def configuration(path, codes):
         raise ValueError('A button may have only one individual action')
     if len(set(config['toggle_buttons'])) != 2 or len(bumpers) != 2:
         raise ValueError('Toggle buttons and bumpers must be distinct pairs')
+    if set(config['hold_actions']) & set(config['toggle_buttons']):
+        raise ValueError('Hold actions cannot use the passthrough toggle buttons')
     return config
 
 
@@ -251,7 +259,8 @@ class Mapper:
         self.grabbed = False
         self.keys = set()
         self.legend = None
-        self.stick_mode, self.stick_pending = 'window', None
+        self.launcher = None
+        self.stick_modes, self.stick_pending = ['scroll', 'windows'], [None, None]
         self.publish_stick_mode()
         self.raw_keys = set()
         self.raw_axes = {}
@@ -266,6 +275,7 @@ class Mapper:
         self.chord_consumed = False
         self.chord_armed = False
         self.pending_buttons = set()
+        self.button_since = {}
         self.text_gesture = ReleaseGesture()
         self.clear_dpad_navigation()
         self.gesture_in_legend = False
@@ -291,7 +301,8 @@ class Mapper:
     def reset(self):
         self.write_keys(set())
         self.close_legend()
-        self.stick_mode, self.stick_pending = 'window', None
+        self.close_overlay('launcher')
+        self.stick_modes, self.stick_pending = ['scroll', 'windows'], [None, None]
         self.publish_stick_mode()
         self.triggers = [False, False]
         self.sticks = [None, None]
@@ -299,6 +310,7 @@ class Mapper:
         self.motion_time, self.motion_credit = [None, None], [0, 0]
         self.ready = False
         self.pending_buttons.clear()
+        self.button_since.clear()
         self.text_gesture.clear()
         self.clear_dpad_navigation()
         self.gesture_in_legend = False
@@ -306,18 +318,34 @@ class Mapper:
         self.chord_consumed = self.chord_armed = False
 
     def publish_stick_mode(self):
-        (self.directory / 'stick-mode').write_text(self.stick_mode + '\n')
+        (self.directory / 'stick-mode').write_text(
+            f'L:{self.stick_modes[0].capitalize()} R:{self.stick_modes[1].capitalize()}\n')
+
+    def close_overlay(self, name):
+        process = getattr(self, name)
+        if process:
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=1)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=1)
+            setattr(self, name, None)
 
     def close_legend(self):
-        if self.legend:
-            if self.legend.poll() is None:
-                self.legend.terminate()
-                try:
-                    self.legend.wait(timeout=1)
-                except subprocess.TimeoutExpired:
-                    self.legend.kill()
-                    self.legend.wait(timeout=1)
-            self.legend = None
+        self.close_overlay('legend')
+
+    def toggle_launcher(self):
+        if self.legend_open():
+            self.close_legend()
+        elif self.launcher and self.launcher.poll() is None:
+            self.close_overlay('launcher')
+        else:
+            try:
+                self.launcher = subprocess.Popen(['fuzzel', '--layer=overlay'], stdout=subprocess.DEVNULL)
+            except OSError as error:
+                self.notify('Cannot show application launcher: ' + str(error))
 
     def legend_open(self):
         if self.legend and self.legend.poll() is not None:
@@ -326,30 +354,33 @@ class Mapper:
 
     def legend_text(self):
         order = ('Y', 'A', 'B', 'UP', 'DOWN', 'LEFT', 'RIGHT')
-        lines = ['Stick controls: ' + self.stick_mode]
+        lines = [f'Left stick: {self.stick_modes[0]}; right stick: {self.stick_modes[1]}']
         lines += ['+'.join(t for t in order if t in tokens) + '  :  ' + ACTION_LABELS[action]
                   for tokens, action in self.config['chords'].items()]
         lines += ['X: hold Backspace; A: Enter; B: Escape; Y: Tab',
                   'D-pad: immediate arrows; hold to accelerate',
                   'Combos: hold Y/A/B first, then D-pad; release all',
                   'L2: Shift; R2: Ctrl',
-                  'R3: switch Window / Workspace controls',
-                  'Window: left scrolls; right navigates text',
-                  'Window + right: L2 selects; R2 moves by words; both select words',
-                  'Workspace: left focuses; L2 + left moves; right resizes',
+                  'L3: left scroll / text navigation',
+                  'R3: right focus and move windows / resize',
+                  'Text: L2 selects; R2 moves by words; both select words',
+                  'Windows: right focuses; L2 + right moves',
                   'L1 / R1: workspaces; L2 + bumper: send window']
         labels = {self.e.BTN_START: 'Start', self.e.BTN_SELECT: 'Select', self.e.BTN_MODE: 'Menu',
                   self.e.BTN_THUMBL: 'L3', self.e.BTN_THUMBR: 'R3'}
         lines += [labels.get(button, 'Button') + '  :  ' + ACTION_LABELS[action]
                   for button, action in self.config['actions'].items()]
+        lines += [labels.get(button, 'Button') + f' hold ({self.config["action_hold"]:g}s)  :  ' + ACTION_LABELS[action]
+                  for button, action in self.config['hold_actions'].items()]
         lines += ['Start + Select hold: normal gamepad input',
-                  'L3 or B/Escape: dismiss this legend']
+                  'Menu tap/hold or B/Escape: dismiss this legend']
         return '\n'.join(lines) + '\n'
 
     def toggle_legend(self):
         if self.legend_open():
             self.close_legend()
             return
+        self.close_overlay('launcher')
         self.text_gesture.clear()
         try:
             self.legend = subprocess.Popen(
@@ -414,14 +445,20 @@ class Mapper:
     def dispatch(self, action):
         if action == 'legend':
             self.toggle_legend()
-        elif action in ('stick_context', 'text_navigation', 'selection'):
-            current = self.stick_pending or self.stick_mode
-            self.stick_pending = 'workspace' if current == 'window' else 'window'
-            if self.stick_pending == self.stick_mode:
-                self.stick_pending = None
-            mode = self.stick_pending or self.stick_mode
-            self.notify('Stick controls: ' + mode.capitalize() +
-                        (' — center both sticks' if self.stick_pending else ''))
+        elif action == 'launcher':
+            self.toggle_launcher()
+        elif action in ('left_stick_context', 'right_stick_context',
+                        'stick_context', 'text_navigation', 'selection'):
+            indices = (0,) if action == 'left_stick_context' else (1,) if action == 'right_stick_context' else (0, 1)
+            for index in indices:
+                primary, secondary = STICK_MODES[index]
+                current = self.stick_pending[index] or self.stick_modes[index]
+                target = secondary if current == primary else primary
+                self.stick_pending[index] = target if target != self.stick_modes[index] else None
+                mode = self.stick_pending[index] or self.stick_modes[index]
+                label = 'Left' if index == 0 else 'Right'
+                self.notify(f'{label} stick: {mode.capitalize()}' +
+                            (f' — center the {label.lower()} stick' if self.stick_pending[index] else ''))
         elif action == 'equalize':
             self.equalize()
         elif action in ACTION_COMMANDS:
@@ -580,6 +617,7 @@ class Mapper:
         """Defer individual actions to release; consume overlapping toggle buttons."""
         if not active or (self.directory / 'paused').exists():
             self.pending_buttons.clear()
+            self.button_since.clear()
             self.chord_since = None
             self.chord_consumed = self.chord_armed = False
             return
@@ -588,6 +626,8 @@ class Mapper:
         eligible = pressed if desktop else pressed & combo if self.mode == 'passthrough' else set()
         reserved = set(self.config['chord_faces'].values()) | {self.e.BTN_NORTH}
         self.pending_buttons.update(eligible - reserved)
+        for button in eligible - reserved:
+            self.button_since[button] = now
         held = combo & self.raw_keys
         if held == combo and combo <= self.pending_buttons and not self.chord_consumed:
             self.chord_since = now
@@ -604,9 +644,16 @@ class Mapper:
                     self.toggle()
                     return
         if desktop:
+            for button in sorted(set(self.config['hold_actions']) & self.pending_buttons):
+                if now - self.button_since.get(button, now) >= self.config['action_hold']:
+                    self.pending_buttons.discard(button)
+                    action = self.config['hold_actions'][button]
+                    if not self.legend_open() or action == 'legend':
+                        self.dispatch(action)
             for button in sorted(released & self.pending_buttons):
                 if self.legend_open() and self.config['actions'].get(button) not in (
-                        'legend', 'stick_context', 'text_navigation', 'selection'):
+                        'legend', 'launcher', 'left_stick_context', 'right_stick_context',
+                        'stick_context', 'text_navigation', 'selection'):
                     continue
                 if button == self.config['previous_bumper']:
                     self.workspace(-1)
@@ -615,6 +662,8 @@ class Mapper:
                 elif button in self.config['actions']:
                     self.dispatch(self.config['actions'][button])
         self.pending_buttons.difference_update(released)
+        for button in released:
+            self.button_since.pop(button, None)
 
     def frame(self, pressed, released, now, active):
         if not self.permitted(active) or not self.grabbed or not self.ready:
@@ -784,20 +833,20 @@ class Mapper:
             self.ready = self.neutral()
             return
         self.frame(set(), set(), now, active)
-        if self.stick_pending:
-            self.sticks = [None, None]
-            self.motion_time, self.motion_credit = [None, None], [0, 0]
-            if all(abs(self.axis(code)) <= self.config['stick_release'] for code in
-                   self.config['left_stick'] + self.config['right_stick']):
-                self.stick_mode, self.stick_pending = self.stick_pending, None
-                self.publish_stick_mode()
-                if self.legend_open():
-                    self.close_legend()
-                    self.toggle_legend()
-            return
         for index, name in enumerate(('left_stick', 'right_stick')):
             x, y = (self.axis(code) for code in self.config[name])
             magnitude = max(abs(x), abs(y))
+            if self.stick_pending[index]:
+                self.sticks[index] = None
+                self.motion_time[index], self.motion_credit[index] = None, 0
+                self.next_repeat[index] = 0
+                if magnitude <= self.config['stick_release']:
+                    self.stick_modes[index], self.stick_pending[index] = self.stick_pending[index], None
+                    self.publish_stick_mode()
+                    if self.legend_open():
+                        self.close_legend()
+                        self.toggle_legend()
+                continue
             if magnitude <= self.config['stick_release']:
                 self.sticks[index] = None
                 self.motion_time[index], self.motion_credit[index] = None, 0
@@ -807,16 +856,17 @@ class Mapper:
                 continue
             direction = ('left' if x < 0 else 'right') if abs(x) >= abs(y) else ('up' if y < 0 else 'down')
             fresh = direction != self.sticks[index] and magnitude >= self.config['stick_press']
-            if self.stick_mode == 'window':
+            mode = self.stick_modes[index]
+            if mode in ('scroll', 'text'):
                 if not fresh and self.sticks[index] is None:
                     continue
                 if not fresh:
                     direction = self.sticks[index]
                 self.sticks[index] = direction
-                rates = self.config['scroll_rate'] if index == 0 else self.config[
+                rates = self.config['scroll_rate'] if mode == 'scroll' else self.config[
                     'selection_line_rate' if direction in ('up', 'down') else 'selection_rate']
                 steps = self.motion_steps(index, now, magnitude, fresh, rates)
-                if index == 0:
+                if mode == 'scroll':
                     self.scroll(direction, steps)
                     continue
                 modifiers = self.keys & {self.e.KEY_LEFTSHIFT, self.e.KEY_LEFTCTRL}
@@ -829,7 +879,7 @@ class Mapper:
                 direction = self.sticks[index]
             self.sticks[index] = direction
             self.next_repeat[index] = now + self.config['repeat_delay' if fresh else 'repeat_interval']
-            if index == 0:
+            if mode == 'windows':
                 self.command(('move' if self.triggers[0] else 'focus') + ' ' + direction)
             elif not self.legend_open():
                 action = 'grow' if direction in ('right', 'down') else 'shrink'
@@ -841,7 +891,8 @@ class Mapper:
                 'device': self.device.path if self.device else None,
                 'device_name': self.device.name if self.device else None,
                 'grabbed': self.grabbed, 'ready': self.ready, 'keys': sorted(self.keys),
-                'stick_mode': self.stick_mode, 'stick_pending': self.stick_pending,
+                'stick_modes': dict(zip(('left', 'right'), self.stick_modes)),
+                'stick_pending': dict(zip(('left', 'right'), self.stick_pending)),
                 'legend_open': self.legend_open(),
                 'axis_ranges': self.ranges, 'actions': list(self.actions), 'reason': self.reason,
                 'unavailable_actions': self.unavailable_actions}

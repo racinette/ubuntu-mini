@@ -261,7 +261,8 @@ def keyboard_layout():
 def stick_mode():
     directory = os.environ.get('XDG_RUNTIME_DIR')
     mode = read(Path(directory) / 'minion-gamepad/stick-mode') if directory else ''
-    return block('stick', 'Workspace' if mode == 'workspace' else 'Window')
+    valid = {f'L:{left} R:{right}' for left in ('Scroll', 'Text') for right in ('Windows', 'Resize')}
+    return block('stick', mode if mode in valid else 'L:Scroll R:Windows')
 
 
 def awake_mode():

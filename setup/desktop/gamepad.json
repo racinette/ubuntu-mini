@@ -10,9 +10,13 @@
     "BTN_START": "terminal",
     "BTN_SELECT": "window_picker",
     "BTN_MODE": "launcher",
-    "BTN_THUMBL": "legend",
-    "BTN_THUMBR": "stick_context"
+    "BTN_THUMBL": "left_stick_context",
+    "BTN_THUMBR": "right_stick_context"
   },
+  "hold_actions": {
+    "BTN_MODE": "legend"
+  },
+  "action_hold": 0.75,
   "dpad": {
     "ABS_HAT0X": [
       "KEY_LEFT",

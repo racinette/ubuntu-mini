@@ -209,10 +209,18 @@ print(value)
         for name in ('nmcli', 'wpctl', 'systemctl', 'swaymsg'):
             path = binary / name; path.write_text(provider); path.chmod(0o755)
         runtime = root / 'runtime'; (runtime / 'minion-gamepad').mkdir(parents=True)
-        mode = runtime / 'minion-gamepad/stick-mode'; mode.write_text('window\n')
+        mode = runtime / 'minion-gamepad/stick-mode'; mode.write_text('L:Scroll R:Windows\n')
         awake = runtime / 'minion-idle/keep-awake'
         awake.parent.mkdir()
         with patch.dict(os.environ, XDG_RUNTIME_DIR=str(runtime)):
+            for left in ('Scroll', 'Text'):
+                for right in ('Windows', 'Resize'):
+                    label = f'L:{left} R:{right}'
+                    mode.write_text(label + '\n')
+                    assert status.stick_mode()['full_text'] == label
+            mode.write_text('unknown\n')
+            assert status.stick_mode()['full_text'] == 'L:Scroll R:Windows'
+            mode.write_text('L:Scroll R:Windows\n')
             assert status.awake_mode()['full_text'] == 'Awake OFF'
             awake.write_text('1\n')
             assert status.awake_mode()['full_text'] == 'Awake ON'
@@ -254,7 +262,7 @@ main()
             assert json.loads(line()) == {'version': 1, 'click_events': True}
             assert line() == '['
             expected = {'wifi': 'Wi-Fi 67%', 'audio': 'Vol 42%', 'proxy': 'Proxy ON',
-                        'layout': 'RU', 'stick': 'Window', 'power': 'Auto', 'awake': 'Awake OFF',
+                        'layout': 'RU', 'stick': 'L:Scroll R:Windows', 'power': 'Auto', 'awake': 'Awake OFF',
                         'temperatures': 'CPU65° GPU58° SSD40° Bat32°'}
             deadline = time.monotonic() + 8
             while True:
@@ -267,7 +275,7 @@ main()
                         swaymsg=json.dumps([dict(physical, xkb_active_layout_name='English (US)')]), hhd=manual)
             (cpu / 'temp2_input').write_text('72000')
             (ssd / 'temp1_input').write_text('48000')
-            mode.write_text('workspace\n'); awake.write_text('1\n'); save()
+            mode.write_text('L:Text R:Resize\n'); awake.write_text('1\n'); save()
             deadline = time.monotonic() + 9
             while True:
                 current = frame()
@@ -275,7 +283,7 @@ main()
                     break
                 assert time.monotonic() < deadline, 'Slow indicators did not refresh'
             assert (current['wifi'], current['audio'], current['layout'], current['stick']) == (
-                'Wi-Fi disconnected', 'Muted', 'US', 'Workspace')
+                'Wi-Fi disconnected', 'Muted', 'US', 'L:Text R:Resize')
             assert current['power'] == 'Limit 18W'
             assert current['awake'] == 'Awake ON'
             assert current['temperatures'] == 'CPU72° GPU58° SSD48° Bat32°'

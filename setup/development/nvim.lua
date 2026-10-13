@@ -116,6 +116,8 @@ local mappings = {
   ['K'] = { function() lsp(vim.lsp.buf.hover) end, 'Documentation/type' },
   ['<BS>'] = { back, 'Previous location' },
   ['<Esc>'] = { back, 'Previous location' },
+  ['<M-Left>'] = { back, 'Navigation back' },
+  ['<M-Right>'] = { '<C-i>', 'Navigation forward' },
   ['<Tab>'] = { '<Cmd>bnext<CR>', 'Next open file' },
   ['<S-Tab>'] = { '<Cmd>bprevious<CR>', 'Previous open file' },
 }
@@ -134,6 +136,7 @@ vim.keymap.set('n', '<F1>', function()
     'gr          Find references',
     'K           Documentation and type information',
     'Esc / BS    Return to previous location',
+    'Alt+Left/Right  Back/forward through jump history',
     'Tab         Next open file (Shift+Tab: previous)',
     '/, n, N     Search this file; next/previous match',
     'Arrows      Navigate; Left/Right browse folders',

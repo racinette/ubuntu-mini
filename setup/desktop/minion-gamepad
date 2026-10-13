@@ -42,7 +42,10 @@ KEY_ACTIONS = {
     'interrupt': ('KEY_C', ('KEY_LEFTCTRL',)),
     'suspend_job': ('KEY_Z', ('KEY_LEFTCTRL',)),
     'end_input': ('KEY_D', ('KEY_LEFTCTRL',)),
+    'back': ('KEY_LEFT', ('KEY_LEFTALT',)),
+    'forward': ('KEY_RIGHT', ('KEY_LEFTALT',)),
 }
+HISTORY_ACTIONS = {'back', 'forward'}
 NAVIGATION_ACTIONS = {'page_up', 'page_down', 'home', 'end', 'document_home', 'document_end'}
 TERMINAL_ACTIONS = {'interrupt', 'suspend_job', 'end_input'}
 ACTION_LABELS = {
@@ -63,6 +66,7 @@ ACTION_LABELS = {
     'interrupt': 'Interrupt / cancel (Ctrl+C)',
     'suspend_job': 'Suspend terminal job (Ctrl+Z)',
     'end_input': 'End terminal input (Ctrl+D)',
+    'back': 'Navigation back', 'forward': 'Navigation forward',
 }
 STICK_MODES = (('scroll', 'text'), ('windows', 'resize'))
 
@@ -75,13 +79,17 @@ FACE_PAIRS = ({'X', 'Y'}, {'Y', 'B'}, {'B', 'A'}, {'A', 'X'})
 
 def chord_tokens(name):
     tokens = name.split('+')
+    if 'SELECT' in tokens:
+        if len(tokens) != 2 or len(set(tokens)) != 2 or not (set(tokens) - {'SELECT'}) <= set(FACE_NAMES):
+            raise ValueError('Select shortcuts require exactly one face button: ' + name)
+        return frozenset(tokens)
     directions = set(tokens) & {'UP', 'DOWN', 'LEFT', 'RIGHT'}
     faces = set(tokens) & set(FACE_NAMES)
     if (len(set(tokens)) != len(tokens) or set(tokens) != directions | faces
             or len(directions) > 2 or len(faces) > 2
             or len(directions) == 2 and directions not in DIRECTION_PAIRS
             or len(faces) == 2 and faces not in FACE_PAIRS
-            or 'X' in tokens or len(tokens) < 2):
+            or set(tokens) & {'X', 'Y'} or len(tokens) < 2):
         raise ValueError('Invalid shortcut chord: ' + name)
     return frozenset(tokens)
 
@@ -236,11 +244,13 @@ def configuration(path, codes):
             raise ValueError('Unknown shortcut action: ' + str(action))
         chords[tokens] = action
     config['chords'] = chords
-    config['chord_faces'] = {name: code(symbol, 'BTN_') for name, symbol in FACE_NAMES.items() if name != 'X'}
+    config['chord_faces'] = {name: code(symbol, 'BTN_') for name, symbol in FACE_NAMES.items() if name in ('A', 'B')}
     if not set(config['chord_faces'].values()) <= set(config['buttons']):
-        raise ValueError('Shortcuts require A, B and Y in buttons')
+        raise ValueError('Shortcuts require A and B in buttons')
     if config['buttons'].get(code(FACE_NAMES['X'], 'BTN_')) != code('KEY_BACKSPACE', 'KEY_'):
         raise ValueError('X is reserved for holdable Backspace')
+    if config['buttons'].get(code(FACE_NAMES['Y'], 'BTN_')) != code('KEY_SPACE', 'KEY_'):
+        raise ValueError('Y is reserved for holdable Space')
     action_keys = set(config['actions'])
     bumpers = {config['previous_bumper'], config['next_bumper']}
     if action_keys & set(config['buttons']) or bumpers & (action_keys | set(config['buttons'])):
@@ -277,6 +287,8 @@ class Mapper:
         self.pending_buttons = set()
         self.button_since = {}
         self.text_gesture = ReleaseGesture()
+        self.select_gesture = ReleaseGesture()
+        self.select_in_legend = False
         self.clear_dpad_navigation()
         self.gesture_in_legend = False
         self.unavailable_actions = []
@@ -289,7 +301,7 @@ class Mapper:
 
     def write_keys(self, desired):
         desired = set(desired)
-        modifiers = {self.e.KEY_LEFTSHIFT, self.e.KEY_LEFTCTRL, self.e.KEY_LEFTMETA}
+        modifiers = {self.e.KEY_LEFTSHIFT, self.e.KEY_LEFTCTRL, self.e.KEY_LEFTMETA, self.e.KEY_LEFTALT}
         for key in sorted(self.keys - desired, key=lambda k: (k in modifiers, k)):
             self.keyboard.write(self.e.EV_KEY, key, 0)
         for key in sorted(desired - self.keys, key=lambda k: (k not in modifiers, k)):
@@ -312,6 +324,8 @@ class Mapper:
         self.pending_buttons.clear()
         self.button_since.clear()
         self.text_gesture.clear()
+        self.select_gesture.clear()
+        self.select_in_legend = False
         self.clear_dpad_navigation()
         self.gesture_in_legend = False
         self.chord_since = None
@@ -353,13 +367,14 @@ class Mapper:
         return self.legend is not None
 
     def legend_text(self):
-        order = ('Y', 'A', 'B', 'UP', 'DOWN', 'LEFT', 'RIGHT')
+        order = ('SELECT', 'A', 'B', 'X', 'Y', 'UP', 'DOWN', 'LEFT', 'RIGHT')
         lines = [f'Left stick: {self.stick_modes[0]}; right stick: {self.stick_modes[1]}']
         lines += ['+'.join(t for t in order if t in tokens) + '  :  ' + ACTION_LABELS[action]
                   for tokens, action in self.config['chords'].items()]
-        lines += ['X: hold Backspace; A: Enter; B: Escape; Y: Tab',
+        lines += ['X: hold Backspace; Y: hold Space; A: Enter; B: Escape',
                   'D-pad: immediate arrows; hold to accelerate',
-                  'Combos: hold Y/A/B first, then D-pad; release all',
+                  'Combos: hold A/B, then D-pad; release all',
+                  'Layout: hold Select, then A/B/Y/X; release all',
                   'L2: Shift; R2: Ctrl',
                   'L3: left scroll / text navigation',
                   'R3: right focus and move windows / resize',
@@ -435,7 +450,7 @@ class Mapper:
 
     def shortcut(self, key, modifiers):
         held = set(self.keys)
-        nonmodifiers = held - {self.e.KEY_LEFTSHIFT, self.e.KEY_LEFTCTRL, self.e.KEY_LEFTMETA}
+        nonmodifiers = held - {self.e.KEY_LEFTSHIFT, self.e.KEY_LEFTCTRL, self.e.KEY_LEFTMETA, self.e.KEY_LEFTALT}
         base = nonmodifiers | set(modifiers)
         self.write_keys(base)
         self.write_keys(base | {key})
@@ -468,7 +483,7 @@ class Mapper:
             modifiers = {getattr(self.e, name) for name in names}
             if action in NAVIGATION_ACTIONS:
                 modifiers |= self.keys & {self.e.KEY_LEFTSHIFT, self.e.KEY_LEFTCTRL}
-            else:
+            elif action not in HISTORY_ACTIONS:
                 try:
                     application = self.focused_application()
                 except (OSError, ValueError, EOFError, KeyError) as error:
@@ -624,7 +639,7 @@ class Mapper:
         combo = set(self.config['toggle_buttons'])
         desktop = self.permitted(active) and self.grabbed and self.ready
         eligible = pressed if desktop else pressed & combo if self.mode == 'passthrough' else set()
-        reserved = set(self.config['chord_faces'].values()) | {self.e.BTN_NORTH}
+        reserved = set(self.config['chord_faces'].values()) | {self.e.BTN_NORTH, self.e.BTN_WEST}
         self.pending_buttons.update(eligible - reserved)
         for button in eligible - reserved:
             self.button_since[button] = now
@@ -651,6 +666,8 @@ class Mapper:
                     if not self.legend_open() or action == 'legend':
                         self.dispatch(action)
             for button in sorted(released & self.pending_buttons):
+                if button == self.e.BTN_SELECT:
+                    continue  # Select alone and Select+face are handled together.
                 if self.legend_open() and self.config['actions'].get(button) not in (
                         'legend', 'launcher', 'left_stick_context', 'right_stick_context',
                         'stick_context', 'text_navigation', 'selection'):
@@ -673,8 +690,13 @@ class Mapper:
             value = self.axis(self.config[name], True)
             threshold = self.config['trigger_release' if self.triggers[index] else 'trigger_press']
             self.triggers[index] = value > threshold
-        desired = {self.e.KEY_BACKSPACE} if self.e.BTN_NORTH in self.raw_keys else set()
-        if not self.config['chords']:
+        selecting = self.select_shortcut_frame()
+        desired = set()
+        if not selecting:
+            for button in (self.e.BTN_NORTH, self.e.BTN_WEST):
+                if button in self.raw_keys:
+                    desired.add(self.config['buttons'][button])
+        if not self.config['chords'] and not selecting:
             for source, (negative, positive) in self.config['dpad'].items():
                 value = self.raw_axes.get(source, 0)
                 if value:
@@ -685,8 +707,44 @@ class Mapper:
             desired.add(self.e.KEY_LEFTCTRL)
         self.write_keys(desired)
         self.button_gestures(pressed, released, now, active)
-        if self.permitted(active) and self.grabbed and self.ready:
+        if self.permitted(active) and self.grabbed and self.ready and not selecting:
             self.shortcut_frame(now)
+
+    def select_shortcut_frame(self):
+        """Select prefixes layout actions; X/Y otherwise remain immediate keys."""
+        gesture = self.select_gesture
+        if self.e.BTN_SELECT not in self.raw_keys and not gesture.previous:
+            return False
+        held = {name for name, symbol in FACE_NAMES.items() if getattr(self.e, symbol) in self.raw_keys}
+        if self.e.BTN_SELECT in self.raw_keys:
+            held.add('SELECT')
+        horizontal, vertical = self.config['chord_axes']
+        for axis, negative, positive in ((horizontal, 'LEFT', 'RIGHT'), (vertical, 'UP', 'DOWN')):
+            value = self.raw_axes.get(axis, 0)
+            if value:
+                held.add(negative if value < 0 else positive)
+        if not gesture.previous:
+            self.select_in_legend = self.legend_open()
+        # A face must be added after Select, never before or simultaneously.
+        new_faces = (held & set(FACE_NAMES)) - (gesture.previous & set(FACE_NAMES))
+        if (new_faces and 'SELECT' not in gesture.previous
+                or held & {'UP', 'DOWN', 'LEFT', 'RIGHT'}
+                or self.e.BTN_START in self.raw_keys or self.chord_consumed
+                or self.text_gesture.previous or self.dpad_navigation
+                or self.select_in_legend != self.legend_open()):
+            gesture.invalid = True
+        self.text_gesture.clear()
+        self.clear_dpad_navigation()
+        captured = self.select_in_legend
+        result = gesture.update(held)
+        if not held:
+            self.select_in_legend = False
+        if result and not captured and not self.legend_open():
+            action = (self.config['actions'].get(self.e.BTN_SELECT) if result == {'SELECT'}
+                      else self.config['chords'].get(result))
+            if action:
+                self.dispatch(action)
+        return True
 
     def clear_dpad_navigation(self):
         self.dpad_navigation = self.dpad_blocked = False

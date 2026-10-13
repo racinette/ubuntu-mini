@@ -163,15 +163,15 @@ else:raise ValueError('Mapped keyboard is missing')
 
         face_results = []
         # Xbox/xpad A/B/X/Y event codes, independent of mapper configuration.
-        for button, expected in ((304, 'Enter'), (305, 'Escape'), (307, 'Backspace'), (308, 'Tab')):
+        for button, expected in ((304, 'Enter'), (305, 'Escape'), (307, 'Backspace'), (308, 'Space')):
             browser_set(text='hello world', selection=[11, 11], focus='editor', clear=True)
             pulse(1, button)
             result = wait(browser, lambda s: any(e['type'] == 'keyup' and e['code'] == expected for e in s['events']), expected + ' was not delivered')
             face_results.append({'button': button, 'events': result['events'], 'text': result['text'], 'target': result['target']})
             if expected == 'Backspace' and result['text'] != 'hello worl':
                 raise ValueError('Backspace did not edit browser text')
-            if expected == 'Tab' and result['target'] != 'next':
-                raise ValueError('Tab did not advance application focus')
+            if expected == 'Space' and result['text'] != 'hello world ':
+                raise ValueError('Space did not insert a character')
         report['face_buttons'] = face_results
         report['checks']['face_keys_in_browser'] = True
         browser_set(text='x' * 100, selection=[100, 100], focus='editor', clear=True)
@@ -188,6 +188,20 @@ else:raise ValueError('Mapped keyboard is missing')
         if browser()['text'] != frozen:
             raise ValueError('Backspace repeated after release')
         report['checks']['immediate_backspace_hold_repeat_and_release'] = True
+        browser_set(text='', selection=[0, 0], focus='editor', clear=True)
+        control('emit', [[1, 308, 1]])
+        immediate = wait(browser, lambda s: len(s['text']) > 0, 'Space did not act on press')
+        time.sleep(1)
+        repeated = browser()
+        if len(repeated['text']) <= len(immediate['text']) or not any(e['repeat'] for e in repeated['events']):
+            raise ValueError('Held Space did not repeat')
+        control('emit', [[1, 308, 0]])
+        wait(keyboard_keys, lambda keys: not keys, 'Space remained held')
+        time.sleep(.2)
+        frozen = browser()['text']; time.sleep(.4)
+        if browser()['text'] != frozen:
+            raise ValueError('Space repeated after release')
+        report['checks']['immediate_space_hold_repeat_and_release'] = True
         arrow_results = []
         for axis, value, expected in ((16, -1, 'ArrowLeft'), (16, 1, 'ArrowRight'), (17, -1, 'ArrowUp'), (17, 1, 'ArrowDown')):
             browser_set(text='hello world', selection=[6, 6], focus='editor', clear=True)
@@ -215,14 +229,17 @@ else:raise ValueError('Mapped keyboard is missing')
         report['checks']['dpad_immediate_accelerating_hold_and_release'] = True
 
         inputs = {'UP': [3, 17, -1], 'DOWN': [3, 17, 1], 'LEFT': [3, 16, -1], 'RIGHT': [3, 16, 1],
-                  'A': [1, 304, 1], 'B': [1, 305, 1], 'Y': [1, 308, 1]}
+                  'A': [1, 304, 1], 'B': [1, 305, 1], 'Y': [1, 308, 1], 'X': [1, 307, 1], 'SELECT': [1, 314, 1]}
         def chord(name):
             events = [inputs[token] for token in name.split('+')]
             faces = [event for event in events if event[0] == 1]
             directions = [event for event in events if event[0] == 3]
+            if 'SELECT' in name.split('+'):
+                control('emit', [inputs['SELECT']])
+                faces = [event for event in faces if event[1] != 314]
             control('emit', faces)
             return control('pulse', directions, [[kind, code, 0] for kind, code, value in reversed(events)])
-        for tokens in (['A', 'Y'], ['A', 'B', 'Y'], ['A', 'B']):
+        for tokens in (['SELECT', 'A'], ['SELECT', 'X', 'Y'], ['A', 'B']):
             browser_set(text='preserved', selection=[9, 9], focus='editor', clear=True)
             events = [inputs[token] for token in tokens]
             control('emit', events); control('emit', [[e[0], e[1], 0] for e in events])
@@ -230,29 +247,29 @@ else:raise ValueError('Mapped keyboard is missing')
             if browser()['text'] != 'preserved' or browser()['events']:
                 raise ValueError('Invalid or reserved shortcut leaked single actions')
         browser_set(text='preserved', selection=[9, 9], focus='editor', clear=True)
-        control('emit', [inputs['Y']]); control('emit', [inputs['UP']]); control('emit', [[3, 17, 0]])
-        control('emit', [inputs['B']]); control('emit', [[1, 308, 0], [1, 305, 0]])
+        control('emit', [inputs['A']]); control('emit', [inputs['UP']]); control('emit', [[3, 17, 0]])
+        control('emit', [inputs['B']]); control('emit', [[1, 304, 0], [1, 305, 0]])
         time.sleep(.15)
         if browser()['events']:
             raise ValueError('Rolling shortcut leaked single actions')
         report['checks']['invalid_reserved_and_rolling_shortcuts_consumed'] = True
 
         browser_set(text='preserved', selection=[0, 9], focus='editor', clear=True)
-        control('emit', [inputs['Y']]); time.sleep(1)
+        control('emit', [inputs['A']]); time.sleep(1)
         if browser()['events']:
             raise ValueError('Held face prefix acted before a direction')
         control('emit', [inputs['UP']]); time.sleep(.7)
         if browser()['events']:
-            raise ValueError('Held combo leaked arrows or Tab')
-        control('emit', [[3, 17, 0], [1, 308, 0]])
+            raise ValueError('Held combo leaked arrows or Enter')
+        control('emit', [[3, 17, 0], [1, 304, 0]])
         wait(lambda: graphical(directory, 'wl-paste --no-newline'), lambda text: text == 'preserved', 'Delayed prefix Copy failed')
         browser_set(text='preserved', selection=[9, 9], focus='editor', clear=True)
         control('emit', [inputs['LEFT']])
         wait(browser, lambda s: s['selection'] == [8, 8], 'Wrong-order navigation did not act')
-        control('emit', [inputs['Y']]); time.sleep(.7)
-        control('emit', [[3, 16, 0]]); control('emit', [[1, 308, 0]])
+        control('emit', [inputs['A']]); time.sleep(.7)
+        control('emit', [[3, 16, 0]]); control('emit', [[1, 304, 0]])
         wrong_order = browser()
-        if wrong_order['selection'] != [8, 8] or any(e['code'] == 'Tab' for e in wrong_order['events']):
+        if wrong_order['selection'] != [8, 8] or any(e['code'] == 'Enter' for e in wrong_order['events']):
             raise ValueError('Wrong-order gesture leaked a combo or face action')
         report['checks']['face_prefix_wait_and_wrong_order_navigation'] = True
 
@@ -267,21 +284,21 @@ else:raise ValueError('Mapped keyboard is missing')
         report['checks']['trigger_thresholds_and_hysteresis'] = True
 
         browser_set(text='controller clipboard', selection=[0, 20], focus='editor', clear=True)
-        chord('UP+Y')
+        chord('UP+A')
         wait(lambda: graphical(directory, 'wl-paste --no-newline'), lambda text: text == 'controller clipboard', 'Copy failed')
         browser_set(text='', selection=[0, 0], focus='editor', clear=True)
-        chord('DOWN+Y'); wait(browser, lambda s: s['text'] == 'controller clipboard', 'Paste failed')
-        chord('UP+RIGHT+Y'); wait(browser, lambda s: s['selection'] == [0, 20], 'Select all failed')
-        chord('UP+LEFT+Y'); wait(browser, lambda s: not s['text'], 'Cut failed')
+        chord('DOWN+A'); wait(browser, lambda s: s['text'] == 'controller clipboard', 'Paste failed')
+        chord('UP+RIGHT+A'); wait(browser, lambda s: s['selection'] == [0, 20], 'Select all failed')
+        chord('UP+LEFT+A'); wait(browser, lambda s: not s['text'], 'Cut failed')
         browser_set(text='', selection=[0, 0], focus='editor', clear=True)
         type_text(monitor, 'undo-redo'); wait(browser, lambda s: s['text'] == 'undo-redo', 'Undo fixture missing')
-        chord('LEFT+Y'); wait(browser, lambda s: s['text'] != 'undo-redo', 'Undo failed')
-        chord('RIGHT+Y'); wait(browser, lambda s: s['text'] == 'undo-redo', 'Redo failed')
+        chord('LEFT+A'); wait(browser, lambda s: s['text'] != 'undo-redo', 'Undo failed')
+        chord('RIGHT+A'); wait(browser, lambda s: s['text'] == 'undo-redo', 'Redo failed')
         report['checks']['copy_paste_cut_select_all_undo_redo'] = True
         browser_set(text='hello world', selection=[6, 6], focus='editor', clear=True)
-        chord('LEFT+B'); wait(browser, lambda s: s['selection'] == [0, 0], 'Home failed')
+        chord('UP+LEFT+B'); wait(browser, lambda s: s['selection'] == [0, 0], 'Document Home failed')
         control('emit', [[3, 2, 255]])
-        chord('RIGHT+B'); wait(browser, lambda s: s['selection'] == [0, 11], 'Shift+End selection failed')
+        chord('UP+RIGHT+B'); wait(browser, lambda s: s['selection'] == [0, 11], 'Shift+document End selection failed')
         control('emit', [[3, 2, 0]])
         wait(keyboard_keys, lambda keys: not keys, 'Navigation retained Shift')
         browser_set(text='hello world', selection=[11, 11], focus='editor', clear=True)
@@ -433,7 +450,7 @@ else:raise ValueError('Mapped keyboard is missing')
         if not status()['legend_open']:
             raise ValueError('Legend disappeared before dismissal')
         windows_before = {n['id'] for n in tree()}
-        chord('UP+A')
+        chord('UP+B')
         if {n['id'] for n in tree()} != windows_before:
             raise ValueError('Legend allowed Close to reach the underlying window')
         capture(monitor, directory, 'mapped-shortcut-legend')
@@ -446,17 +463,17 @@ else:raise ValueError('Mapped keyboard is missing')
         nodes = wait(tree, lambda ns: any(n['id'] not in before for n in ns), 'Temporary terminal missing')
         temporary = next(n['id'] for n in nodes if n['id'] not in before)
         graphical(directory, f'swaymsg "[con_id={temporary}] focus"')
-        chord('UP+A')
+        chord('UP+B')
         wait(tree, lambda ns: all(n['id'] != temporary for n in ns), 'Close window shortcut failed')
         graphical(directory, f'swaymsg "[con_id={terminal_id}] focus"')
         for expected in (1, 0):
-            chord('LEFT+A')
+            chord('SELECT+A')
             wait(tree, lambda ns: next(n for n in ns if n['id'] == terminal_id)['fullscreen_mode'] == expected, 'Fullscreen shortcut failed')
         for expected in (True, False):
-            chord('RIGHT+A')
+            chord('SELECT+B')
             wait(tree, lambda ns: next(n for n in ns if n['id'] == terminal_id)['is_floating'] == expected, 'Floating shortcut failed')
         report['checks']['close_fullscreen_and_floating_shortcuts'] = True
-        chord('LEFT+A')
+        chord('SELECT+A')
         wait(tree, lambda ns: next(n for n in ns if n['id'] == terminal_id)['fullscreen_mode'] == 1, 'Fullscreen missing before launcher')
         control('emit', [[1, 316, 1]])
         time.sleep(.4)

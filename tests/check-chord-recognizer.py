@@ -14,7 +14,7 @@ PROJECT = Path(__file__).resolve().parents[1]
 # xpad reports Xbox A/B/X/Y as BTN_A/B/X/Y. The historical Linux aliases
 # put BTN_X at BTN_NORTH (0x133), and BTN_Y at BTN_WEST (0x134).
 # Keep this fixture independent of FACE_NAMES and the loaded configuration.
-XBOX_FACE_CODES = {'A': 0x130, 'B': 0x131, 'X': 0x133, 'Y': 0x134}
+XBOX_FACE_CODES = {'SELECT': 314, 'A': 0x130, 'B': 0x131, 'X': 0x133, 'Y': 0x134}
 loader = importlib.machinery.SourceFileLoader('mapper', str(PROJECT / 'setup/desktop/minion-gamepad'))
 spec = importlib.util.spec_from_loader(loader.name, loader)
 mapper = importlib.util.module_from_spec(spec)
@@ -39,13 +39,12 @@ def main():
     codes = SimpleNamespace(**constants, ecodes=constants)
     profile = json.loads((PROJECT / 'setup/desktop/gamepad.json').read_text())
     expected = {
-        'UP+Y': 'copy', 'DOWN+Y': 'paste', 'LEFT+Y': 'undo', 'RIGHT+Y': 'redo',
-        'UP+LEFT+Y': 'cut', 'UP+RIGHT+Y': 'select_all', 'DOWN+LEFT+Y': 'find', 'DOWN+RIGHT+Y': 'save',
-        'UP+A': 'close', 'DOWN+A': 'layout', 'LEFT+A': 'fullscreen', 'RIGHT+A': 'floating',
-        'UP+LEFT+A': 'file_manager', 'UP+RIGHT+A': 'split', 'DOWN+LEFT+A': 'equalize', 'DOWN+RIGHT+A': 'screenshot',
-        'UP+B': 'page_up', 'DOWN+B': 'page_down', 'LEFT+B': 'home', 'RIGHT+B': 'end',
+        'UP+A': 'copy', 'DOWN+A': 'paste', 'LEFT+A': 'undo', 'RIGHT+A': 'redo',
+        'UP+LEFT+A': 'cut', 'UP+RIGHT+A': 'select_all', 'DOWN+LEFT+A': 'find', 'DOWN+RIGHT+A': 'save',
+        'UP+B': 'close', 'DOWN+B': 'equalize', 'LEFT+B': 'back', 'RIGHT+B': 'forward',
         'UP+LEFT+B': 'document_home', 'UP+RIGHT+B': 'document_end',
         'DOWN+LEFT+B': 'previous_match', 'DOWN+RIGHT+B': 'next_match',
+        'SELECT+A': 'fullscreen', 'SELECT+B': 'floating', 'SELECT+Y': 'layout', 'SELECT+X': 'split',
         'A+B': 'interrupt', 'UP+A+B': 'suspend_job', 'DOWN+A+B': 'end_input',
     }
     assert profile['chords'] == expected
@@ -85,11 +84,19 @@ def main():
             keyboard.events.clear()
         def downs():
             return [code for kind, code, value in keyboard.events if kind == codes.EV_KEY and value == 1]
-        for face, output in (('A', codes.KEY_ENTER), ('B', codes.KEY_ESC), ('Y', codes.KEY_TAB)):
+        for face, output in (('A', codes.KEY_ENTER), ('B', codes.KEY_ESC)):
             reset(); frame({face}); frame({face})
             assert not keyboard.events
             frame()
             assert keyboard.events == [(codes.EV_KEY, output, 1), (codes.EV_KEY, output, 0)]
+        for ctrl in (False, True):
+            reset(); frame({'Y'}, ctrl=ctrl)
+            assert downs() == ([codes.KEY_LEFTCTRL] if ctrl else []) + [codes.KEY_SPACE]
+            frame({'Y'}, ctrl=ctrl, at=60)
+            assert downs().count(codes.KEY_SPACE) == 1 and codes.KEY_SPACE in state.keys
+            frame(ctrl=ctrl)
+            assert codes.KEY_SPACE not in state.keys
+            frame(); assert not state.keys
         reset(); frame({'X'})
         assert keyboard.events == [(codes.EV_KEY, codes.KEY_BACKSPACE, 1)]
         frame({'X'}); frame({'X'})
@@ -106,7 +113,7 @@ def main():
         for chord, action in expected.items():
             tokens = chord.split('+')
             for presses in itertools.permutations(tokens):
-                if presses[0] not in XBOX_FACE_CODES:
+                if presses[0] not in XBOX_FACE_CODES or 'SELECT' in tokens and presses[0] != 'SELECT':
                     continue
                 face_count = sum(token in XBOX_FACE_CODES for token in tokens)
                 if any(token not in XBOX_FACE_CODES for token in presses[:face_count]):
@@ -125,25 +132,55 @@ def main():
                         dispatch.assert_called_once_with(action)
                     assert not keyboard.events
                     orders += 1
-        for invalid in (({'A', 'Y'}, set()), ({'Y', 'B'}, set()),
-                        ({'Y'}, {'UP', 'Y'}, {'Y'}, {'Y', 'B'}, {'B'}, set())):
+        # Rolling A/B gestures cannot become a different shortcut during release.
+        reset()
+        with patch.object(state, 'dispatch') as dispatch:
+            for held in ({'A'}, {'A', 'UP'}, {'A'}, {'A', 'B'}, {'B'}, set()):
+                frame(held)
+            assert not keyboard.events and not dispatch.called
+
+        # Select has an unlimited prefix, consumes its picker action, and
+        # suppresses immediate Space/Backspace for both release orders.
+        for face, action in (('A','fullscreen'),('B','floating'),('Y','layout'),('X','split')):
+            for release_select_first in (False, True):
+                reset()
+                with patch.object(state, 'dispatch') as dispatch:
+                    frame({'SELECT'}, at=0); frame({'SELECT'}, at=60)
+                    frame({'SELECT',face}, at=61); frame({'SELECT',face}, at=120)
+                    assert not keyboard.events and not dispatch.called
+                    remainder={face} if release_select_first else {'SELECT'}
+                    frame(remainder, at=121); frame(remainder, at=180)
+                    assert not keyboard.events and not dispatch.called
+                    frame(at=181); dispatch.assert_called_once_with(action)
+            for simultaneous in (False, True):
+                reset()
+                with patch.object(state, 'dispatch') as dispatch:
+                    if not simultaneous: frame({face})
+                    frame({'SELECT',face}); frame({'SELECT',face}, at=60)
+                    frame({'SELECT'}); frame()
+                    assert not dispatch.called and not state.keys
+                    assert all(code in {codes.KEY_SPACE,codes.KEY_BACKSPACE} for kind,code,value in keyboard.events)
+                    if simultaneous: assert not keyboard.events
+        for sequence in (({'SELECT'},{'SELECT','UP'},set()),
+                         ({'SELECT'},{'SELECT','A'},{'SELECT'},{'SELECT','B'},set()),
+                         ({'SELECT'},{'SELECT','X','Y'},set())):
             reset()
-            with patch.object(state, 'dispatch') as dispatch:
-                for held in invalid: frame(held)
-                assert not keyboard.events and not dispatch.called
+            with patch.object(state,'dispatch') as dispatch:
+                for held in sequence: frame(held)
+                assert not keyboard.events and not dispatch.called and not state.keys
         # X stays independent even beside a shortcut; it is never deferred or re-pressed.
         reset()
         with patch.object(state, 'dispatch') as dispatch:
-            frame({'X', 'Y'}); frame({'X', 'UP', 'Y'}); frame({'X'}); frame()
+            frame({'X', 'A'}); frame({'X', 'UP', 'A'}); frame({'X'}); frame()
             dispatch.assert_called_once_with('copy')
         assert downs() == [codes.KEY_BACKSPACE]
 
         # A face prefix has no timeout; directions alone act on press, not release.
         reset()
         with patch.object(state, 'dispatch') as dispatch:
-            frame({'Y'}, at=0); frame({'Y'}, at=60)
+            frame({'A'}, at=0); frame({'A'}, at=60)
             assert not keyboard.events and not dispatch.called
-            frame({'Y', 'UP'}, at=61); frame({'Y', 'UP'}, at=90)
+            frame({'A', 'UP'}, at=61); frame({'A', 'UP'}, at=90)
             assert not keyboard.events and not dispatch.called
             frame(at=91); dispatch.assert_called_once_with('copy')
         for direction, key in [('UP', codes.KEY_UP), ('DOWN', codes.KEY_DOWN),
@@ -154,8 +191,10 @@ def main():
             frame(at=.4); assert downs() == [key] and not state.dpad_navigation
 
         # Wrong-order and simultaneous controls cannot execute a named shortcut
-        # or leak Enter/Escape/Tab, even if held after the direction is released.
+        # or leak Enter/Escape, even if held after the direction is released.
         for chord in expected:
+            if 'SELECT' in chord:
+                continue  # Select ordering is checked separately below.
             tokens = set(chord.split('+'))
             face = tokens & set(XBOX_FACE_CODES)
             directions = tokens - face
@@ -171,7 +210,7 @@ def main():
                     frame(tokens, at=10); frame(face, at=11); frame(face, at=20); frame(at=21)
                     assert keyboard.events == before and not dispatch.called
                     assert not state.dpad_navigation and not state.text_gesture.previous
-                    assert not set(downs()) & {codes.KEY_ENTER, codes.KEY_ESC, codes.KEY_TAB}
+                    assert not set(downs()) & {codes.KEY_ENTER, codes.KEY_ESC, codes.KEY_SPACE}
 
         # The entire A+B prefix must precede the direction. Holds do not repeat,
         # unassigned directions do not fall back to Ctrl+C, and a rolling press
@@ -254,6 +293,7 @@ def main():
             'page_down': ('KEY_PAGEDOWN', set()), 'home': ('KEY_HOME', set()), 'end': ('KEY_END', set()),
             'document_home': ('KEY_HOME', {'KEY_LEFTCTRL'}), 'document_end': ('KEY_END', {'KEY_LEFTCTRL'}),
             'previous_match': ('KEY_F3', {'KEY_LEFTSHIFT'}), 'next_match': ('KEY_F3', set()),
+            'back': ('KEY_LEFT', {'KEY_LEFTALT'}), 'forward': ('KEY_RIGHT', {'KEY_LEFTALT'}),
         }
         for action, (key_name, names) in key_cases.items():
             for triggers in (False, True):
@@ -646,6 +686,7 @@ def main():
             reset(); state.device = Device(); state.stick_modes = ['text', 'resize']; frame({'X'}, shift=True, ctrl=True)
             state.stick_pending = ['scroll', None]
             frame({'X', 'UP', 'A'}, shift=True, ctrl=True)
+            frame({'SELECT', 'Y'}, shift=True, ctrl=True)
             if reason == 'reset': state.reset()
             elif reason == 'disconnect': state.detach()
             elif reason == 'inactive': state.tick(0, False)
@@ -656,6 +697,7 @@ def main():
             assert not state.keys and state.stick_modes == ['scroll', 'windows'] and state.stick_pending == [None, None]
             assert state.motion_time == [None, None] and state.motion_credit == [0, 0]
             assert not state.text_gesture.previous and not state.pending_buttons
+            assert not state.select_gesture.previous and not state.select_in_legend
             assert not state.button_since
             assert not state.dpad_navigation and state.dpad_since is None and state.dpad_credit == 0
         state.device = None
@@ -683,6 +725,10 @@ def main():
             state.raw_axes[config['right_stick'][0]] = 0
         legend = state.legend_text()
         assert all(mapper.ACTION_LABELS[action] in legend for action in expected.values())
+        with patch.object(state, 'dispatch') as dispatch:
+            frame({'SELECT'}); frame({'SELECT', 'Y'}); state.close_legend(); frame()
+            assert not dispatch.called and not state.keys, 'Layout gesture escaped the legend'
+        state.legend = process
         with patch.object(state, 'dispatch') as dispatch:
             frame({'A'}); frame({'UP', 'A'}); state.close_legend(); frame()
             assert not dispatch.called, 'Gesture escaped a closed legend'
@@ -723,7 +769,7 @@ def main():
             assert not state.legend_open() and state.launcher is None and not state.button_since
 
         # User profiles cannot bring X back into shortcuts or load old character outputs.
-        for changes in ({'chords': {'UP+X': 'copy'}}, {'chords': {'UP+Y': 'KEY_E'}},
+        for changes in ({'chords': {'UP+X': 'copy'}}, {'chords': {'UP+Y': 'copy'}}, {'chords': {'SELECT+UP': 'copy'}}, {'chords': {'UP+Y': 'KEY_E'}},
                         {'selection_rate': [40, 4]}, {'selection_rate': [0, 40]},
                         {'selection_line_rate': [2, 101]}, {'selection_rate': [4, True]},
                         {'selection_rate': 'fast'}, {'scroll_rate': [18, 1]},
@@ -746,7 +792,7 @@ def main():
         assert keyboard.events == [(codes.EV_KEY, codes.KEY_UP, 1)]
         frame(); assert keyboard.events[-1] == (codes.EV_KEY, codes.KEY_UP, 0)
         config['chords'] = saved
-        print(f'Passed: {len(expected)} named shortcuts, {orders} face-first press/release orders, unlimited prefixes, terminal-only Ctrl+C/Z/D and pair-prefix guards, wrong-order/simultaneous suppression, immediate/accelerated D-pad navigation, Xbox codes, Backspace holds, modifier restoration, terminal guards, workspace compaction, dynamic wraparound and explicit-list compatibility, independent stick modes/individual neutral switches, Menu hold and launcher toggling, pointer-preserving wheel scrolling/direction/speed/modifiers, text navigation/speed, legend capture, lifecycle reset and profile validation.')
+        print(f'Passed: {len(expected)} named shortcuts, {orders} face-first press/release orders, unlimited prefixes, terminal-only Ctrl+C/Z/D and pair-prefix guards, wrong-order/simultaneous suppression, immediate/accelerated D-pad navigation, Xbox codes, Backspace/Space holds and Select-first layout actions, modifier restoration, terminal guards, workspace compaction, dynamic wraparound and explicit-list compatibility, independent stick modes/individual neutral switches, Menu hold and launcher toggling, pointer-preserving wheel scrolling/direction/speed/modifiers, text navigation/speed, legend capture, lifecycle reset and profile validation.')
 
 
 if __name__ == '__main__':

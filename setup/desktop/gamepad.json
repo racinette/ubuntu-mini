@@ -4,7 +4,7 @@
     "BTN_SOUTH": "KEY_ENTER",
     "BTN_EAST": "KEY_ESC",
     "BTN_NORTH": "KEY_BACKSPACE",
-    "BTN_WEST": "KEY_TAB"
+    "BTN_WEST": "KEY_SPACE"
   },
   "actions": {
     "BTN_START": "terminal",
@@ -52,11 +52,26 @@
   "repeat_interval": 0.18,
   "dpad_repeat_delay": 0.4,
   "dpad_acceleration_time": 0.3,
-  "dpad_rate": [12, 25],
-  "dpad_line_rate": [12, 25],
-  "selection_rate": [4, 40],
-  "selection_line_rate": [2, 10],
-  "scroll_rate": [1, 18],
+  "dpad_rate": [
+    12,
+    25
+  ],
+  "dpad_line_rate": [
+    12,
+    25
+  ],
+  "selection_rate": [
+    4,
+    40
+  ],
+  "selection_line_rate": [
+    2,
+    10
+  ],
+  "scroll_rate": [
+    1,
+    18
+  ],
   "resize_step": 5,
   "toggle_hold": 0.75,
   "chord_axes": [
@@ -64,30 +79,26 @@
     "ABS_HAT0Y"
   ],
   "chords": {
-    "UP+Y": "copy",
-    "UP+A": "close",
-    "UP+B": "page_up",
-    "DOWN+Y": "paste",
-    "DOWN+A": "layout",
-    "DOWN+B": "page_down",
-    "LEFT+Y": "undo",
-    "LEFT+A": "fullscreen",
-    "LEFT+B": "home",
-    "RIGHT+Y": "redo",
-    "RIGHT+A": "floating",
-    "RIGHT+B": "end",
-    "UP+LEFT+Y": "cut",
-    "UP+LEFT+A": "file_manager",
+    "UP+A": "copy",
+    "DOWN+A": "paste",
+    "LEFT+A": "undo",
+    "RIGHT+A": "redo",
+    "UP+LEFT+A": "cut",
+    "UP+RIGHT+A": "select_all",
+    "DOWN+LEFT+A": "find",
+    "DOWN+RIGHT+A": "save",
+    "UP+B": "close",
+    "DOWN+B": "equalize",
+    "LEFT+B": "back",
+    "RIGHT+B": "forward",
     "UP+LEFT+B": "document_home",
-    "UP+RIGHT+Y": "select_all",
-    "UP+RIGHT+A": "split",
     "UP+RIGHT+B": "document_end",
-    "DOWN+LEFT+Y": "find",
-    "DOWN+LEFT+A": "equalize",
     "DOWN+LEFT+B": "previous_match",
-    "DOWN+RIGHT+Y": "save",
-    "DOWN+RIGHT+A": "screenshot",
     "DOWN+RIGHT+B": "next_match",
+    "SELECT+A": "fullscreen",
+    "SELECT+B": "floating",
+    "SELECT+Y": "layout",
+    "SELECT+X": "split",
     "A+B": "interrupt",
     "UP+A+B": "suspend_job",
     "DOWN+A+B": "end_input"

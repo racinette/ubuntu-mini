@@ -21,8 +21,8 @@ INSTALLERS = (
 SYSTEM_PATH = '/usr/local/bin:/usr/bin:/bin'
 
 
-def install_attribution_defaults(user):
-    """Disable CLI commit/PR attribution, merging into the desktop user's files."""
+def install_cli_preferences(user):
+    """Merge attribution preferences and seed Claude's wheel speed multiplier."""
     settings = (
         ('.claude/settings.json', {'commit': '', 'pr': ''}, {}),
         ('.cursor/cli-config.json',
@@ -37,10 +37,14 @@ def install_attribution_defaults(user):
             data = initial.copy()
         if not isinstance(data, dict) or not isinstance(data.get('attribution', {}), dict):
             raise ValueError(f'Expected JSON objects in {target} and its attribution setting')
-        merged = {**data.get('attribution', {}), **attribution}
-        if data.get('attribution') == merged:
+        updated = {**data, 'attribution': {**data.get('attribution', {}), **attribution}}
+        if name == '.claude/settings.json':
+            environment = data.get('env', {})
+            if not isinstance(environment, dict):
+                raise ValueError(f'Expected an env JSON object in {target}')
+            updated['env'] = {'CLAUDE_CODE_SCROLL_SPEED': '3', **environment}
+        if data == updated:
             continue
-        data['attribution'] = merged
         if not target.parent.exists():
             target.parent.mkdir(mode=0o700, parents=True)
             if os.geteuid() == 0:
@@ -53,13 +57,13 @@ def install_attribution_defaults(user):
                 os.fchmod(stream.fileno(), mode)
                 if os.geteuid() == 0:
                     os.fchown(stream.fileno(), user.pw_uid, user.pw_gid)
-                json.dump(data, stream, indent=2)
+                json.dump(updated, stream, indent=2)
                 stream.write('\n')
             temporary.replace(target)
         finally:
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
-        print(f'Disabled commit/PR attribution: {target}', flush=True)
+        print(f'Applied coding CLI preferences: {target}', flush=True)
 
 
 def install_bubblewrap_profile(
@@ -166,7 +170,7 @@ def main():
     env = user_environment(user)
     for installer in INSTALLERS:
         install_cli(user, env, *installer)
-    install_attribution_defaults(user)
+    install_cli_preferences(user)
     print(f'Coding CLIs ready for {user.pw_name}. Open a new terminal; run codex, claude or agent to sign in.')
 
 

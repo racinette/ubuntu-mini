@@ -66,6 +66,10 @@ Official installation instructions: [Codex](https://learn.chatgpt.com/docs/codex
 
 Setup seeds `/etc/codex/config.toml` from `setup/agents/codex.toml` with `tui.mouse_scroll_speed = 3.0`, tested with Codex CLI 0.162.1 to make controller scrolling comfortable on the WIN Mini. Existing system configuration is retained on reruns. Personal settings in `~/.codex/config.toml` take precedence over these defaults, following [Codex's configuration precedence](https://learn.chatgpt.com/docs/config-file/config-basic#configuration-precedence). Restart Codex after changing the setting.
 
+Claude Code gets `env.CLAUDE_CODE_SCROLL_SPEED = "3"` in `~/.claude/settings.json`, the same setting its `/scroll-speed` command saves. This triples the base wheel distance in its fullscreen renderer. Setup preserves a subsequently chosen multiplier and other environment settings. Restart Claude to load the default, or use `/scroll-speed` to tune it interactively; see [Claude mouse wheel scrolling](https://code.claude.com/docs/en/fullscreen#mouse-wheel-scrolling).
+
+Cursor Agent 2026.10.01 uses the terminal's normal scrollback and exposes no wheel-speed setting. Minion's Foot defaults set `[scrollback] multiplier=9.0`, up from Foot 1.16.2's default `3.0`, to triple wheel scrolling in Cursor and ordinary terminal history. Applications handling mouse events in the alternate screen, including Codex and fullscreen Claude, keep their own wheel speed. Open a new terminal to load the Foot setting. Setup seeds `~/.config/foot/foot.ini` on fresh installations and preserves existing personal configuration on reruns.
+
 ## Development environment
 
 Ordinary `sudo ./setup.sh` preinstalls the following for your desktop account. Fresh installations resolve the **latest stable releases at setup time**, then install the actual runtimes and tools. There is no first-use compiler download. Node follows the current release rather than the older LTS branch; prereleases/nightlies are not requested.

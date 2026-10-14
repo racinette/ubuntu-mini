@@ -46,3 +46,5 @@ openssh-client
 sudo
 powertop
 gnome-power-manager
+qbittorrent
+qt6-wayland

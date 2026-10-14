@@ -9,11 +9,11 @@ def install():
     if os.geteuid() != 0:
         raise SystemExit('Run as root inside the installed target')
     # Keep an existing native app or its selected Snap revision/channel.
-    app = 'telegram-desktop'
-    if shutil.which(app) or subprocess.run(['snap', 'list', app], capture_output=True).returncode == 0:
-        print('Retaining installed Telegram Desktop', flush=True)
-        return
-    subprocess.run(['snap', 'install', app, '--channel=latest/stable'], check=True)
+    for app in ('telegram-desktop', 'gimp'):
+        if shutil.which(app) or subprocess.run(['snap', 'list', app], capture_output=True).returncode == 0:
+            print(f'Retaining installed {app}', flush=True)
+            continue
+        subprocess.run(['snap', 'install', app, '--channel=latest/stable'], check=True)
 
 
 if __name__ == '__main__':

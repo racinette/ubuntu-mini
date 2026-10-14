@@ -33,11 +33,19 @@ The Chromium Snap includes a matching driver at `/snap/bin/chromium.chromedriver
 Working internet connectivity is required for normal setup. No application bundle is transferred with the clone. APT sources are retained, and setup does not embed a VM host address.
 
 Setup also installs **Telegram Desktop** from [Telegram's official Snap](https://snapcraft.io/telegram-desktop)
-on `latest/stable`, with automatic updates. Open **Telegram Desktop** from
-Super+D or run `telegram-desktop`, then sign in with your phone. Existing native
-installations and selected Snap channels are retained on reruns. Telegram is
-downloaded separately from the optional shell/browser artifact cache. To
-install only this desktop app, run `sudo /usr/bin/python3 setup/desktop/apps.py`.
+and **GIMP** from [GIMP's official Snap](https://www.gimp.org/news/2025/10/17/official-snap/),
+both on `latest/stable` with automatic updates. Open **Telegram** or **GIMP**
+from Super+D, or run `telegram-desktop` / `gimp`. Sign in to Telegram using your
+phone. Existing native installations and selected Snap channels are retained
+on reruns. These apps are downloaded separately from the optional shell/browser
+artifact cache. To install only these Snaps, run
+`sudo /usr/bin/python3 setup/desktop/apps.py`.
+
+**qBittorrent**, with Qt 6 Wayland support for Sway, comes from Ubuntu's
+repositories and receives updates through APT. Open **qBittorrent** from Super+D or run `qbittorrent` to handle `.torrent`
+files and magnet links. Its Web UI is not enabled by setup. Application
+preferences, download locations and file associations can be changed in its
+settings; setup does not start downloads or seed files.
 
 On the WIN Mini 2023 (`GPD` / `G1617-01`), setup also supplies `bmi260-init-data.fw` if Ubuntu's firmware package has not supplied it. The in-tree `bmi270_i2c` driver requires this file for the gyro/accelerometer. The firmware and its BSD license are downloaded from a pinned linux-firmware revision and verified against `setup/desktop/firmware.json` before installation. Existing plain or compressed firmware is retained. This conditional download is independent of the shell/browser cache; `--check` reports whether it is needed without downloading. Normal setup leaves driver activation to the next boot and does not enable gyro controls or automatic screen rotation.
 

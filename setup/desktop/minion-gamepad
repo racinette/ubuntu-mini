@@ -20,7 +20,7 @@ log = logging.getLogger('minion-gamepad')
 workspace_policy = runpy.run_path(str(Path(__file__).with_name('minion-workspaces')))
 
 ACTION_COMMANDS = {
-    'terminal': 'exec foot',
+    'terminal': 'exec minion-terminal',
     'window_picker': 'exec minion-window-picker',
     'launcher': 'exec fuzzel --layer=overlay',
     'layout': 'layout toggle tabbed split',

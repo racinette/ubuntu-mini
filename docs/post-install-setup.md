@@ -186,6 +186,14 @@ Upstream guides: [mise](https://mise.jdx.dev/getting-started.html), [rustup](htt
 
 ## Desktop controls
 
+**Gamepad Start** and **Super+Enter** open a new Foot terminal in the focused
+Foot window's shell directory. This also works while a command or coding agent
+is running in that shell. When another application is focused, or the shell's
+directory cannot be determined, the new terminal starts in home. The shared
+`minion-terminal` launcher passes paths directly to Foot, including spaces and
+Unicode. It supports the normal standalone Foot windows installed by setup;
+ambiguous shared-server clients fall back to home. Sway's focus policy is unchanged.
+
 DejaVu Sans Mono is the terminal's main font. Noto Core provides fallback fonts
 for additional scripts, symbols and musical notation; Noto Color Emoji supplies
 emoji. Foot and desktop applications use Fontconfig to select these fallbacks.

@@ -13,7 +13,7 @@ Post-install setup installs this profile automatically. In the WIN Mini's gamepa
 | L1 / R1 | Previous / next numbered workspace, on release; wrap in both directions |
 | L2 + bumper | Send focused window to adjacent workspace without following it |
 | R3 | Switch right stick between window focus/move / resize, on release |
-| Start | Open terminal, on release |
+| Start | Open terminal in the focused Foot shell's directory, on release |
 | Select | Window picker, on release |
 | Menu / Xbox | Tap: toggle launcher; hold 0.75 s: toggle shortcut legend |
 | L3 | Switch left stick between scroll / text navigation, on release |

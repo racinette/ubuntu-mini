@@ -6,6 +6,8 @@ Firefox-first browser preferences were applied on the WIN Mini: `xdg-settings ge
 
 ## Host checks
 
+On 2026-10-14, Gamepad Start and Super+Enter were changed to use `minion-terminal`, which inherits the focused standalone Foot client's shell directory. Isolated checks covered custom application IDs, paths containing spaces/Unicode/shell metacharacters, missing/deleted directories, ambiguous clients and home fallback. A real Foot parent/child check passed before and after local installation: the child opened in the parent's project directory and received focus through Sway's existing policy. The installed mapper matched the repository and remained active; the live Sway config changed only its terminal launch command. Chord-recognizer, setup-staging/hash, Python syntax, Sway configuration and diff checks passed. The user clarified that focus already worked, so no focus policy was changed. [Private terminal launch report](../.local/device-checks/terminal-launch/result.json), [installation report](../.local/device-checks/terminal-launch/install-result.json).
+
 On 2026-10-14, the WIN Mini's DejaVu-only desktop font set lacked glyphs for media symbols, musical notation and many emoji. `fonts-noto-core` and `fonts-noto-color-emoji` were installed and added to ordinary setup. Fontconfig reported coverage for all 57 sample Latin/Cyrillic, border, arrow, media, Braille, musical and emoji characters. The primary monospace match remained DejaVu Sans Mono; the rocket matched Noto Color Emoji and the G clef matched Noto Music. Foot's configuration check passed. The user confirmed all sample characters displayed correctly and the original issue was fixed. This does not establish coverage for every Unicode character, CJK text or private-use icon sets. [Private font-coverage report](../.local/device-checks/font-coverage/result.json).
 
 On 2026-10-14, the WIN Mini switched from UTC to `Europe/Minsk` while network time remained synchronized and the hardware clock remained in UTC. Gammastep 2.0.9 accepted the real Wayland gamma-control request without a protocol failure. Off released the client, Automatic ran with the Minsk solar configuration, and Warm now ran continuously at 4500K; mode persistence was verified from the saved state. Isolated night-light, status-bar, setup-staging/hash, syntax and diff checks passed. No reboot was required. [Private night-light report](../.local/device-checks/night-light/result.json).
@@ -43,6 +45,7 @@ python3 tests/check-browser-download-mode.py
 python3 tests/check-chord-recognizer.py
 python3 tests/check-status-bar.py
 python3 tests/check-night-light.py
+python3 tests/check-terminal-launch.py
 python3 tests/check-idle-policy.py
 python3 tests/check-install-plan.py
 python3 tests/check-install-launch.py

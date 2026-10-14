@@ -1,0 +1,58 @@
+#!/usr/bin/python3
+"""Open Foot in the focused terminal's shell directory, otherwise in home."""
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+
+def focused_window(node):
+    if node.get('focused') and node.get('pid'):
+        return node
+    for child in node.get('nodes', []) + node.get('floating_nodes', []):
+        found = focused_window(child)
+        if found:
+            return found
+
+
+def terminal_directory(node, proc=Path('/proc')):
+    if not node or type(node.get('pid')) is not int or node['pid'] <= 0:
+        return Path.home()
+    try:
+        pid = str(node['pid'])
+        process = proc / pid
+        if process.stat().st_uid != os.getuid():
+            return Path.home()
+        executable = (process / 'exe').resolve(strict=True).name
+        # A Foot server may own several windows/shells; don't guess between them.
+        if executable != 'foot':
+            return Path.home()
+        children = (process / 'task' / pid / 'children').read_text().split()
+        if len(children) != 1 or not children[0].isdigit():
+            return Path.home()
+        child = proc / children[0]
+        if child.stat().st_uid != os.getuid():
+            return Path.home()
+        directory = (child / 'cwd').resolve(strict=True)
+        if directory.is_dir():
+            return directory
+    except OSError:
+        pass
+    return Path.home()
+
+
+def main():
+    try:
+        tree = json.loads(subprocess.check_output(['swaymsg', '-r', '-t', 'get_tree'], timeout=3))
+        directory = terminal_directory(focused_window(tree))
+    except (OSError, ValueError, subprocess.SubprocessError):
+        directory = Path.home()
+    if sys.argv[1:] == ['--print-directory']:
+        print(directory)
+        return
+    os.execvp('foot', ['foot', '--working-directory', str(directory), *sys.argv[1:]])
+
+
+if __name__ == '__main__':
+    main()

@@ -37,6 +37,7 @@ def main():
         assert not status.batteries(supplies)
         supply('BAT0', type='Battery', present=1, capacity=73, status='Charging')
         assert status.batteries(supplies)[0]['full_text'] == '73% ↑'
+        assert status.batteries(supplies)[0]['instance'] == 'BAT0'
         for value, expected in [('Discharging', '73% ↓'), ('Full', '73% Full'),
                                 ('Not charging', '73% Idle'), ('invalid', '73% ?')]:
             supply('BAT0', status=value)
@@ -177,6 +178,23 @@ def main():
             status.clicks({})
             assert launch.call_args.args == (['minion-proxy-ui'],)
             assert launch.call_args.kwargs['start_new_session'] is True
+        with patch.object(status.sys, 'stdin', io.StringIO('[\n{"name":"battery","instance":"BAT0","button":1}\n')), \
+                patch.object(status.subprocess, 'Popen') as launch, \
+                patch.object(status, 'run', return_value='[{"success":true}]') as run:
+            status.clicks({})
+            assert launch.call_args.args == (['gnome-power-statistics',
+                '--device=/org/freedesktop/UPower/devices/battery_BAT0'],)
+            assert launch.call_args.kwargs['start_new_session'] is True
+            assert run.call_args.args == ('swaymsg', '-r',
+                '[app_id="^(gnome-power-statistics|org.gnome.PowerStats)$"] focus')
+        with patch.object(status.subprocess, 'Popen') as launch, \
+                patch.object(status, 'run', return_value='[{"success":true}]'):
+            status.launch_battery_statistics('bad/path; command')
+            assert launch.call_args.args == (['gnome-power-statistics'],)
+        with patch.object(status.sys, 'stdin', io.StringIO('[\n{"name":"battery","button":3}\n')), \
+                patch.object(status.subprocess, 'Popen') as launch:
+            status.clicks({})
+            launch.assert_not_called()
         with patch.object(status.sys, 'stdin', io.StringIO('[\n{"name":"temperatures","button":1}\n')), \
                 patch.object(status, 'run') as run:
             status.clicks({'temperatures': 'CPU <die>: 65 °C\nSSD: 40 °C'})

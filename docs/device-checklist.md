@@ -136,6 +136,7 @@ journalctl --user -u minion-gamepad.service -b
 - [ ] Chromium is installed alongside Firefox, opens from Super+D or `chromium`, and can run a headless browser automation check with its sandbox enabled. Setup reruns retain both browsers' revisions/channels and profiles.
 - [ ] Notifications and desktop authorization prompts appear and can be answered. Print Screen and the screenshot shortcut put a usable image on the clipboard.
 - [ ] Battery percentage and charging/full/discharging states follow AC connection changes. Wi-Fi signal, audio/mute, proxy state and both stick modes match actual state. Missing sensors do not stall the bar; click details and HHD launching work.
+- [ ] Clicking the battery percentage opens Power Statistics with the laptop battery selected. Clicking again brings the existing window forward without duplication, including from another workspace.
 - [ ] Routine notifications without an explicit sender timeout disappear after five seconds; Keep awake popups disappear after 2.5 seconds. Critical alerts remain available for dismissal. Tapping or right-clicking dismisses a popup, and existing personal Mako settings survive setup reruns.
 
 ## Development tools and coding agents

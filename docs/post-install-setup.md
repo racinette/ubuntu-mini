@@ -278,7 +278,9 @@ The power block shows `Auto` with HHD TDP overrides disabled, or a configured ta
 Setup installs **Power Statistics** (`gnome-power-statistics`, Ubuntu package
 `gnome-power-manager`) and **PowerTOP**. Power Statistics is a standalone GTK
 application using the existing UPower service; it does not install a GNOME
-desktop. Open it from Super+D, select the laptop battery, and use **History**
+desktop. Click the battery percentage in the bottom bar to open it with that
+battery selected, or launch it from Super+D. Clicking again brings its existing
+window forward, including from another workspace. Use **History**
 with graph type **Rate** for power over time. Details include the estimated
 time to empty while discharging, or time to full while charging. Charge graphs
 and other history types are also available.

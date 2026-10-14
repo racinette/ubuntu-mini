@@ -49,7 +49,9 @@ def batteries(root=Path('/sys/class/power_supply')):
             continue
         suffix = {'Charging': ' ↑', 'Discharging': ' ↓', 'Full': ' Full',
                   'Not charging': ' Idle'}.get(read(supply / 'status'), ' ?')
-        result.append(block('battery', f'{int(capacity)}%{suffix}'))
+        indicator = block('battery', f'{int(capacity)}%{suffix}')
+        indicator['instance'] = supply.name
+        result.append(indicator)
     return result
 
 
@@ -232,6 +234,27 @@ def launch_proxy_controls():
         pass
 
 
+def launch_battery_statistics(instance=None):
+    command = ['gnome-power-statistics']
+    if isinstance(instance, str) and re.fullmatch(r'[A-Za-z0-9_]+', instance):
+        command.append('--device=/org/freedesktop/UPower/devices/battery_' + instance)
+    try:
+        subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True)
+    except OSError:
+        return
+    # Also bring an already open window forward, across workspaces/fullscreen.
+    for _ in range(20):
+        result = run('swaymsg', '-r', '[app_id="^(gnome-power-statistics|org.gnome.PowerStats)$"] focus')
+        try:
+            replies = json.loads(result or 'null')
+            if isinstance(replies, list) and replies and all(r.get('success') for r in replies):
+                return
+        except (ValueError, AttributeError):
+            pass
+        time.sleep(.05)
+
+
 def keyboard_layout():
     output = run('swaymsg', '-r', '-t', 'get_inputs')
     try:
@@ -291,6 +314,8 @@ def clicks(details):
             launch_network_controls()
         elif name == 'proxy' and button == 1:
             launch_proxy_controls()
+        elif name == 'battery' and button == 1:
+            launch_battery_statistics(event.get('instance'))
         elif (name == 'temperatures' and button == 1) or (name in ('wifi', 'power') and button == 3):
             title = {'wifi': 'Wi-Fi', 'temperatures': 'Temperatures', 'power': 'Power controls'}[name]
             run('notify-send', '-a', 'minion', '--', title, html.escape(details.get(name, 'Status is unavailable')))

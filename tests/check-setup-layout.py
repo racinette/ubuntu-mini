@@ -27,7 +27,7 @@ def load_setup():
 
 def main():
     sources = setup_sources()
-    assert len(sources) == 82
+    assert len(sources) == 83
     assert all(p.is_file() for p in sources)
     assert all(p == PROJECT / 'setup.sh' or p.is_relative_to(PROJECT / 'setup') for p in sources)
     assert {p.name for p in sources}.isdisjoint({'first-boot.py', 'minion-first-boot.service'})
@@ -99,7 +99,7 @@ def main():
         assert all(experiment.digest(PROJECT / name) == checksum for name, checksum in report['source_sha256'].items())
         scripts = [cmd[1] for cmd in commands if cmd[0] == sys.executable]
         assert scripts == [str(PROJECT / 'setup' / name) for name in (
-            'base/swap.py', 'desktop/provision.py', 'shell/provision.py', 'desktop/browser.py', 'proxy/provision.py', 'hhd/provision.py', 'development/provision.py', 'agents/provision.py')]
+            'base/swap.py', 'desktop/provision.py', 'shell/provision.py', 'desktop/browser.py', 'desktop/apps.py', 'proxy/provision.py', 'hhd/provision.py', 'development/provision.py', 'agents/provision.py')]
         assert commands[-1][-1] == 'fixture'
 
         vm = directory / 'vm'

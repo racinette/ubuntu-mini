@@ -105,11 +105,13 @@ def backup_configuration(path, user):
         '/usr/lib/firmware/bmi260-init-data.fw',
         '/usr/share/doc/minion-firmware/LICENSE.bmi260'))
     paths.extend(Path('/etc/systemd/user').glob('minion-*.service'))
+    paths.extend(Path('/etc/sudoers.d').glob('60-minion-auth-*'))
     paths.extend(Path('/usr/local/bin').glob('minion-*'))
     paths.append(Path('/usr/local/share/applications/minion-network.desktop'))
     paths.append(Path('/usr/local/share/applications/minion-night-light.desktop'))
     paths.append(Path(user.pw_dir) / '.config/gammastep')
     paths.append(Path(user.pw_dir) / '.bashrc')
+    paths.extend(Path(user.pw_dir) / '.ssh' / name for name in ('config', 'minion.conf'))
     paths.extend(Path(user.pw_dir) / name for name in ('.claude/settings.json', '.cursor/cli-config.json'))
     paths.extend(Path(user.pw_dir) / name for name in ('.config/nvim',
         '.local/share/applications/minion-nvim.desktop', '.config/minion-view',

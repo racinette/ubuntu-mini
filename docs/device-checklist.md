@@ -45,6 +45,7 @@ systemctl status var-lib-minion-swapfile.swap
 
 ## Network and access for debugging
 
+- [ ] One sudo authentication is reused across terminals for 15 minutes; `sudo -k` invalidates it. SSH/Git unlock a key on first use and reuse it through the shared agent for one hour. Confirm agent removal/activation after logout/login at the next planned session restart.
 - [ ] Connect to Wi-Fi through the network applet or `nmtui`; confirm both Firefox and a terminal can reach the internet. Reconnect after reboot.
 - [ ] Establish the intended on-device coding workflow: the agent can read this checkout, run commands and collect device diagnostics. Complete any required sign-in before starting hardware debugging.
 - [ ] If remote access is being used, confirm it works over the intended local network. Default setup does not install or configure an SSH server.

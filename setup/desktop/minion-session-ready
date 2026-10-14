@@ -1,5 +1,5 @@
 #!/bin/sh
 set -eu
-dbus-update-activation-environment --systemd WAYLAND_DISPLAY DISPLAY SWAYSOCK XDG_CURRENT_DESKTOP XDG_SESSION_TYPE XDG_SESSION_DESKTOP
 systemctl --user daemon-reload
+dbus-update-activation-environment --systemd WAYLAND_DISPLAY DISPLAY SWAYSOCK XDG_CURRENT_DESKTOP XDG_SESSION_TYPE XDG_SESSION_DESKTOP SSH_AUTH_SOCK
 systemctl --user start minion-session.target

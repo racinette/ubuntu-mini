@@ -19,6 +19,7 @@ Current device status as of **2026-10-14** for the **GPD WIN Mini 2023 / Ryzen 7
 | Audio development | A native JUCE VST3 synth compiled, loaded in SuperCollider, received MIDI/parameter changes and produced a valid recording. External third-party VST3s have not been tested. |
 | Recent desktop fixes | Minsk timezone/NTP and 4500K night colors passed; the user accepted the warm palette. Noto fallbacks fixed missing characters. Start/Super+Enter inherit the focused Foot shell directory; native focus behavior is unchanged. |
 | Swap | An 8 GiB private swapfile is active on encrypted root and configured for boot. A bounded cgroup test forced real swap use and passed readback; a setup rerun preserved the file and boot configuration. |
+| Authentication caching | Sudo authentication carries across terminals for 15 minutes. One shared SSH agent caches keys for an hour; a second real Git query passed without a prompt, and automatic key expiry passed in an isolated probe. |
 
 See [testing](testing.md) for measurements, source revisions and links to private evidence. A successful observation applies to that workload and configuration, rather than every possible application or hardware state.
 
@@ -31,7 +32,7 @@ These are verification gaps, not known blockers to ordinary use:
 - **Maintenance:** after the next kernel update, verify boot/unlock, module signing/loading, essential services and suspend. Test retained Windows boot if it is part of the intended workflow. This is queued for maintenance rather than another immediate reboot cycle.
 - **Network edge cases:** actual connection to a new password-protected Wi-Fi network, hidden/enterprise networks and Bluetooth automatic reconnection after sleep/reboot remain separate checks. Pairing and normal connectivity already passed.
 - **Optional workflows:** screen sharing/portal chooser, external display/dock/storage/card reader, Vulkan rendering and hardware video decoding remain untested. Test them when needed.
-- **Specific refinements:** lock-screen language switching, sensor calibration/resume and real-project LSP edge cases are not exhaustively tested. The intermittent Codex-only terminal redraw stripe was set aside after it stopped reproducing.
+- **Specific refinements:** lock-screen language switching, sensor calibration/resume and real-project LSP edge cases are not exhaustively tested. Confirm the SSH agent lifecycle at the next planned logout/login; live key reuse already passed. The intermittent Codex-only terminal redraw stripe was set aside after it stopped reproducing.
 - **Memory pressure:** observe sustained real workloads and confirm swap activation at the next planned boot. The bounded read/write check passed; the earlier Firefox out-of-memory exit motivates continued observation.
 
 ## Deliberate choices

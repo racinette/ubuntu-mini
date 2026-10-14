@@ -1,0 +1,13 @@
+[Unit]
+Description=Minion shared SSH key cache
+PartOf=minion-session.target
+After=graphical-session.target
+
+[Service]
+Type=simple
+RuntimeDirectory=minion-ssh-agent
+RuntimeDirectoryMode=0700
+UMask=0077
+ExecStart=/usr/bin/ssh-agent -D -a %t/minion-ssh-agent/socket -t 1h
+Restart=on-failure
+RestartSec=2

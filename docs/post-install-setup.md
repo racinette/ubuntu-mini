@@ -80,6 +80,37 @@ editing. Setup seeds the configuration when absent and preserves it on reruns.
 The service follows the graphical session; Off releases the screen's color
 adjustment. Backlight brightness remains controlled by the brightness keys.
 
+## Authentication caching
+
+Sudo remembers successful authentication for **15 minutes**, shared across the
+selected desktop account's terminals and processes. Setup installs a validated,
+account-specific `/etc/sudoers.d/60-minion-auth-USERNAME` policy; it changes cache
+scope and lifetime while retaining the account's existing command permissions.
+Run `sudo -k` to invalidate the shared cache immediately.
+
+The desktop runs one OpenSSH agent through `minion-ssh-agent.service`. On first
+SSH/Git use, unlock the key normally; `AddKeysToAgent 1h` keeps it in the agent
+for **one hour from loading**, after which the next use needs the passphrase
+again. Using a key does not restart that hour. Logout/reboot stops the desktop
+agent and clears its loaded keys. No passphrase is written into the configuration.
+
+Setup appends a `Host *` include to `~/.ssh/config` and seeds `~/.ssh/minion.conf`.
+Earlier personal host options take precedence; an edited Minion SSH defaults
+file is retained on reruns. `IdentityAgent` points SSH/Git to the shared socket,
+including from already running terminals without `SSH_AUTH_SOCK`. New shells
+also export that socket for `ssh-add`. In an existing shell, run:
+
+```bash
+export SSH_AUTH_SOCK="/run/user/$UID/minion-ssh-agent/socket"
+ssh-add -l                    # List loaded keys
+ssh-add -D                    # Clear loaded keys when desired
+```
+
+The service's default key lifetime is one hour as well. To inspect it, run
+`systemctl --user status minion-ssh-agent.service`. These defaults follow
+[sudo's timestamp controls](https://www.sudo.ws/docs/man/sudoers.man/) and
+[OpenSSH's agent settings](https://man.openbsd.org/ssh_config.5#AddKeysToAgent).
+
 ## Coding CLIs
 
 Ordinary `sudo ./setup.sh` installs **Codex** (`codex`), **Claude Code** (`claude`) and **Cursor Agent** (`agent`) for the selected desktop account. Their official native installers run as that user, with the correct home directory and no root credentials or tool settings inherited. Their native installers are independent of the development Node.js/npm installation. Setup installs Git, curl, certificates, ripgrep, `xdg-utils` for opening browser sign-in links, bubblewrap for Linux sandboxing, and socat for Claude's optional Linux sandbox; it leaves tool permissions and sandbox settings at upstream defaults.

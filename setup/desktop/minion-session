@@ -3,6 +3,7 @@ set -eu
 export XDG_CURRENT_DESKTOP=sway
 export XDG_SESSION_DESKTOP=sway
 export XDG_SESSION_TYPE=wayland
+export SSH_AUTH_SOCK="${XDG_RUNTIME_DIR:?PAM must create the user runtime directory}/minion-ssh-agent/socket"
 # Only VM profiles set a software renderer. Device sessions use driver defaults.
 if [ -f /etc/minion/vm-environment ]; then
     . /etc/minion/vm-environment
@@ -13,7 +14,7 @@ config="${XDG_CONFIG_HOME:-$HOME/.config}/sway/config"
 if [ ! -f "$config" ]; then config=/etc/minion/sway.conf; fi
 cleanup() {
     systemctl --user stop minion-session.target graphical-session.target || true
-    systemctl --user unset-environment WAYLAND_DISPLAY DISPLAY SWAYSOCK I3SOCK XDG_CURRENT_DESKTOP XDG_SESSION_TYPE XDG_SESSION_DESKTOP || true
+    systemctl --user unset-environment WAYLAND_DISPLAY DISPLAY SWAYSOCK I3SOCK XDG_CURRENT_DESKTOP XDG_SESSION_TYPE XDG_SESSION_DESKTOP SSH_AUTH_SOCK || true
 }
 trap cleanup EXIT
 sway --config "$config"

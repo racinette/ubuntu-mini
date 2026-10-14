@@ -159,7 +159,7 @@ write('/etc/systemd/user/minion-session.target', '''[Unit]
 Description=Minion graphical session services
 BindsTo=graphical-session.target
 After=graphical-session.target
-Wants=mako.service minion-polkit.service minion-idle.service minion-display-wake.service minion-rear-buttons.service minion-network-applet.service minion-bluetooth-applet.service minion-gamepad.service minion-workspaces.service minion-night-light.service
+Wants=mako.service minion-polkit.service minion-idle.service minion-display-wake.service minion-rear-buttons.service minion-network-applet.service minion-bluetooth-applet.service minion-gamepad.service minion-workspaces.service minion-night-light.service minion-ssh-agent.service
 ''')
 write('/etc/systemd/user/mako.service.d/session.conf', '''[Unit]
 PartOf=minion-session.target

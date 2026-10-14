@@ -11,6 +11,8 @@ import tarfile
 import tempfile
 import urllib.request
 
+from auth import install as install_auth
+
 HERE = Path(__file__).resolve().parent
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('username')
@@ -21,6 +23,7 @@ user = pwd.getpwnam(args.username)
 home = Path(user.pw_dir)
 (home / '.config').mkdir(exist_ok=True)
 os.chown(home / '.config', user.pw_uid, user.pw_gid)
+install_auth(user)
 artifacts = json.loads(HERE.joinpath('artifacts.json').read_text())
 with tempfile.TemporaryDirectory(prefix='minion-shell-') as scratch:
     root = Path(scratch)

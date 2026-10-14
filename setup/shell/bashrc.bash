@@ -4,6 +4,9 @@ case ":$PATH:" in
   *":$HOME/.local/bin:"*) ;;
   *) export PATH="$HOME/.local/bin:$PATH" ;;
 esac
+if [[ -S "${XDG_RUNTIME_DIR:-/run/user/$UID}/minion-ssh-agent/socket" ]]; then
+  export SSH_AUTH_SOCK="${XDG_RUNTIME_DIR:-/run/user/$UID}/minion-ssh-agent/socket"
+fi
 [[ ${MINION_SHELL_LOADED-} ]] && return
 MINION_SHELL_LOADED=1
 # Foot 1.16.2 can duplicate Enter/Backspace with Codex keyboard enhancement.

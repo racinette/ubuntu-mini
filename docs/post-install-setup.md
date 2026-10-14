@@ -155,6 +155,7 @@ Ordinary `sudo ./setup.sh` preinstalls the following for your desktop account. F
 | Other tools | Neovim, GitHub CLI, Git LFS, ShellCheck, shfmt, jq | mise |
 | Neovim | File tree, fuzzy file/text search, code navigation and normal editing | Pinned nvim-tree, mini.nvim and nvim-lspconfig plugins; Ubuntu ripgrep |
 | Audio development | SuperCollider language/server, VST3 hosting extension, JUCE SDK and editable synth example | Ubuntu SuperCollider/PipeWire JACK; pinned user-owned source builds |
+| Guitar effects | LSP effects, Dragonfly Reverb, BYOD pedals and AIDA-X neural amp/cabinet modeling | Native VST3; Ubuntu packages and checksum-pinned upstream releases |
 | Additional language servers | Bash, JSON/HTML/CSS, YAML, TOML and C/C++ | mise for bash-language-server, vscode-langservers-extracted, yaml-language-server and Taplo; Ubuntu for clangd |
 | Containers | Docker Engine/CLI, containerd, Buildx, Compose plugin | Docker's signed Ubuntu stable repository |
 
@@ -181,6 +182,44 @@ pw-play demo.wav
 ```
 
 `pw-jack` uses the existing PipeWire session. For a terminal without a display connection, prefix the SuperCollider command with `QT_QPA_PLATFORM=offscreen`. Edit `Synth.cpp` for the instrument and `play.scd` for sequencing; stop the host before rebuilding. See the [starter README](../setup/development/synth-lab/README.md) for the VST3 bundle path and installation in other hosts. Setup retains an existing starter project, refuses modified managed SDKs/extensions and skips rebuilding an unchanged extension. To install only the user-owned tools after their Ubuntu dependencies are present, run `/usr/bin/python3 setup/development/audio.py` as your normal user.
+
+The guitar effects are real native Linux VST3 plugins usable from SuperCollider
+or another VST3 host:
+
+- **LSP Plugins 1.2.16:** gates, compressors, EQ, limiters, delays and impulse-response cabinet convolution. Ubuntu's `lsp-plugins-vst3` and matching `lsp-plugins-r3d-glx` are selected explicitly from `noble-backports`.
+- **Dragonfly Reverb 3.2.10:** early reflections, room, hall and plate reverbs from Ubuntu's `dragonfly-reverb-vst3`.
+- **[BYOD 1.3.0](https://github.com/Chowdhury-DSP/BYOD):** modular guitar pedal/distortion processing.
+- **[AIDA-X 1.1.0](https://github.com/AidaDSP/AIDA-X):** neural amp modeling with an embedded model and cabinet impulse response. Additional models must use AIDA-X's supported format.
+
+Ubuntu supplies LSP and Dragonfly under `/usr/lib/vst3`; the BYOD and AIDA-X
+bundles live under `~/.vst3`. The latter are extracted from official Linux
+releases after SHA-256 verification against the [effects manifest](../setup/development/effects-artifacts.json).
+Package scripts from the downloaded BYOD archive are not executed. The
+user-owned installer retains unchanged bundles without downloading and refuses
+to overwrite unmanaged or edited copies. To apply only these two bundles, run
+`/usr/bin/python3 setup/development/effects.py`. Ubuntu's usual `universe` and
+`noble-backports` sources must be enabled for the packaged effects; setup retains
+existing APT sources. Standalone/LV2/VST2 variants are not installed.
+
+From the repository, run a generated-audio smoke test:
+
+```bash
+pw-jack sclang -D setup/development/effects-demo.scd
+```
+
+It opens no microphone and sends nothing to the speakers. It loads AIDA-X,
+BYOD, all four Dragonfly reverbs and LSP's stereo compressor, gate and 16-band
+parametric EQ, then records each factory state. Four-channel float WAV files
+under `${XDG_CACHE_HOME:-$HOME/.cache}/minion/audio/effects-demo/` contain dry
+left/right on channels 1/2 and processed left/right on 3/4; `plugins.txt` maps
+filenames to effects. Flat EQ or inactive compression can match the dry signal.
+The script demonstrates `VSTPlugin.search`, `VSTPluginController.open` and
+private-bus recording. In your own script, `controller.set(name, value)`
+automates parameters; `controller.info.printParameters` lists them.
+Open with `editor: true` and call `controller.editor` to show the plugin UI for
+BYOD chains, models, IRs and presets, then save host/plugin state for reuse.
+External interface routing, input gain and live guitar latency still need
+testing when the interface is connected; this render does not exercise them.
 
 ```bash
 go version

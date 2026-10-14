@@ -1,0 +1,21 @@
+[
+  {
+    "name": "BYOD",
+    "version": "1.3.0",
+    "filename": "BYOD.deb",
+    "url": "https://github.com/Chowdhury-DSP/BYOD/releases/download/v1.3.0/BYOD-Linux-x64-1.3.0.deb",
+    "sha256": "c1803ae57b717bab04ef2072c10284bcb7d44fbe352d42645075b0c6875c9aeb",
+    "format": "deb",
+    "bundle": "usr/lib/vst3/BYOD.vst3",
+    "license": "usr/share/BYOD/doc/copyright"
+  },
+  {
+    "name": "AIDA-X",
+    "version": "1.1.0",
+    "filename": "AIDA-X.tar.xz",
+    "url": "https://github.com/AidaDSP/AIDA-X/releases/download/1.1.0/AIDA-X-1.1.0-linux-x86_64.tar.xz",
+    "sha256": "292b94f635e8adec95f23280fc94f1b6dd954b8a9440f3e51b7e9faa8bdbe543",
+    "format": "tar.xz",
+    "bundle": "AIDA-X-1.1.0/AIDA-X.vst3"
+  }
+]

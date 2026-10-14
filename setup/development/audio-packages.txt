@@ -2,6 +2,9 @@ supercollider-language
 supercollider-server
 supercollider-dev
 pipewire-jack
+lsp-plugins-vst3/noble-backports
+lsp-plugins-r3d-glx/noble-backports
+dragonfly-reverb-vst3
 libasound2-dev
 libfontconfig1-dev
 libfreetype-dev

@@ -197,14 +197,16 @@ def main():
     except (KeyError, ValueError, RuntimeError) as error:
         raise SystemExit(str(error)) from error
     if args.check:
-        print(f'Development target: {user.pw_name}; mise, rustup, uv and Docker CE. No changes made.')
+        print(f'Development target: {user.pw_name}; mise, rustup, uv, Docker CE and SuperCollider/JUCE. No changes made.')
         return
     if os.geteuid() != 0:
         raise SystemExit('Run as root inside the installed target')
     subprocess.run(['apt-get', 'install', '-y', '--no-install-recommends',
-                    *HERE.joinpath('packages.txt').read_text().split()], check=True)
+                    *HERE.joinpath('packages.txt').read_text().split(),
+                    *HERE.joinpath('audio-packages.txt').read_text().split()], check=True)
     install_toolchains(user)
     run_as_user(user, user_environment(user), '/usr/bin/python3', HERE / 'nvim.py')
+    run_as_user(user, user_environment(user), '/usr/bin/python3', HERE / 'audio.py')
     install_docker(user, 'amd64')
     print('Development toolchains ready. Log in again for Docker group access.', flush=True)
 

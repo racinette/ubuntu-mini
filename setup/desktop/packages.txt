@@ -39,3 +39,4 @@ rtkit
 upower
 pavucontrol
 python3-evdev
+gammastep

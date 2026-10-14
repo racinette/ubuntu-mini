@@ -9,6 +9,7 @@ import shutil
 import subprocess
 
 from audio import seed_microphone_level
+from comfort import install as install_comfort
 from firmware import install as install_sensor_firmware
 
 HERE = Path(__file__).resolve().parent
@@ -57,12 +58,14 @@ if install_sensor_firmware():
 # Our no-recommends install includes them explicitly; they grant video-group
 # writes to screen backlights. New group membership takes effect next login.
 run('usermod', '-a', '-G', 'video', user.pw_name)
-for name in ('minion-session', 'minion-session-ready', 'minion-lock', 'minion-idle', 'minion-idle-controls', 'minion-rear-buttons', 'minion-status', 'minion-gamepad', 'minion-workspaces', 'minion-window-picker', 'minion-network', 'minion-proxy-ui'):
+for name in ('minion-session', 'minion-session-ready', 'minion-lock', 'minion-idle', 'minion-idle-controls', 'minion-rear-buttons', 'minion-status', 'minion-gamepad', 'minion-workspaces', 'minion-window-picker', 'minion-network', 'minion-proxy-ui', 'minion-night-light'):
     write('/usr/local/bin/' + name, HERE.joinpath(name).read_text(), 0o755)
 write('/etc/minion/sway.conf', HERE.joinpath('sway.conf').read_text())
 write('/etc/minion/gamepad.json', HERE.joinpath('gamepad.json').read_text())
 write('/usr/local/share/applications/minion-network.desktop', HERE.joinpath('minion-network.desktop').read_text())
 write('/usr/local/share/applications/minion-proxy-ui.desktop', HERE.joinpath('minion-proxy-ui.desktop').read_text())
+write('/usr/local/share/applications/minion-night-light.desktop', HERE.joinpath('minion-night-light.desktop').read_text())
+install_comfort(user)
 chromium_init = Path(user.pw_dir) / '.chromium-browser.init'
 if not chromium_init.exists():
     write(chromium_init, HERE.joinpath('chromium.init').read_text(), 0o600)
@@ -121,7 +124,7 @@ run('udevadm', 'trigger', '--action=add', '--subsystem-match=backlight')
 run('udevadm', 'trigger', '--action=add', '--subsystem-match=misc', '--sysname-match=uinput')
 run('udevadm', 'trigger', '--action=change', '--subsystem-match=input')
 run('udevadm', 'settle')
-for name in ('minion-gamepad', 'minion-workspaces', 'minion-screen-lock', 'minion-display-wake', 'minion-rear-buttons'):
+for name in ('minion-gamepad', 'minion-workspaces', 'minion-screen-lock', 'minion-display-wake', 'minion-rear-buttons', 'minion-night-light'):
     write('/etc/systemd/user/' + name + '.service', HERE.joinpath(name + '.service').read_text())
 write('/etc/greetd/config.toml', '''[terminal]
 vt = 1
@@ -156,7 +159,7 @@ write('/etc/systemd/user/minion-session.target', '''[Unit]
 Description=Minion graphical session services
 BindsTo=graphical-session.target
 After=graphical-session.target
-Wants=mako.service minion-polkit.service minion-idle.service minion-display-wake.service minion-rear-buttons.service minion-network-applet.service minion-bluetooth-applet.service minion-gamepad.service minion-workspaces.service
+Wants=mako.service minion-polkit.service minion-idle.service minion-display-wake.service minion-rear-buttons.service minion-network-applet.service minion-bluetooth-applet.service minion-gamepad.service minion-workspaces.service minion-night-light.service
 ''')
 write('/etc/systemd/user/mako.service.d/session.conf', '''[Unit]
 PartOf=minion-session.target

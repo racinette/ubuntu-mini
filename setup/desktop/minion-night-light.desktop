@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Night light
+Comment=Automatic sunset colors, warm now, or off
+Exec=minion-night-light
+Icon=weather-clear-night
+Terminal=false
+Categories=Settings;Utility;

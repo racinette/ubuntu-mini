@@ -1,0 +1,9 @@
+[Unit]
+Description=Minion automatic night colors
+PartOf=minion-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=/usr/local/bin/minion-night-light run
+Restart=on-failure
+RestartSec=5

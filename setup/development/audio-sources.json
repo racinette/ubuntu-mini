@@ -1,0 +1,20 @@
+[
+  {
+    "name": "JUCE-9.0.4",
+    "url": "https://github.com/juce-framework/JUCE.git",
+    "version": "9.0.4",
+    "commit": "3fb5cbc0340758596dac39f7c8de47d562b4896e"
+  },
+  {
+    "name": "vstplugin-0.6.2",
+    "url": "https://github.com/Spacechild1/vstplugin.git",
+    "version": "0.6.2",
+    "commit": "d83c171a6cb37cfb7835f7aa50e1fc2920e05bfa"
+  },
+  {
+    "name": "vst3-sdk/pluginterfaces",
+    "url": "https://github.com/steinbergmedia/vst3_pluginterfaces.git",
+    "version": "2026-08-11",
+    "commit": "4f547e8e102b47de4a8b8aaf343c73b700786372"
+  }
+]

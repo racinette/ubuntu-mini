@@ -84,6 +84,7 @@ def preflight(args):
 def backup_configuration(path, user):
     paths = [Path(name) for name in (
         '/etc/greetd', '/etc/minion', '/etc/netplan', '/etc/pam.d/greetd',
+        '/etc/localtime', '/etc/timezone',
         '/etc/pam.d/greetd-greeter', '/etc/systemd/system/greetd.service.d',
         '/etc/xdg/xdg-desktop-portal/sway-portals.conf',
         '/etc/systemd/user/minion-session.target', '/etc/systemd/user/mako.service.d',
@@ -106,6 +107,8 @@ def backup_configuration(path, user):
     paths.extend(Path('/etc/systemd/user').glob('minion-*.service'))
     paths.extend(Path('/usr/local/bin').glob('minion-*'))
     paths.append(Path('/usr/local/share/applications/minion-network.desktop'))
+    paths.append(Path('/usr/local/share/applications/minion-night-light.desktop'))
+    paths.append(Path(user.pw_dir) / '.config/gammastep')
     paths.append(Path(user.pw_dir) / '.bashrc')
     paths.extend(Path(user.pw_dir) / name for name in ('.claude/settings.json', '.cursor/cli-config.json'))
     paths.extend(Path(user.pw_dir) / name for name in ('.config/nvim',
@@ -158,7 +161,8 @@ def main():
         backup_configuration(run_dir / 'configuration-before.tar.gz', user)
         report = {'username': user.pw_name, 'started_at_utc': stamp, 'passed': False,
                   'source_sha256': {str(p.relative_to(ROOT.parent)): digest(p) for folder in ('base', 'desktop', 'shell', 'proxy', 'hhd', 'agents', 'development')
-                                    for p in sorted((ROOT / folder).iterdir()) if p.is_file()},
+                                    for p in sorted((ROOT / folder).rglob('*'))
+                                    if p.is_file() and '__pycache__' not in p.parts and p.suffix != '.pyc'},
                   'steps': [], 'reboot_required': True}
         with (run_dir / 'setup.log').open('w', buffering=1) as log:
             env = dict(os.environ, DEBIAN_FRONTEND='noninteractive', LC_ALL='C')

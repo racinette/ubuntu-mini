@@ -1,0 +1,65 @@
+#!/usr/bin/python3
+"""Choose automatic, warm or off screen colors for the Sway session."""
+import argparse
+import configparser
+import os
+from pathlib import Path
+import subprocess
+
+SERVICE = 'minion-night-light.service'
+
+
+def paths():
+    directory = Path(os.environ.get('XDG_CONFIG_HOME', str(Path.home() / '.config'))) / 'gammastep'
+    return directory / 'config.ini', directory / 'minion-mode'
+
+
+def selected_mode(path):
+    return path.read_text().strip() if path.exists() else 'auto'
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('mode', nargs='?', choices=('auto', 'on', 'off', 'run', 'status'))
+    args = parser.parse_args()
+    config, state = paths()
+    mode = args.mode
+    if mode == 'status':
+        print(selected_mode(state))
+        return
+    if mode is None:
+        labels = {'Automatic (sunset to sunrise)': 'auto', 'Warm now': 'on', 'Off': 'off'}
+        choice = subprocess.run(['fuzzel', '--dmenu', '--prompt=Night light: '],
+                                input='\n'.join(labels) + '\n', text=True, capture_output=True)
+        if choice.returncode:
+            return
+        mode = labels.get(choice.stdout.strip())
+        if mode is None:
+            return
+    if mode == 'run':
+        mode = selected_mode(state)
+        if mode == 'off':
+            return
+        command = ['gammastep', '-c', str(config)]
+        if mode == 'on':
+            settings = configparser.ConfigParser()
+            settings.read(config)
+            temperature = settings.getint('general', 'temp-night', fallback=4500)
+            # Keep the Wayland client alive: disconnecting releases gamma control.
+            command += ['-t', f'{temperature}:{temperature}']
+        elif mode != 'auto':
+            raise SystemExit('Invalid night-light mode: ' + mode)
+        os.execvp(command[0], command)
+    state.parent.mkdir(parents=True, exist_ok=True)
+    temporary = state.with_name(state.name + '.tmp')
+    temporary.write_text(mode + '\n')
+    temporary.chmod(0o600)
+    temporary.replace(state)
+    subprocess.run(['systemctl', '--user', 'restart', SERVICE], check=True)
+    subprocess.run(['notify-send', '-a', 'minion', '-t', '2500', 'Night light',
+                    {'auto': 'Automatic: sunset to sunrise', 'on': 'Warm colors enabled',
+                     'off': 'Off'}[mode]], check=False)
+
+
+if __name__ == '__main__':
+    main()

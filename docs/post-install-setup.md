@@ -40,6 +40,27 @@ After reboot, enter your LUKS passphrase if you configured encryption, then log 
 
 Work through the [device checklist](device-checklist.md) after installation. It includes touchscreen mapping, HHD and temperature checks, controller behavior, suspend, networking, proxy access and development tools.
 
+## Clock and night light
+
+Setup enables network time synchronization. When the existing timezone is UTC,
+it selects `Europe/Minsk` (UTC+3); an existing non-UTC timezone is retained. Change
+it later with `sudo timedatectl set-timezone REGION/CITY`. The status bar picks
+up timezone changes automatically. The hardware clock remains in UTC.
+
+Open **Night light** from Super+D to choose **Automatic (sunset to sunrise)**,
+**Warm now**, or **Off**. Automatic is the default: Gammastep gradually changes
+from 6500K during the day to 4500K at night using Minsk's sun position. It works
+locally without a location service. The chosen mode persists across logins.
+The same controls are available as `minion-night-light auto`,
+`minion-night-light on`, and `minion-night-light off`; `status` prints the mode.
+
+Edit `~/.config/gammastep/config.ini` to change temperatures, latitude/longitude
+when travelling, or set explicit `dawn-time` and `dusk-time` intervals instead
+of solar timing. Run `systemctl --user restart minion-night-light.service` after
+editing. Setup seeds the configuration when absent and preserves it on reruns.
+The service follows the graphical session; Off releases the screen's color
+adjustment. Backlight brightness remains controlled by the brightness keys.
+
 ## Coding CLIs
 
 Ordinary `sudo ./setup.sh` installs **Codex** (`codex`), **Claude Code** (`claude`) and **Cursor Agent** (`agent`) for the selected desktop account. Their official native installers run as that user, with the correct home directory and no root credentials or tool settings inherited. Their native installers are independent of the development Node.js/npm installation. Setup installs Git, curl, certificates, ripgrep, `xdg-utils` for opening browser sign-in links, bubblewrap for Linux sandboxing, and socat for Claude's optional Linux sandbox; it leaves tool permissions and sandbox settings at upstream defaults.
@@ -83,6 +104,7 @@ Ordinary `sudo ./setup.sh` preinstalls the following for your desktop account. F
 | Build tools | Current CMake and Ninja | mise |
 | Other tools | Neovim, GitHub CLI, Git LFS, ShellCheck, shfmt, jq | mise |
 | Neovim | File tree, fuzzy file/text search, code navigation and normal editing | Pinned nvim-tree, mini.nvim and nvim-lspconfig plugins; Ubuntu ripgrep |
+| Audio development | SuperCollider language/server, VST3 hosting extension, JUCE SDK and editable synth example | Ubuntu SuperCollider/PipeWire JACK; pinned user-owned source builds |
 | Additional language servers | Bash, JSON/HTML/CSS, YAML, TOML and C/C++ | mise for bash-language-server, vscode-langservers-extracted, yaml-language-server and Taplo; Ubuntu for clangd |
 | Containers | Docker Engine/CLI, containerd, Buildx, Compose plugin | Docker's signed Ubuntu stable repository |
 
@@ -95,6 +117,20 @@ Run `nvim .` inside a project, `nvim /path/to/project` to browse a directory, or
 Press **F1** for the controls: **F2** toggles the file tree, **F3/Ctrl+P** finds files, **F4/Ctrl+F** searches project text, **F5** lists file symbols, **F6** searches project symbols as you type, **Enter** or `gd` follows a definition, `gr` lists references and `K` shows documentation. A single definition opens directly; multiple definitions open a searchable picker with file paths, positions and code lines. Choose with Enter or cancel with Esc; no bottom results split opens. Project-symbol search requires a nonempty query; availability depends on the language server. **Alt+Left/Right** (gamepad B+Left/Right) moves back/forward through jump history. In normal mode, **Esc/Backspace** returns to the previous code location and **Tab** cycles open files. In the tree, D-pad arrows browse, Enter opens a file or folder, Backspace browses the parent directory and Esc closes the tree. Mouse-wheel and gamepad stick scrolling work in code windows. Picker queries use the physical keyboard, with arrows/Enter/Esc for selection.
 
 Language servers cover Go, Rust, JavaScript/TypeScript, Python, shell, JSON, YAML, TOML and C/C++. JavaScript/TypeScript uses TypeScript 7's native language server (`tsc --lsp`). Native syntax highlighting also works for other Neovim-supported file types. Servers attach according to their project/filetype rules; Rust projects need `Cargo.toml`, and accurate C/C++ navigation benefits from the project's `compile_commands.json`. Plugins and language servers are downloaded during setup rather than first launch. The plugin manifest records exact revisions. Personal `~/.config/nvim/init.lua` settings survive setup reruns. To update only the pinned plugins and seed the default configuration after the language tools are installed, run `/usr/bin/python3 setup/development/nvim.py` as your normal user.
+
+Audio development uses SuperCollider 3.13 from Ubuntu, the VSTPlugin 0.6.2 extension for native Linux VST3 instruments/effects, and JUCE 9.0.4 for building your own plugins with CMake/Ninja. [The manifest](../setup/development/audio-sources.json) pins the user-owned SDK sources and VST3 interfaces by commit. Setup builds the extension under `~/.local/share/SuperCollider/Extensions/VSTPlugin` and puts JUCE under `~/.local/share/minion/audio`. Downloads and builds run as the desktop user. The graphical SuperCollider IDE and Wine plugin bridge are not installed.
+
+The editable `~/Projects/synth-lab` starter contains a real C++ VST3 instrument with MIDI, 16 voices, an envelope, Gain/Brightness parameters and host-state persistence. Its SuperCollider script loads the compiled plugin, sequences a melody/chord, changes a parameter and records the synth output. Run:
+
+```bash
+cd ~/Projects/synth-lab
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build --target SynthLab_VST3 --parallel 2
+pw-jack sclang -D play.scd
+pw-play demo.wav
+```
+
+`pw-jack` uses the existing PipeWire session. For a terminal without a display connection, prefix the SuperCollider command with `QT_QPA_PLATFORM=offscreen`. Edit `Synth.cpp` for the instrument and `play.scd` for sequencing; stop the host before rebuilding. See the [starter README](../setup/development/synth-lab/README.md) for the VST3 bundle path and installation in other hosts. Setup retains an existing starter project, refuses modified managed SDKs/extensions and skips rebuilding an unchanged extension. To install only the user-owned tools after their Ubuntu dependencies are present, run `/usr/bin/python3 setup/development/audio.py` as your normal user.
 
 ```bash
 go version

@@ -321,6 +321,8 @@ def main():
                 (power_block, details['power']), (thermal_blocks, details['temperatures']) = health_future.result()
                 next_slow = started + 5
             blocks += [power_block] + thermal_blocks + [network, volume.result(), service] + batteries()
+            # Pick up timezone changes without restarting the desktop/bar.
+            time.tzset()
             now = datetime.now()
             blocks.append(block('clock', now.strftime('%a %d %b %H:%M'), now.strftime('%H:%M')))
             print(json.dumps(blocks, ensure_ascii=False) + ',', flush=True)

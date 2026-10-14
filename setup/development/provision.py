@@ -19,6 +19,7 @@ DOCKER_CONFLICTS = ('docker.io', 'docker-compose', 'docker-compose-v2',
                     'docker-doc', 'podman-docker', 'containerd', 'runc')
 DOCKER_SOURCE = Path('/etc/apt/sources.list.d/docker.sources')
 DOCKER_KEY = Path('/etc/apt/keyrings/docker.asc')
+BLENDER_CHANNEL = '5.2lts/stable'
 
 
 def target_user(username):
@@ -183,6 +184,16 @@ def install_docker(user, architecture):
     subprocess.run(['docker', 'buildx', 'version'], check=True)
 
 
+def install_blender():
+    # Preserve an existing native installation or Snap channel on rerun.
+    if shutil.which('blender') or subprocess.run(
+            ['snap', 'list', 'blender'], capture_output=True).returncode == 0:
+        print('Retaining installed Blender', flush=True)
+        return
+    subprocess.run(['snap', 'install', 'blender', '--classic',
+                    f'--channel={BLENDER_CHANNEL}'], check=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('username')
@@ -197,13 +208,14 @@ def main():
     except (KeyError, ValueError, RuntimeError) as error:
         raise SystemExit(str(error)) from error
     if args.check:
-        print(f'Development target: {user.pw_name}; mise, rustup, uv, Docker CE and SuperCollider/JUCE. No changes made.')
+        print(f'Development target: {user.pw_name}; mise, rustup, uv, Docker CE, SuperCollider/JUCE and Blender LTS. No changes made.')
         return
     if os.geteuid() != 0:
         raise SystemExit('Run as root inside the installed target')
     subprocess.run(['apt-get', 'install', '-y', '--no-install-recommends',
                     *HERE.joinpath('packages.txt').read_text().split(),
                     *HERE.joinpath('audio-packages.txt').read_text().split()], check=True)
+    install_blender()
     install_toolchains(user)
     run_as_user(user, user_environment(user), '/usr/bin/python3', HERE / 'nvim.py')
     run_as_user(user, user_environment(user), '/usr/bin/python3', HERE / 'audio.py')

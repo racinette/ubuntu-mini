@@ -156,6 +156,7 @@ Ordinary `sudo ./setup.sh` preinstalls the following for your desktop account. F
 | Neovim | File tree, fuzzy file/text search, code navigation and normal editing | Pinned nvim-tree, mini.nvim and nvim-lspconfig plugins; Ubuntu ripgrep |
 | Audio development | SuperCollider language/server, VST3 hosting extension, JUCE SDK and editable synth example | Ubuntu SuperCollider/PipeWire JACK; pinned user-owned source builds |
 | Guitar effects | LSP effects, Dragonfly Reverb, BYOD pedals and AIDA-X neural amp/cabinet modeling | Native VST3; Ubuntu packages and checksum-pinned upstream releases |
+| 3D creation | Blender, embedded Python API and background rendering | Official Blender Foundation Snap; `5.2lts/stable` |
 | Additional language servers | Bash, JSON/HTML/CSS, YAML, TOML and C/C++ | mise for bash-language-server, vscode-langservers-extracted, yaml-language-server and Taplo; Ubuntu for clangd |
 | Containers | Docker Engine/CLI, containerd, Buildx, Compose plugin | Docker's signed Ubuntu stable repository |
 
@@ -220,6 +221,23 @@ Open with `editor: true` and call `controller.editor` to show the plugin UI for
 BYOD chains, models, IRs and presets, then save host/plugin state for reuse.
 External interface routing, input gain and live guitar latency still need
 testing when the interface is connected; this render does not exercise them.
+
+Blender uses the Blender Foundation's official `5.2lts/stable` Snap channel,
+with automatic maintenance updates within the 5.2 LTS series. Setup retains an
+existing Blender installation or selected Snap channel. Open **Blender** from
+Super+D, or run `blender` / `blender project.blend` in a terminal. Blender's
+embedded Python exposes the `bpy` API, and scripts can run without its GUI:
+
+```bash
+blender --background --python script.py
+blender --background project.blend --render-output /tmp/frame_ --render-frame 1
+```
+
+See the [Blender Python API](https://docs.blender.org/api/5.2/) and
+[command-line arguments](https://docs.blender.org/manual/en/5.2/advanced/command_line/arguments.html).
+Blender is downloaded from the Snap Store separately from the optional
+shell/browser artifact cache. Installing Blender does not configure AMD HIP
+compute drivers or select a GPU rendering backend.
 
 ```bash
 go version

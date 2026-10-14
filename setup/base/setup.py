@@ -84,7 +84,7 @@ def preflight(args):
 def backup_configuration(path, user):
     paths = [Path(name) for name in (
         '/etc/greetd', '/etc/minion', '/etc/netplan', '/etc/pam.d/greetd',
-        '/etc/localtime', '/etc/timezone',
+        '/etc/localtime', '/etc/timezone', '/etc/fstab',
         '/etc/pam.d/greetd-greeter', '/etc/systemd/system/greetd.service.d',
         '/etc/xdg/xdg-desktop-portal/sway-portals.conf',
         '/etc/systemd/user/minion-session.target', '/etc/systemd/user/mako.service.d',
@@ -140,6 +140,7 @@ def main():
         raise SystemExit(str(error)) from error
     print(f'Setup target: {user.pw_name}. Existing Ubuntu APT sources will be used.', flush=True)
     if args.check:
+        subprocess.run([sys.executable, ROOT / 'base/swap.py', '--check'], check=True)
         subprocess.run([sys.executable, ROOT / 'desktop/firmware.py', '--check'], check=True)
         subprocess.run([sys.executable, ROOT / 'proxy/provision.py', '--check'], check=True)
         subprocess.run([sys.executable, ROOT / 'hhd/provision.py', '--check'], check=True)
@@ -186,6 +187,7 @@ def main():
                 run('apt-get', 'update')
                 run('apt-get', 'install', '-y', '--no-install-recommends',
                     *(ROOT / 'base/packages.txt').read_text().split())
+                run(sys.executable, ROOT / 'base/swap.py')
                 run(sys.executable, ROOT / 'desktop/provision.py', '--user', user.pw_name, '--defer-activation')
                 cache_options = ['--asset-url', asset_url] if asset_url else []
                 run(sys.executable, ROOT / 'shell/provision.py', user.pw_name, *cache_options)

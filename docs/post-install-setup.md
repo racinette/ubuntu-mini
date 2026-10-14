@@ -2,7 +2,7 @@
 
 Install Ubuntu 24.04 Server amd64 manually or with the [installation helper](install.md), create your normal user, and boot into that installed system. Then run the standalone setup to add Sway, greetd, Foot, Firefox, Chromium, desktop services, development toolchains, Docker, coding CLIs, Bash with ble.sh and local Atuin history. It also installs Ubuntu's supported HWE kernel, firmware, AMD microcode, Mesa graphics/video packages and ALSA device profiles. The setup uses your existing account and password and activates the configured environment on your next reboot.
 
-Partition selection and LUKS encryption happen during Ubuntu installation. The optional helper creates a separate Ubuntu ESP in free space; when installing manually, choose the intended Linux space and preserve Windows, Recovery and their existing EFI files. The setup does not create encryption or partition disks. Physical screen orientation, touch mapping and hardware behavior still need validation on the WIN Mini.
+Partition selection and LUKS encryption happen during Ubuntu installation. The optional helper creates a separate Ubuntu ESP in free space; when installing manually, choose the intended Linux space and preserve Windows, Recovery and their existing EFI files. The setup does not create encryption or partition disks. Core behavior has been checked on the WIN Mini; use the [current validation status](validation-plan.md) to distinguish completed device checks from remaining coverage.
 
 ## Clone and run
 
@@ -34,11 +34,30 @@ Working internet connectivity is required for normal setup. No application bundl
 
 On the WIN Mini 2023 (`GPD` / `G1617-01`), setup also supplies `bmi260-init-data.fw` if Ubuntu's firmware package has not supplied it. The in-tree `bmi270_i2c` driver requires this file for the gyro/accelerometer. The firmware and its BSD license are downloaded from a pinned linux-firmware revision and verified against `setup/desktop/firmware.json` before installation. Existing plain or compressed firmware is retained. This conditional download is independent of the shell/browser cache; `--check` reports whether it is needed without downloading. Normal setup leaves driver activation to the next boot and does not enable gyro controls or automatic screen rotation.
 
-Setup also installs and enables [Handheld Daemon power controls](power-controls.md), with verified, pinned daemon and UI releases. Open **Handheld Daemon** from Super+D or run `minion-hhd-ui`. Initial power overrides are disabled until explicitly enabled in its interface; Minion's controller mapper remains in charge of input. Actual TDP/GPU controls, kernel-module signing and suspend behavior need testing on the 2023/7840U handheld.
+Setup also installs and enables [Handheld Daemon power controls](power-controls.md), with verified, pinned daemon and UI releases. Open **Handheld Daemon** from Super+D or run `minion-hhd-ui`. Initial power overrides are disabled until explicitly enabled in its interface; Minion's controller mapper remains in charge of input. Startup, signing-key enrollment, module loading and selected AC/battery power profiles passed on the 2023/7840U handheld; not every GPU or power-control combination has been tested.
 
 After reboot, enter your LUKS passphrase if you configured encryption, then log in using your existing account password. Super+Enter opens Foot, Super+D opens the application launcher, Super+B opens Firefox, Super+E opens Thunar, Super+1 through Super+4 switch workspaces, and Super+L locks the session. The configuration uses Bash and local-only Atuin without requiring an account.
 
 Work through the [device checklist](device-checklist.md) after installation. It includes touchscreen mapping, HHD and temperature checks, controller behavior, suspend, networking, proxy access and development tools.
+
+## Memory and swap
+
+When no swap is already active or configured in `/etc/fstab`, setup creates a
+private `0600` swapfile at `/var/lib/minion/swapfile` and adds its boot entry.
+Its size is half physical RAM, with a 1 GiB minimum and an 8 GiB cap; the WIN
+Mini uses 8 GiB. This supplies a disk-backed fallback during memory pressure.
+On the device's LUKS root filesystem, the file is encrypted with the rest of root.
+
+Existing swap policies and sizes are retained. Automatic file creation supports
+ext4/XFS and leaves at least 2 GiB free; other filesystems or insufficient space
+are reported without allocating a file. An unexpected existing file is refused.
+Reruns retain the file and boot entry. This does not configure hibernation or
+change swappiness, lid-close behavior or kernel resume parameters.
+
+Check with `swapon --show`, `free -h` and
+`systemctl status var-lib-minion-swapfile.swap`. To apply only this component,
+run `sudo /usr/bin/python3 setup/base/swap.py`; add `--check` for a read-only plan.
+The implementation follows util-linux's [swapfile guidance](https://man7.org/linux/man-pages/man8/swapon.8.html#NOTES), using fully written blocks rather than a sparse file.
 
 ## Clock and night light
 
@@ -217,7 +236,7 @@ These controls are also available as `minion-idle-controls off`, `on`, `toggle-a
 
 Routine notification popups expire after five seconds by default; Keep awake messages expire after 2.5 seconds. Critical alerts remain until dismissed unless the sender requests an explicit timeout. Applications' explicit timeout requests are honored. Setup seeds `~/.config/mako/config` when absent and preserves existing settings on reruns. After editing that file, run `makoctl reload`; right-click or tap a popup to dismiss it manually.
 
-The bottom bar shows the HHD power target, available temperatures, Wi-Fi signal, output volume/mute, proxy service state, battery, Window/Workspace stick mode and date/time. Click Wi-Fi to see the connected network name. A keyboard layout indicator appears when multiple layouts are configured; it prefers physical keyboards over the gamepad's virtual keyboard. The compact battery display uses `73% ↑` for charging, `↓` for discharging, `Full` for a full battery and `Idle` when connected but not charging. The battery indicator is hidden when no readable system battery is detected; peripheral batteries are excluded.
+The bottom bar shows the HHD power target, available temperatures, Wi-Fi signal, output volume/mute, proxy service state, battery, both stick modes (for example `L:Scroll R:Windows`) and date/time. Click Wi-Fi to see the connected network name. A keyboard layout indicator appears when multiple layouts are configured; it prefers physical keyboards over the gamepad's virtual keyboard. The compact battery display uses `73% ↑` for charging, `↓` for discharging, `Full` for a full battery and `Idle` when connected but not charging. The battery indicator is hidden when no readable system battery is detected; peripheral batteries are excluded.
 
 Battery, audio, layout and stick mode refresh every second; power, temperatures, Wi-Fi and proxy state refresh every five seconds. Wi-Fi uses cached readings without requesting scans. `Proxy ON` means the system service is active, rather than proving internet connectivity. Unavailable Wi-Fi/audio/proxy readings show `?` without stopping the bar. These indicators use the packages already installed by setup.
 

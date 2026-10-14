@@ -1,51 +1,46 @@
-# Remaining validation
+# Validation status
 
-The supported workflow is manual Ubuntu installation followed by source-only post-install setup. Earlier VM runs validated setup, reruns, signed boot, desktop use and synthetic gamepad input. [Testing instructions](testing.md) distinguish those recorded results from checks of the current source tree. The current chord assignments still need a fresh VM run and physical comfort testing.
+Current device status as of **2026-10-14** for the **GPD WIN Mini 2023 / Ryzen 7 7840U**. The installed system is in everyday use. This summary supersedes the earlier pre-device backlog; dated experiments and their limits remain in [testing](testing.md). The [device checklist](device-checklist.md) is a reusable checklist for another installation and deliberately stays unchecked.
 
-Use the [device checklist](device-checklist.md) for the checks to perform after installation, diagnostic commands and recording failures. This plan tracks the broader validation scope and known backlog.
+## Completed on this device
 
-## Software checks
-
-- Repeat setup from a clean Ubuntu Server VM, then rerun it with personal settings and an active desktop. Confirm settings and partition geometry are preserved.
-- Cold boot, reject a wrong disk passphrase, unlock with the correct one, and require a separate account password. Check graphical login, logout, explicit/idle locking and suspend locking.
-- Exercise terminal editing, local history before/after reboot, browser input/clipboard/file chooser, notifications, networking, audio and desktop authorization.
-- Run the current gamepad mapping suite, including chords, late modifiers, window/workspace actions, passthrough and reconnect/session behavior.
-- Verify Secure Boot state, signed shim/GRUB/kernel and kernel lockdown after maintenance. A transition to a different kernel version remains open; earlier maintenance retained the same kernel version.
-- Verify a fresh default Firefox installation from the Snap Store and screen sharing. Prior source-clone tests retained an existing Firefox; fresh Store command selection was tested in isolation, and real signed installation was tested through the cache.
-
-## Before installing on the WIN Mini
-
-Back up important data and retain Windows/disk-encryption recovery information. Review the actual partition map in the Ubuntu installer: identify unallocated Linux space, preserve Windows and Recovery, and reuse the EFI system partition without formatting it. Verify the official ISO boots under the device's Secure Boot policy and that the screen/keyboard are usable for installation and disk unlock.
-
-After installation, boot Ubuntu and Windows independently. Confirm the chosen encryption and boot layout. Generic post-install setup does not partition the device or configure encryption.
-
-## Physical hardware acceptance
-
-| Area | Required observation |
+| Area | Observed result |
 | --- | --- |
-| Display | Console, disk unlock, greeter and Sway have usable orientation/scaling; check external display if used |
-| Touch | All corners map correctly after scaling, rotation and wake |
-| Keyboard and touchpad | Keys, modifiers, language switching, click, tap and scroll work |
-| Controller | Both hardware modes, trigger/button event codes, diagonal/adjacent chords, reconnect and wake work without duplicate input |
-| Wireless | Wi-Fi and Bluetooth pairing/reconnection survive repeated suspend |
-| Audio | Speakers, headphones, jack detection, microphone and volume/mute work before and after suspend |
-| Suspend | Manual/lid suspend locks first; wake restores display, input, networking and audio; measure overnight battery loss |
-| Battery and brightness | Charging/readings are plausible; brightness range and wake persistence work |
-| GPU | AMD acceleration and video/3D rendering work; check reset/resume errors |
-| Cooling and power | Firmware cooling behaves under load; measure matched workloads before changing power policy |
-| Maintenance | Package/kernel updates preserve Ubuntu unlock/session behavior and Windows bootability |
+| Boot and access | Installed Ubuntu boots and unlocks; password-authenticated login, locking and suspend/wake were exercised. Additional reboot cycles were deferred at the user's request. |
+| Touch and display | Explicit touchscreen-to-eDP-1 mapping fixed missed taps. Center/four-corner taps passed, including after reboot. Desktop scaling, brightness and everyday keyboard/touchpad use were accepted. |
+| Power backend | HHD starts and its UI works. The existing DKMS signing key was enrolled with Secure Boot enabled; `acpi_call` loaded. Power targets were exercised on AC and battery. |
+| Cooling/background work | A 12-minute CPU workload continued on battery with Keep awake enabled and the panel truly off. Cooling remained stable, CPU peaked at 52.5°C, and the fan responded. Separate OpenGL load also passed. |
+| GPU and sensors | Hardware-accelerated OpenGL completed the full glmark2 suite with no observed corruption or recorded GPU errors. RADV enumerates the GPU. Missing BMI260 firmware was supplied and all six sensor channels changed. |
+| Audio and Bluetooth | Speakers and volume/mute were accepted. Reducing internal-mic capture/boost to 0 dB fixed audible distortion; plain ALSA capture works through PipeWire. soundcore AeroClip paired and the user confirmed it worked. |
+| Controller | Current defaults combine left-stick scrolling and right-stick window selection; L3/R3 switch independently. Held Space/Backspace/D-pad, face-first chords, terminal signals, workspace compaction/wraparound and the Menu legend have isolated and live checks. Physical diagonal/edge cases are not exhaustively certified. |
+| Display/idle controls | L4 display-off/on and once-per-hold R4 Keep awake were physically accepted. Routine notifications expire. AC idle behavior and lid-close lock/suspend were exercised. |
+| Network and browsers | Wi-Fi chooser and Chromium were accepted; Chromium headless/WebDriver checks passed with its sandbox. Firefox is the default browser. Proxy dashboard, connectivity and Russian direct-routing rules were checked. |
+| Coding and navigation | Codex sandbox execution was repaired. CLI attribution preferences and scroll defaults are configured. Neovim navigation was checked across 17 file types and 11 language servers, including cross-file TypeScript and multiple-definition picking. |
+| Audio development | A native JUCE VST3 synth compiled, loaded in SuperCollider, received MIDI/parameter changes and produced a valid recording. External third-party VST3s have not been tested. |
+| Recent desktop fixes | Minsk timezone/NTP and 4500K night colors passed; the user accepted the warm palette. Noto fallbacks fixed missing characters. Start/Super+Enter inherit the focused Foot shell directory; native focus behavior is unchanged. |
+| Swap | An 8 GiB private swapfile is active on encrypted root and configured for boot. A bounded cgroup test forced real swap use and passed readback; a setup rerun preserved the file and boot configuration. |
 
-## On-device backlog
+See [testing](testing.md) for measurements, source revisions and links to private evidence. A successful observation applies to that workload and configuration, rather than every possible application or hardware state.
 
-These items are deliberately queued until we have shell access to the actual **WIN Mini 2023 / Ryzen 7 7840U**. Installation of HHD is part of default setup; resolving these hardware issues is not a prerequisite for installing it.
+## Remaining checks
 
-- **Touchscreen coordinates:** scrolling works in Firefox, single taps appear ineffective, and double taps select text at the wrong screen position. Record `swaymsg -t get_outputs` and `swaymsg -t get_inputs`; compare raw evdev/libinput coordinates with the output transform, 2× scaling and touch-to-output mapping. Test a tap grid across all corners in Firefox and another native Wayland application, then repeat after suspend. Establish the transform before adding calibration overrides.
-- **HHD startup and interface:** record DMI model, BIOS, kernel and Secure Boot state. Check `minion-hhd.service`, launch the desktop UI and confirm local authentication. Verify only the Adjustor provider loads and that Minion's existing controller shortcuts, passthrough and text selection still work.
-- **Power/temperature bar:** inventory actual hwmon and battery temperature channels; check CPU die/control, GPU, NVMe and battery labels and units against their kernel files. Confirm the bar fits at 2× scaling, sensor details open on click, the power block opens HHD, and its displayed target matches HHD's configuration. Confirm missing sensors/HHD do not freeze the bar, readings recover after suspend, and distinct channels on the shared APU are not mistaken for separate physical chips.
-- **Power backend and signing:** verify the HWE headers match the running kernel, inspect `dkms status`, load `acpi_call` and check its signing/acceptance with Secure Boot. Resolve any required MOK enrollment on the device. Confirm HHD detects the actual model and exposes appropriate firmware limits before enabling TDP control.
-- **TDP and GPU behavior:** first record the firmware baseline, then enable one control at a time. Compare requested limits with readback, temperatures and a repeatable CPU/GPU workload; test clock auto/manual transitions, AC versus battery and shared APU power behavior. Return controls to their defaults afterward.
-- **Cooling and resume:** identify available fan/RPM interfaces and whether the running kernel provides a suitable GPD driver. Keep automatic firmware cooling for the initial tests. Check repeated lid/manual suspend, wake and cold boot both with default settings and with an explicitly selected power profile; watch for lost settings, stuck clocks/fan modes or duplicate controller input.
-- **Development environment:** after a fresh login, check Go/Rust/Node/TypeScript/Python versions in Foot, a small compile/test cycle, and mise project switching alongside ble.sh/Atuin. Confirm `/usr/bin/python3` still serves Minion/Ubuntu services. Check Docker group access, Buildx and a Compose build/run/cleanup using the device’s normal storage/network configuration; repeat after reboot and with the proxy enabled. Local component checks used native ARM64 containers and a test-only Docker storage setting.
-- **Coding CLIs:** sign in to `codex`, `claude` and Cursor's `agent` as the normal user in Foot. Check browser sign-in, proxy connectivity, terminal rendering at 2× scaling and a small repository task with each tool. Check their sandbox diagnostics on the actual Ubuntu kernel before relying on sandboxed commands; installation/version checks do not establish sandbox operation.
+These are verification gaps, not known blockers to ordinary use:
 
-Record device identity, firmware/kernel versions, reproduction steps and logs for failures. Hardware overrides should match the observed device and include a rollback procedure. Rear buttons, gyro and custom fan curves remain optional extensions.
+- **Fresh installation and rerun:** run the current complete source-only setup in a clean Ubuntu Server VM, then rerun with edited personal settings. Component/staging checks and live device updates have passed, but the full latest setup has not been repeated end to end.
+- **Current controller VM suite:** rerun the full synthetic gamepad suite with the current mapping. Host gesture tests and selected live Sway/Foot/browser probes passed; earlier full VM results use older layouts.
+- **Maintenance:** after the next kernel update, verify boot/unlock, module signing/loading, essential services and suspend. Test retained Windows boot if it is part of the intended workflow. This is queued for maintenance rather than another immediate reboot cycle.
+- **Network edge cases:** actual connection to a new password-protected Wi-Fi network, hidden/enterprise networks and Bluetooth automatic reconnection after sleep/reboot remain separate checks. Pairing and normal connectivity already passed.
+- **Optional workflows:** screen sharing/portal chooser, external display/dock/storage/card reader, Vulkan rendering and hardware video decoding remain untested. Test them when needed.
+- **Specific refinements:** lock-screen language switching, sensor calibration/resume and real-project LSP edge cases are not exhaustively tested. The intermittent Codex-only terminal redraw stripe was set aside after it stopped reproducing.
+- **Memory pressure:** observe sustained real workloads and confirm swap activation at the next planned boot. The bounded read/write check passed; the earlier Firefox out-of-memory exit motivates continued observation.
+
+## Deliberate choices
+
+- Lid close still locks and suspends on either power source. Hibernation/Secure Boot changes were declined; explicitly shut down before transport when suspend is unsuitable. Adding swap does not enable hibernation.
+- Power-button behavior is unchanged. Keep awake/display-only controls use R4/L4.
+- Firmware cooling remains automatic. Custom fan curves and gyro input/automatic rotation are optional features.
+- Additional reboot cycles and low-priority peripheral tests were deferred by the user.
+
+## Reproducing results
+
+For another installation, use the [installation instructions](install.md), [source setup](post-install-setup.md) and [device checklist](device-checklist.md). Record device identity, firmware/kernel, tested Git revision and reproduction steps privately under `.local/`; do not commit credentials, subscriptions or API tokens. Back up project data and recovery information separately: setup's configuration archives are not full-system or user-data backups.

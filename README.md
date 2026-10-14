@@ -2,7 +2,7 @@
 
 Minion is an Ubuntu installation and desktop setup project for the GPD WIN Mini. The repository is currently named `ubuntu-mini`.
 
-Install Ubuntu 24.04 Server amd64, then run `setup.sh` to configure Sway, Firefox, Chromium, networking, desktop services, development toolchains, Docker, coding CLIs and Bash with ble.sh and local Atuin history. The optional standalone [installation helper](docs/install.md) runs from the Server USB shell and instructs the official installer to use only unallocated GPT space. Hardware behavior still needs validation on the WIN Mini.
+Install Ubuntu 24.04 Server amd64, then run `setup.sh` to configure Sway, Firefox, Chromium, networking, desktop services, development toolchains, Docker, coding CLIs, swap and Bash with ble.sh and local Atuin history. The optional standalone [installation helper](docs/install.md) runs from the Server USB shell and instructs the official installer to use only unallocated GPT space. Core desktop/hardware workflows have been exercised on the WIN Mini; [validation status](docs/validation-plan.md) records completed checks and remaining limits.
 
 ```bash
 sudo apt-get update

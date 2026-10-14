@@ -4,6 +4,10 @@ Use this checklist on the **GPD WIN Mini 2023 / Ryzen 7 7840U** after `setup.sh`
 
 Keep results in a private local copy, for example `.local/device-checks/notes.md`, with the date, tested Git revision, pass/fail or not applicable, and reproduction steps for failures. Leave this shared checklist unchecked. Subscription URLs, credentials and HHD API tokens should stay out of reports committed to Git.
 
+The original WIN Mini has already passed the core checks summarized in the
+[current validation status](validation-plan.md). Unchecked items here are a
+template for a new installation, not a list of outstanding failures on that device.
+
 ## First boot and system identity
 
 - [ ] Ubuntu boots from its installed disk with the USB installer removed. Disk unlock, the login greeter and the desktop have usable orientation and text size.
@@ -26,6 +30,18 @@ sudo cat /var/lib/minion/setup/last-success.json
 ```
 
 `last-success.json` points to the successful run directory containing `setup.log` and `result.json`. For Secure Boot, use `mokutil --sb-state` if `mokutil` is installed; inspect `/sys/kernel/security/lockdown` if present. Record missing diagnostics rather than treating a missing command as a hardware failure.
+
+## Memory and swap
+
+- [ ] `swapon --show` reports the intended swap. On a fresh ext4/XFS setup without an existing swap policy, Minion supplies `/var/lib/minion/swapfile`, up to 8 GiB, with `0600` permissions and a boot entry.
+- [ ] Confirm an existing swap configuration survives setup reruns. Inspect any message about skipped allocation on unsupported filesystems or low disk space.
+- [ ] At the next planned boot, confirm swap activates again. Under ordinary coding/browser workloads, observe memory pressure and any further OOM exits. Swap availability is not proof that arbitrary workloads cannot exhaust memory.
+
+```bash
+swapon --show
+free -h
+systemctl status var-lib-minion-swapfile.swap
+```
 
 ## Network and access for debugging
 
@@ -86,7 +102,7 @@ Use the [control reference](gamepad-controls.md) and [shortcut tables](gamepad-c
 - [ ] In hardware gamepad mode, A/B produce Enter/Escape on release; X produces immediate, repeatable Backspace and Y produces immediate, repeatable Space. Confirm X and Y are not swapped. R2+X deletes words where supported; R2+Y switches US/RU.
 - [ ] The default layout scrolls with the left stick and focuses windows with the right; L2+right stick moves windows. Select another window with the right stick, then scroll it with the left without touching the touchpad. Focus changes center the pointer only when it is outside the selected window; verify an off-center point inside the selected window stays put, including while scrolling. L3 changes the left stick to text navigation; R3 changes the right stick to resize. Bumpers change workspaces; L2+bumper moves the focused window without following it. Check dead zones, repeat rate and diagonal handling for comfort.
 - [ ] With N the highest occupied workspace, R1 visits the extra empty N+1, then wraps to 1; L1 from 1 wraps directly to the last occupied workspace N, skipping the extra empty slot. Opening a window there grows the ring. When an empty workspace disappears, remaining numbered workspaces renumber consecutively without changing their contents or focus. L2+bumper moves a disposable window without following it and uses the same wraparound. Each bumper acts once on release, including after a hold.
-- [ ] Start opens Foot, Select opens the window picker, and a short Menu/Xbox tap toggles the launcher. A second Menu tap closes it; holding Menu replaces it with the legend. D-pad and A/B can operate and dismiss the picker/launcher.
+- [ ] Start and Super+Enter open Foot in the focused Foot shell's directory, including while a command is running; from another app they start in home. Select opens the window picker, and a short Menu/Xbox tap toggles the launcher. A second Menu tap closes it; holding Menu replaces it with the legend. D-pad and A/B can operate and dismiss the picker/launcher.
 - [ ] Test all 20 editing/navigation/layout shortcuts, including physical diagonals: hold A/B before a D-pad direction, or Select before A/B/X/Y. Try long prefix holds; each action fires once after release and does not leak arrows or face-button actions. Hold B then Up to close only the focused test window. Check Select alone opens the picker and every Select+face layout shortcut consumes its individual actions without leaking Space/Backspace. D-pad first sends arrows immediately and accelerates while held; adding A/B afterward must not execute a combo or leak Enter/Escape. Check release stop, direction changes and Shift/Ctrl modifiers during a hold.
 - [ ] Copy/paste work in both a GUI text field and Foot. Other guarded editing commands do not interrupt or suspend the shell. Use disposable text and windows for destructive editing/close tests.
 - [ ] In a disposable Foot terminal, A+B interrupts `sleep 600`; hold both before Up to suspend another `sleep 600`, then use `fg` and interrupt it. Hold both before Down to end an empty `cat` input. Every action fires once after release, consumes Enter/Escape/arrows, ignores trigger modifiers and appears in the Menu-hold legend. Wrong-order, rolling and unassigned A+B gestures do nothing; GUI windows receive no Ctrl+C/Z/D from these terminal controls.
@@ -103,6 +119,8 @@ journalctl --user -u minion-gamepad.service -b
 ## Display and everyday desktop use
 
 - [ ] The 2× desktop scale is comfortable and the bottom bar fits. Check console/unlock/greeter separately; desktop scaling does not apply to those screens. Test any external display's orientation, scaling and touch association.
+- [ ] Date/time uses the intended timezone and network time is synchronized. Night light offers Automatic/Warm now/Off and preserves the chosen mode; check comfortable night colors and return to daytime colors.
+- [ ] Noto fallbacks display the scripts, symbols and emoji used in your apps. Open a new terminal after installing fonts; test CJK or private-use icons separately if needed.
 - [ ] AMD graphics acceleration works for video and a repeatable 3D workload. Inspect `glxinfo -B` for the Xwayland renderer and check the kernel log for GPU reset/resume errors; distinguish software rendering from the intended AMD renderer.
 - [ ] Physical QWERTY keys, modifiers, touchpad click/tap/scroll and any configured language switching work. The layout indicator follows the physical keyboard when multiple layouts are configured.
 - [ ] On the built-in keyboard, Ctrl+Space switches English/Russian once per press and the bar follows US/RU. Russian typing works while desktop shortcuts keep their physical key positions. R2+physical Space also switches layouts, L2 modifies physical typing, gamepad editing shortcuts work under Russian, and Select still opens the window picker. Check switching at the lock screen as well.
@@ -116,7 +134,7 @@ journalctl --user -u minion-gamepad.service -b
 - [ ] Firefox opens, accepts keyboard/touchpad input, and can copy/paste, upload a file and open a download in the file manager. Test screen sharing and its chooser in the application you intend to use.
 - [ ] Chromium is installed alongside Firefox, opens from Super+D or `chromium`, and can run a headless browser automation check with its sandbox enabled. Setup reruns retain both browsers' revisions/channels and profiles.
 - [ ] Notifications and desktop authorization prompts appear and can be answered. Print Screen and the screenshot shortcut put a usable image on the clipboard.
-- [ ] Battery percentage and charging/full/discharging states follow AC connection changes. Wi-Fi signal, audio/mute, proxy state and right-stick mode match actual state. Missing sensors do not stall the bar; click details and HHD launching work.
+- [ ] Battery percentage and charging/full/discharging states follow AC connection changes. Wi-Fi signal, audio/mute, proxy state and both stick modes match actual state. Missing sensors do not stall the bar; click details and HHD launching work.
 - [ ] Routine notifications without an explicit sender timeout disappear after five seconds; Keep awake popups disappear after 2.5 seconds. Critical alerts remain available for dismissal. Tapping or right-clicking dismisses a popup, and existing personal Mako settings survive setup reruns.
 
 ## Development tools and coding agents

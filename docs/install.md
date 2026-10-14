@@ -25,7 +25,7 @@ sudo sh ./install.sh --disk /dev/nvme0n1 --size 200G --check
 sudo sh ./install.sh --disk /dev/nvme0n1 --size 200G
 ```
 
-`G` and `GiB` mean 1024³ bytes; `GB` means 1000³ bytes. The minimum is 16 GiB. A region gets a 1 GiB FAT32 ESP, a 2 GiB ext4 `/boot`, and LUKS-encrypted ext4 root in the remainder. There is no LVM or swap allocation. Separate gaps are never added together to satisfy a request.
+`G` and `GiB` mean 1024³ bytes; `GB` means 1000³ bytes. The minimum is 16 GiB. A region gets a 1 GiB FAT32 ESP, a 2 GiB ext4 `/boot`, and LUKS-encrypted ext4 root in the remainder. The installer creates no LVM or swap partition; post-install setup supplies a [swapfile](post-install-setup.md#memory-and-swap) when space permits and no swap policy already exists. Separate gaps are never added together to satisfy a request.
 
 Automatic selection requires exactly one eligible disk. Use `--disk` if more than one qualifies. Read-only disks, removable/USB disks, mounted filesystems, active mappings and swap are excluded. Existing GPT is required; the helper does not initialize blank disks or convert MBR.
 

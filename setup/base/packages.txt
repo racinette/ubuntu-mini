@@ -10,3 +10,4 @@ alsa-ucm-conf
 alsa-utils
 snapd
 netplan.io
+util-linux

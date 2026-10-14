@@ -186,6 +186,13 @@ Upstream guides: [mise](https://mise.jdx.dev/getting-started.html), [rustup](htt
 
 ## Desktop controls
 
+DejaVu Sans Mono is the terminal's main font. Noto Core provides fallback fonts
+for additional scripts, symbols and musical notation; Noto Color Emoji supplies
+emoji. Foot and desktop applications use Fontconfig to select these fallbacks.
+After installing fonts in an existing session, open a new terminal or restart an
+affected application so it can discover them. Private-use icons from Nerd Fonts
+and CJK fonts are not included in this fallback set.
+
 The WIN Mini's built-in keyboard supports English (US) and Russian typing. Press **Ctrl+Space** to switch; the bar shows **US** or **RU**. Select remains the gamepad window picker. Menus and system messages remain English. Desktop shortcuts keep the same physical keys in either layout. The physical keyboard and gamepad share a keymap so L2/R2 modifiers also work with physical typing; hold R2 and press the spacebar to switch languages. Personal layout overrides in `~/.config/sway/minion.conf` still take precedence.
 
 Click the **Wi-Fi** text in the bar, or choose **Wi-Fi networks** from Super+D, to open the graphical network chooser. It lists nearby networks and signal strengths; select one to connect. Saved profiles are reused, and NetworkManager's existing applet handles password prompts. Refresh scans for networks; Enable Wi-Fi turns the radio on. **Saved / hidden networks** opens the connection editor for hidden networks and enterprise authentication. Right-clicking the bar's Wi-Fi text shows the current SSID. Opening the chooser alone does not change your connection.

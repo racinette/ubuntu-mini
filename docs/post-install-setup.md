@@ -273,6 +273,25 @@ Battery, audio, layout and stick mode refresh every second; power, temperatures,
 
 The power block shows `Auto` with HHD TDP overrides disabled, or a configured target such as `Limit 15W`; this is not measured power consumption or hardware readback. `Power ?` means HHD cannot be queried or its backend is not ready. Click it to open HHD; right-click for an explanation. Temperature summaries can show `CPU65° GPU58° SSD40° Bat32°`, omitting missing measurements. `Ctl` identifies the CPU cooling-control reading when die temperature is unavailable. Click temperatures for every readable channel, including GPU junction, SSD internal and other kernel sensors. All temperatures are Celsius. See [power and temperature details](power-controls.md#bottom-bar).
 
+## Process and battery monitoring
+
+Setup installs **Power Statistics** (`gnome-power-statistics`, Ubuntu package
+`gnome-power-manager`) and **PowerTOP**. Power Statistics is a standalone GTK
+application using the existing UPower service; it does not install a GNOME
+desktop. Open it from Super+D, select the laptop battery, and use **History**
+with graph type **Rate** for power over time. Details include the estimated
+time to empty while discharging, or time to full while charging. Charge graphs
+and other history types are also available.
+
+Run `sudo powertop` in a terminal for process activity, wakeups, CPU/device
+statistics and power estimates. Tab/Shift+Tab switch pages; Escape quits.
+Per-process/device watts are model estimates and need enough battery-only
+measurements; a fresh install or charging session may show activity without
+power attribution. Battery discharge rate represents total device draw;
+charging rate is net power entering the battery. Runtime estimates follow the
+recent workload and can change quickly. `htop`, when installed, remains useful
+for ordinary CPU/memory process inspection.
+
 Setup also installs [gamepad desktop navigation](gamepad-controls.md): triggers hold Shift/Ctrl and bumpers change workspaces. D-pad first sends arrows immediately and accelerates while held; hold A/B first, then choose a D-pad direction for a named shortcut, or hold Select before a face button for a layout toggle. Start opens a terminal; Select opens the window picker; Menu opens the launcher. X/Y provide immediate, holdable Backspace/Space; A/B singles and other discrete controls act on release. [A/B + D-pad and Select + face shortcuts](gamepad-chord-layout.md) perform editing, text navigation and desktop actions; use the physical QWERTY keyboard for typing. Hold Start+Select together, then release both, or press Super+Ctrl+G to toggle normal gamepad input for games. Personal overrides in `~/.config/minion/gamepad.json` are preserved across setup reruns. The mapping has [VM acceptance tests](testing.md#gamepad-tests); actual WIN Mini controls still need verification.
 
 The default layout uses left-stick scrolling and right-stick window focus/move together. Sway centers the pointer in a newly selected window only when it is outside that window (`mouse_warping container`), so scrolling follows selection while preserving an existing in-window pointer position. L3 switches the left stick between scrolling and text navigation; R3 independently switches the right stick between window focus/move and resize. Each change waits only for its own stick to return to neutral; the bar shows both behaviors. L2 adds Shift for text selection and R2 adds Ctrl. Hold Menu for 0.75 seconds to open a persistent shortcut legend; a short Menu tap, B/Escape or Enter dismisses it. Menu taps otherwise toggle the launcher. Hold B then Up to close the focused window. Hold Select then A for fullscreen, B for floating, Y for tiled/tabbed, or X for split orientation. A+D-pad carries editing shortcuts; B+Left/Right navigates back/forward. X holds Backspace and Y holds Space, both with immediate press and normal repeat. Editing shortcuts include terminal-aware copy/paste. Old character-typing personal profiles must be replaced with the new shortcut layout; setup performs no migration.

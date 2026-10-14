@@ -41,8 +41,10 @@ local pick, extra = MiniPick.builtin, MiniExtra.pickers
 local tree = require('nvim-tree.api')
 local root_markers = { '.git', 'Cargo.toml', 'go.mod', 'pyproject.toml', 'package.json', 'CMakeLists.txt' }
 local start_path = vim.fn.argc() > 0 and vim.fn.fnamemodify(vim.fn.argv(0), ':p') or vim.fn.getcwd()
-local project_root = vim.fs.root(start_path, root_markers)
-if not project_root and vim.fn.isdirectory(start_path) == 1 then project_root = start_path end
+-- An explicitly opened directory defines the browsing/search scope, even when
+-- an ancestor contains project markers. Infer a root only for file arguments.
+local project_root = vim.fn.isdirectory(start_path) == 1
+  and start_path or vim.fs.root(start_path, root_markers)
 if project_root then vim.api.nvim_set_current_dir(project_root) end
 require('nvim-tree').setup({
   sync_root_with_cwd = true,

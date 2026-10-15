@@ -19,7 +19,7 @@ def display_power(enabled):
     if enabled:
         output = subprocess.check_output(['swaymsg', '-r', '-t', 'get_outputs'], text=True, timeout=5)
         if any(item.get('power') is False for item in json.loads(output)):
-            # Record before powering on, to let L4 recognize that its own
+            # Record before powering on, to let the display key recognize that its own
             # input woke a dark panel before its release action is evaluated.
             (state_directory() / 'last-display-wake').write_text(str(time.monotonic()))
     if not enabled:
@@ -30,6 +30,46 @@ def display_power(enabled):
                        check=True, timeout=5)
     subprocess.run(['swaymsg', 'output', '*', 'power', 'on' if enabled else 'off'],
                    check=True, timeout=5, stdout=subprocess.DEVNULL)
+
+
+def display_toggle(phase):
+    directory = state_directory()
+    pending = directory / 'display-toggle-pending'
+    if phase == 'press':
+        output = subprocess.check_output(['swaymsg', '-r', '-t', 'get_outputs'], text=True, timeout=5)
+        was_off = any(item.get('power') is False for item in json.loads(output))
+        try:
+            age = time.monotonic() - float((directory / 'last-display-wake').read_text())
+            was_off = was_off or 0 <= age < .25
+        except (OSError, ValueError):
+            pass
+        with (directory / 'control.lock').open('a') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            temporary = pending.with_suffix('.tmp')
+            temporary.write_text('on' if was_off else 'off')
+            temporary.chmod(0o600)
+            temporary.replace(pending)
+        return
+    # Press/release bindings spawn separate commands. Allow a fast key release
+    # to arrive first without evaluating its action before the press snapshot.
+    deadline = time.monotonic() + .25
+    while True:
+        with (directory / 'control.lock').open('a') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            try:
+                value = pending.read_text()
+                pending.unlink()
+            except FileNotFoundError:
+                value = None
+        if value is not None:
+            break
+        if time.monotonic() >= deadline:
+            return
+        time.sleep(.01)
+    if value in ('on', 'off'):
+        display_power(value == 'on')
+        # The snapshot has consumed the wake marker for this input sequence.
+        (directory / 'last-display-wake').unlink(missing_ok=True)
 
 
 def toggle_awake():
@@ -51,10 +91,12 @@ def toggle_awake():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('off', 'on', 'toggle-awake', 'status'))
+    parser.add_argument('action', choices=('off', 'on', 'display-press', 'display-release', 'toggle-awake', 'status'))
     action = parser.parse_args().action
     if action in ('off', 'on'):
         display_power(action == 'on')
+    elif action in ('display-press', 'display-release'):
+        display_toggle(action.removeprefix('display-'))
     elif action == 'toggle-awake':
         toggle_awake()
     else:

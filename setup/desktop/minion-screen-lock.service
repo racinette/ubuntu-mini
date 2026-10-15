@@ -8,3 +8,4 @@ Type=forking
 ExecStartPre=/usr/local/bin/minion-gamepad --pause
 ExecStart=/usr/bin/swaylock --daemonize --color 151820
 ExecStopPost=/usr/local/bin/minion-gamepad --resume
+ExecStopPost=-/usr/bin/systemctl --user --no-block start minion-voice.service

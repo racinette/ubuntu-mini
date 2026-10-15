@@ -1,0 +1,16 @@
+[Unit]
+Description=Minion local voice dictation
+PartOf=minion-session.target
+After=graphical-session.target pipewire.service wireplumber.service
+Before=minion-screen-lock.service
+# Stop capture and discard pending transcription before locking.
+Conflicts=minion-screen-lock.service
+ConditionPathExists=/usr/local/share/minion/voice/ggml-small-q5_1.bin
+
+[Service]
+# Keep dictated text out of routine journal messages.
+ExecStart=/usr/local/bin/voxtype --quiet daemon
+Restart=on-failure
+RestartSec=5
+UMask=0077
+EnvironmentFile=-%t/minion-voice/language.env

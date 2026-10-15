@@ -244,6 +244,21 @@ print(value)
             assert status.awake_mode()['full_text'] == 'Awake ON'
             assert status.awake_mode()['color'] == '#9ece6a'
             awake.write_text('0\n')
+            voice = runtime / 'voxtype/state'
+            voice.parent.mkdir()
+            assert status.voice_mode()['full_text'] == 'Mic OFF'
+            for state, label in [('idle', 'Mic'), ('recording', 'Mic REC'),
+                                 ('transcribing', 'Mic …'), ('outputting', 'Mic …'), ('bad', 'Mic OFF')]:
+                voice.write_text(state)
+                assert status.voice_mode()['full_text'] == label
+            voice.write_text('recording')
+            assert status.voice_mode()['color'] == '#f7768e'
+            voice.write_text('idle')
+        for button, action in [(1, 'toggle'), (3, 'cancel')]:
+            with patch.object(status.sys, 'stdin', io.StringIO(json.dumps({'name': 'voice', 'button': button}) + '\n')), \
+                    patch.object(status.subprocess, 'Popen') as launch:
+                status.clicks({})
+                assert launch.call_args.args[0] == ['minion-voice', action]
         with patch.object(status.sys, 'stdin', io.StringIO('[\n{"name":"awake","button":1}\n')), \
                 patch.object(status, 'run') as run:
             status.clicks({})

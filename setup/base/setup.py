@@ -110,6 +110,7 @@ def backup_configuration(path, user):
     paths.append(Path('/usr/local/share/applications/minion-network.desktop'))
     paths.append(Path('/usr/local/share/applications/minion-night-light.desktop'))
     paths.append(Path(user.pw_dir) / '.config/gammastep')
+    paths.append(Path(user.pw_dir) / '.config/voxtype')
     paths.append(Path(user.pw_dir) / '.bashrc')
     paths.extend(Path(user.pw_dir) / '.ssh' / name for name in ('config', 'minion.conf'))
     paths.extend(Path(user.pw_dir) / name for name in ('.claude/settings.json', '.cursor/cli-config.json'))
@@ -144,6 +145,7 @@ def main():
     if args.check:
         subprocess.run([sys.executable, ROOT / 'base/swap.py', '--check'], check=True)
         subprocess.run([sys.executable, ROOT / 'desktop/firmware.py', '--check'], check=True)
+        subprocess.run([sys.executable, ROOT / 'desktop/voice.py', '--check'], check=True)
         subprocess.run([sys.executable, ROOT / 'proxy/provision.py', '--check'], check=True)
         subprocess.run([sys.executable, ROOT / 'hhd/provision.py', '--check'], check=True)
         subprocess.run([sys.executable, ROOT / 'agents/provision.py', user.pw_name, '--check'], check=True)

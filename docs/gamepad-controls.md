@@ -17,8 +17,11 @@ Post-install setup installs this profile automatically. In the WIN Mini's gamepa
 | Select | Window picker, on release |
 | Menu / Xbox | Tap: toggle launcher; hold 0.75 s: toggle shortcut legend |
 | L3 | Switch left stick between scroll / text navigation, on release |
-| L4 | Toggle display power, without locking or suspending |
-| R4 | Toggle Keep awake |
+| L4 | Unassigned |
+| R4 | Tap: start/stop dictation; hold 0.75 s: cancel |
+| Fn+F3 | Toggle display power, without locking or suspending |
+| Fn+F4 | Toggle Keep awake |
+| Fn+F5 / Fn+F6 | Unassigned |
 
 The left stick starts in **Scroll**, and the right in **Windows** (focus/move). L3 and R3 switch their own stick independently; all four combinations are available:
 
@@ -31,11 +34,11 @@ The left stick starts in **Scroll**, and the right in **Windows** (focus/move). 
 | Right stick | Focus window | Resize window |
 | L2 + right stick | Move window | Resize window |
 
-On the WIN Mini 2023, L4 and R4 emit Print Screen and Pause on the separate `12068:309:Mouse_for_Windows` keyboard. A session reader coalesces both ordinary key-repeat events and firmware macro repetitions into one action on release, allowing a 75 ms gap between sequences within a hold. Sway consumes the rear keys while preserving the physical keyboard's Print Screen screenshot shortcut. A device-specific uaccess rule grants the active local user access to this rear keyboard, without adding the user to the input group. No firmware remapping is needed. Other devices or firmware mappings need their own matching and input handling.
+On the WIN Mini 2023, L4 and R4 emit Print Screen and Pause on the separate `12068:309:Mouse_for_Windows` keyboard. A session reader coalesces R4's ordinary repeats and firmware macro repetitions, allowing a 75 ms gap between sequences within a hold. A short tap starts recording or stops it and inserts the transcription. Holding for 0.75 seconds cancels once and consumes the release; L4 is ignored. Dictation follows the physical US/RU layout selected when recording starts. The Mic bar block shows recording/transcription state; Super+V and Super+Shift+V remain keyboard alternatives. Sway consumes both rear keys while preserving the physical keyboard's Print Screen shortcut. A device-specific uaccess rule grants the active local user access to this rear keyboard, without adding the user to the input group. No firmware remapping is needed. Other devices or firmware mappings need their own matching and input handling.
 
-L4 toggles display power while applications continue running. A second L4 press restores the display and leaves it on. Keyboard, touchpad, touchscreen or mapped controller input also restores it; this does not unlock a session that was already locked. L4 also works while locked. R4 toggles the explicit **Keep awake** override while unlocked; the bar shows `Awake ON` or `Awake OFF` and can be clicked to toggle it. The override suppresses automatic idle locking and display-off on either power source, survives idle-service restarts and charger changes, and resets at reboot. Turning it off restores fresh battery timers when unplugged; AC already disables those timers.
+Fn+F3 toggles display power while applications continue running. A second press restores the display and leaves it on. Keyboard, touchpad, touchscreen or mapped controller input also restores it; this does not unlock a session that was already locked. Fn+F3 also works while locked. Fn+F4 toggles the explicit **Keep awake** override while unlocked; the bar shows `Awake ON` or `Awake OFF` and can be clicked to toggle it. The override suppresses automatic idle locking and display-off on either power source, survives idle-service restarts and charger changes, and resets at reboot. Turning it off restores fresh battery timers when unplugged; AC already disables those timers. These Fn overrides apply to the built-in keyboard; Fn+F5/F6 are consumed without an action. Plain function keys remain available to applications.
 
-For a background agent, enable Keep awake with R4, then turn the display off with L4. Keep awake does not unlock an existing lock. Super+L still locks only, and closing the lid or explicitly suspending still locks and suspends. Without Keep awake, the normal five-minute battery idle lock still applies after manually turning the display off. These bindings do not change the power button.
+For a background agent, enable Keep awake with Fn+F4, then turn the display off with Fn+F3. Keep awake does not unlock an existing lock. Super+L still locks only, and closing the lid or explicitly suspending still locks and suspends. Without Keep awake, the normal five-minute battery idle lock still applies after manually turning the display off. These bindings do not change the power button.
 
 Numbered workspaces form a dynamic ring. If N is the highest occupied workspace, the bumpers cycle through 1 to N+1; N+1 is an extra empty workspace. R1 from N+1 wraps to 1, and L1 from 1 wraps directly to the last occupied workspace N, skipping the extra empty slot. Opening or moving a window into the extra workspace grows the ring. Sway removes empty workspaces when they are left; a session service immediately renumbers the remaining numbered workspaces consecutively, preserving window contents, focus and any name suffix. For example, when 2 disappears from 1, 2, 3, the former 3 becomes 2. Closing the highest workspace shrinks the ring. L2+bumper sends the focused window to the adjacent workspace without following it, using the same wraparound. From an unnumbered workspace, either bumper starts at 1. Super+1–4 remain direct keyboard shortcuts.
 

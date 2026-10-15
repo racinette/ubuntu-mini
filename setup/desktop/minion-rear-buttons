@@ -7,6 +7,7 @@ import time
 
 log = logging.getLogger('minion-rear-buttons')
 RELEASE_GRACE = 0.075
+HOLD_TO_CANCEL = 0.75
 
 
 def active_session():
@@ -27,59 +28,52 @@ def active_session():
 
 
 class Buttons:
-    def __init__(self, display_was_off, action):
-        self.display_was_off = display_was_off
+    def __init__(self, action):
         self.action = action
-        self.held = {}
-        self.pending = {}
-        self.wake_only = False
+        self.started = None
+        self.released = None
+        self.cancelled = False
 
     def event(self, code, value, now):
-        if code not in (99, 119) or value == 2:
+        # L4 is deliberately unassigned. R4 firmware sends Pause.
+        if code != 119 or value == 2:
             return
+        if self.released is not None and now >= self.released + RELEASE_GRACE:
+            self.tick(now)
         if value == 1:
             # Firmware emits brief releases between repeated macro sequences.
             # A new down within the grace period continues the original hold.
-            if code not in self.held:
-                self.held[code] = True
-                if code == 99:
-                    self.wake_only = self.display_was_off()
-            self.pending.pop(code, None)
-        elif code in self.held:
-            self.pending[code] = now + RELEASE_GRACE
+            if self.started is None:
+                self.started = now
+                self.cancelled = False
+            self.released = None
+        elif value == 0 and self.started is not None:
+            self.released = now
 
     def tick(self, now):
-        for code, deadline in list(self.pending.items()):
-            if now < deadline:
-                continue
-            del self.pending[code]
-            self.held.pop(code, None)
-            self.action(('on' if self.wake_only else 'off') if code == 99 else 'toggle-awake')
-
-
-def display_was_off():
-    import json
-    import os
-    from pathlib import Path
-    # The compositor may process the same L4 press and wake the panel before
-    # this reader sees it. The wake helper records real Off -> On transitions.
-    recent = Path(os.environ['XDG_RUNTIME_DIR']) / 'minion-idle/last-display-wake'
-    output = subprocess.check_output(['swaymsg', '-r', '-t', 'get_outputs'], text=True, timeout=5)
-    if any(item.get('power') is False for item in json.loads(output)):
-        return True
-    try:
-        return time.monotonic() - float(recent.read_text()) < .25
-    except (OSError, ValueError):
-        return False
+        if self.started is None:
+            return
+        # A short release must not become a hold during the debounce grace.
+        end = self.released if self.released is not None else now
+        if not self.cancelled and end - self.started >= HOLD_TO_CANCEL:
+            self.cancelled = True
+            self.action('cancel')
+        if self.released is not None and now >= self.released + RELEASE_GRACE:
+            if not self.cancelled:
+                self.action('toggle')
+            self.started = self.released = None
 
 
 def action(name):
     if not active_session():
         return
-    if name == 'toggle-awake' and subprocess.run(
+    if subprocess.run(
             ['systemctl', '--user', 'is-active', '--quiet', 'minion-screen-lock.service']).returncode == 0:
         return
-    subprocess.run(['minion-idle-controls', name], check=True, timeout=10)
+    # Keep reading the hardware while the dictation helper changes language or
+    # waits for its microphone. A hold must still be able to cancel promptly.
+    subprocess.Popen(['minion-voice', name], stdin=subprocess.DEVNULL,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
 
 
 def main():
@@ -97,7 +91,7 @@ def main():
             time.sleep(1)
             continue
         log.info('Rear keyboard ready: %s', device.path)
-        buttons = Buttons(display_was_off, action)
+        buttons = Buttons(action)
         # Ignore controls already held when the reader starts/reconnects.
         blocked = set(device.active_keys()) & {99, 119}
         try:

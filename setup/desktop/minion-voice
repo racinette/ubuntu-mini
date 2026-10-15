@@ -1,0 +1,106 @@
+#!/usr/bin/python3
+"""Activate dictation using the physical keyboard's current Sway layout."""
+import argparse
+import fcntl
+import json
+import os
+from pathlib import Path
+import subprocess
+import time
+
+LANGUAGES = {'English (US)': 'en', 'English (UK)': 'en', 'Russian': 'ru'}
+KEYBOARD = '1:1:AT_Translated_Set_2_keyboard'
+
+
+def language_for(inputs):
+    keyboards = [item for item in inputs if item.get('type') == 'keyboard']
+    primary = next((item for item in keyboards if item.get('identifier') == KEYBOARD), None)
+    if primary:
+        language = LANGUAGES.get(primary.get('xkb_active_layout_name'))
+        if language:
+            return language
+        raise ValueError('Voice input supports the English and Russian keyboard layouts')
+    # On another machine, accept a single unambiguous physical layout.
+    choices = {LANGUAGES.get(item.get('xkb_active_layout_name')) for item in keyboards
+               if item.get('vendor') and item.get('name') != 'Minion gamepad keyboard'}
+    if len(choices) == 1 and None not in choices:
+        return choices.pop()
+    raise ValueError('Cannot determine the active English/Russian keyboard layout')
+
+
+def read(path):
+    try:
+        return path.read_text().strip()
+    except FileNotFoundError:
+        return ''
+
+
+def run(*command):
+    return subprocess.run(command, check=True, capture_output=True, text=True, timeout=10).stdout.strip()
+
+
+def control(action, runtime):
+    state_file = runtime / 'voxtype/state'
+    state = read(state_file)
+    if action == 'cancel':
+        if state:
+            run('voxtype', 'record', 'cancel')
+        return
+    if action == 'stop' or (action == 'toggle' and state == 'recording'):
+        if state == 'recording':
+            run('voxtype', 'record', 'stop')
+        return
+    if state not in ('', 'idle'):
+        return  # A repeated click during transcription must not start another recording.
+    lock_state = run('systemctl', '--user', 'show', 'minion-screen-lock.service', '-p', 'ActiveState', '--value')
+    if lock_state not in ('inactive', 'failed'):
+        return
+    inputs = json.loads(run('swaymsg', '-r', '-t', 'get_inputs'))
+    language = language_for(inputs)
+    environment = runtime / 'minion-voice/language.env'
+    wanted = 'VOXTYPE_LANGUAGE=' + language + '\n'
+    # Voxtype 1.1.1 chooses its language when the daemon starts. Only restart
+    # an idle daemon, and only when the selected language changes.
+    if read(environment) != wanted.strip() or not state:
+        staging = environment.with_suffix('.tmp')
+        staging.write_text(wanted)
+        staging.chmod(0o600)
+        staging.replace(environment)
+        run('systemctl', '--user', 'restart', 'minion-voice.service')
+        deadline = time.monotonic() + 5
+        while read(state_file) != 'idle':
+            if time.monotonic() >= deadline:
+                raise RuntimeError('Voice input did not become ready')
+            time.sleep(.05)
+    run('voxtype', 'record', 'start')
+    deadline = time.monotonic() + 5
+    while read(state_file) != 'recording':
+        if time.monotonic() >= deadline:
+            raise RuntimeError('Voice input did not start recording')
+        time.sleep(.05)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('action', choices=('start', 'stop', 'toggle', 'cancel'), nargs='?', default='toggle')
+    args = parser.parse_args()
+    runtime = Path(os.environ['XDG_RUNTIME_DIR'])
+    directory = runtime / 'minion-voice'
+    directory.mkdir(mode=0o700, exist_ok=True)
+    with (directory / 'control.lock').open('w') as lock:
+        # Coalesce extra activations; cancellation must never be dropped while
+        # another helper is waiting for the microphone or changing language.
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | (0 if args.action == 'cancel' else fcntl.LOCK_NB))
+        except BlockingIOError:
+            return
+        try:
+            control(args.action, runtime)
+        except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+            subprocess.run(['notify-send', '-a', 'minion', '--', 'Voice input',
+                            'Could not activate dictation. Check the session service and US/RU layout.'], check=False)
+            raise SystemExit(str(error)) from error
+
+
+if __name__ == '__main__':
+    main()

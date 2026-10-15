@@ -171,6 +171,41 @@ for key, command in [('Print', 'off'), ('Pause', 'toggle-awake')]:
     assert any('--release' in line for line in matches)
 assert 'XF86PowerOff' not in sway_config
 assert not config.has_option('Login', 'HandlePowerKey')
+physical = 'bindsym --input-device=1:1:AT_Translated_Set_2_keyboard'
+fn_bindings = [line for line in sway_config.splitlines() if line.startswith(physical)]
+assert any('XF86AudioStop exec minion-idle-controls display-press' in line and '--locked' in line for line in fn_bindings)
+assert any('XF86AudioStop exec minion-idle-controls display-release' in line and '--release' in line for line in fn_bindings)
+assert any('XF86AudioPrev exec minion-idle-controls toggle-awake' in line and '--locked' not in line for line in fn_bindings)
+for key in ('XF86AudioPlay', 'XF86AudioPause', 'XF86AudioNext'):
+    assert any(line.endswith(key + ' nop') for line in fn_bindings)
+assert all('--no-repeat' in line for line in fn_bindings)
+
+# Fn+F3 snapshots state on press and acts on release, including a long hold
+# after input has already woken a dark screen. A wake marker is consumed once.
+toggle_display = controls['display_toggle']
+with tempfile.TemporaryDirectory() as temporary, patch.dict(os.environ, XDG_RUNTIME_DIR=temporary), \
+        patch.object(subprocess, 'check_output', return_value='[{"power":true}]'), \
+        patch.dict(toggle_display.__globals__, display_power=Mock()) as scope:
+    power = toggle_display.__globals__['display_power']
+    toggle_display('press')
+    toggle_display('release')
+    power.assert_called_once_with(False)
+    power.reset_mock()
+    directory = Path(temporary) / 'minion-idle'
+    with patch.object(controls['time'], 'monotonic', return_value=50):
+        (directory / 'last-display-wake').write_text('49.9')
+        toggle_display('press')
+    with patch.object(controls['time'], 'monotonic', return_value=55):
+        toggle_display('release')
+    power.assert_called_once_with(True)
+    assert not (directory / 'last-display-wake').exists()
+    power.reset_mock()
+    toggle_display('press'); toggle_display('release')
+    power.assert_called_once_with(False)
+    power.reset_mock()
+    with patch.object(subprocess, 'check_output', return_value='[{"power":false}]'):
+        toggle_display('press'); toggle_display('release')
+    power.assert_called_once_with(True)
 
 # Firmware can repeat both Linux value=2 events and entire press/release
 # macros. All repetitions form one hold; genuine subsequent taps still work.
@@ -178,7 +213,7 @@ rear = runpy.run_path(str(project / 'setup/desktop/minion-rear-buttons'))
 for key in (99, 119):
     for repeats in (0, 1, 10, 100):
         actions = []
-        buttons = rear['Buttons'](lambda: False, actions.append)
+        buttons = rear['Buttons'](actions.append)
         now = 0.
         buttons.event(key, 1, now)
         for _ in range(repeats):
@@ -188,22 +223,50 @@ for key in (99, 119):
             buttons.tick(now + .02)
             buttons.event(key, 1, now + .02)
             buttons.tick(now + .15)
-            assert not actions, actions
+            assert actions == (['cancel'] if key == 119 and now + .15 >= .75 else []), actions
         buttons.event(key, 0, now + .3)
         buttons.tick(now + .4)
-        assert actions == ['off' if key == 99 else 'toggle-awake']
+        expected = [] if key == 99 else ['cancel'] if now + .3 >= .75 else ['toggle']
+        assert actions == expected, actions
         buttons.tick(now + 2)
-        assert len(actions) == 1
+        assert actions == expected
         buttons.event(key, 1, now + 3)
         buttons.event(key, 0, now + 3.3)
         buttons.tick(now + 3.4)
-        assert len(actions) == 2
+        assert actions == expected + ([] if key == 99 else ['toggle'])
+
+# A true continuous hold cancels before release, once only. Grace time alone
+# cannot turn a sub-threshold tap into cancellation.
+for duration, expected in [(.74, 'toggle'), (.75, 'cancel'), (3., 'cancel')]:
+    actions = []
+    buttons = rear['Buttons'](actions.append)
+    buttons.event(119, 1, 0)
+    buttons.tick(duration)
+    assert actions == ([] if duration < .75 else ['cancel'])
+    buttons.event(119, 0, duration)
+    buttons.tick(duration + .08)
+    buttons.tick(duration + 10)
+    assert actions == [expected]
 actions = []
-buttons = rear['Buttons'](lambda: True, actions.append)
-buttons.event(99, 1, 0)
-buttons.event(99, 0, .3)
-buttons.tick(.4)
-assert actions == ['on'], actions
+buttons = rear['Buttons'](actions.append)
+buttons.event(119, 1, 0); buttons.event(119, 0, .1)
+buttons.event(119, 1, .2); buttons.event(119, 0, .3); buttons.tick(.4)
+assert actions == ['toggle', 'toggle']  # Even when a new press precedes the next poll.
+
+with patch.dict(rear['action'].__globals__, active_session=Mock(return_value=False)), \
+        patch.object(subprocess, 'Popen') as popen:
+    rear['action']('toggle')
+    popen.assert_not_called()
+with patch.dict(rear['action'].__globals__, active_session=Mock(return_value=True)), \
+        patch.object(subprocess, 'run', return_value=Mock(returncode=0)), \
+        patch.object(subprocess, 'Popen') as popen:
+    rear['action']('toggle')
+    popen.assert_not_called()
+with patch.dict(rear['action'].__globals__, active_session=Mock(return_value=True)), \
+        patch.object(subprocess, 'run', return_value=Mock(returncode=3)), \
+        patch.object(subprocess, 'Popen') as popen:
+    rear['action']('cancel')
+    assert popen.call_args.args[0] == ['minion-voice', 'cancel']
 
 # An unexpected swayidle exit must reach systemd's Restart=on-failure path.
 child = Mock()

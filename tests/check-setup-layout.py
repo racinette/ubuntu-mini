@@ -27,7 +27,7 @@ def load_setup():
 
 def main():
     sources = setup_sources()
-    assert len(sources) == 83
+    assert len(sources) == 88
     assert all(p.is_file() for p in sources)
     assert all(p == PROJECT / 'setup.sh' or p.is_relative_to(PROJECT / 'setup') for p in sources)
     assert {p.name for p in sources}.isdisjoint({'first-boot.py', 'minion-first-boot.service'})
@@ -76,9 +76,10 @@ def main():
              patch.object(setup.subprocess, 'run') as check_run, \
              patch.object(sys, 'argv', ['setup.sh', '--check']), contextlib.redirect_stdout(io.StringIO()):
             setup.main()
-        assert check_run.call_count == 6
+        assert check_run.call_count == 7
         check_run.assert_any_call([sys.executable, PROJECT / 'setup/base/swap.py', '--check'], check=True)
         check_run.assert_any_call([sys.executable, PROJECT / 'setup/desktop/firmware.py', '--check'], check=True)
+        check_run.assert_any_call([sys.executable, PROJECT / 'setup/desktop/voice.py', '--check'], check=True)
         for component in ('proxy', 'hhd'):
             check_run.assert_any_call([sys.executable, PROJECT / f'setup/{component}/provision.py', '--check'], check=True)
         check_run.assert_any_call([sys.executable, PROJECT / 'setup/agents/provision.py', 'fixture', '--check'], check=True)

@@ -1,0 +1,16 @@
+{
+  "runtime": {
+    "version": "1.1.1",
+    "filename": "voxtype-1.1.1-linux-x86_64-vulkan",
+    "url": "https://github.com/peteonrails/voxtype/releases/download/v1.1.1/voxtype-1.1.1-linux-x86_64-vulkan",
+    "sha256": "102a7caa22facc5c257c526ae4a9e63c04c027297fec4ca370209a1f94ae9863",
+    "size": 66575872
+  },
+  "model": {
+    "version": "small-q5_1",
+    "filename": "ggml-small-q5_1.bin",
+    "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-small-q5_1.bin",
+    "sha256": "ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb",
+    "size": 190085487
+  }
+}

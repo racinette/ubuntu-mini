@@ -11,9 +11,9 @@ Current device status as of **2026-10-14** for the **GPD WIN Mini 2023 / Ryzen 7
 | Power backend | HHD starts and its UI works. The existing DKMS signing key was enrolled with Secure Boot enabled; `acpi_call` loaded. Power targets were exercised on AC and battery. |
 | Cooling/background work | A 12-minute CPU workload continued on battery with Keep awake enabled and the panel truly off. Cooling remained stable, CPU peaked at 52.5°C, and the fan responded. Separate OpenGL load also passed. |
 | GPU and sensors | Hardware-accelerated OpenGL completed the full glmark2 suite with no observed corruption or recorded GPU errors. RADV enumerates the GPU. Missing BMI260 firmware was supplied and all six sensor channels changed. |
-| Audio and Bluetooth | Speakers and volume/mute were accepted. Reducing internal-mic capture/boost to 0 dB fixed audible distortion; plain ALSA capture works through PipeWire. soundcore AeroClip paired and the user confirmed it worked. |
+| Audio and Bluetooth | Speakers and volume/mute were accepted. Reducing internal-mic capture/boost to 0 dB fixed audible distortion; plain ALSA capture works through PipeWire. soundcore AeroClip paired and the user confirmed it worked. Local English/Russian Voxtype dictation was also accepted; R4 tap/hold activation and cancellation were accepted. |
 | Controller | Current defaults combine left-stick scrolling and right-stick window selection; L3/R3 switch independently. Held Space/Backspace/D-pad, face-first chords, terminal signals, workspace compaction/wraparound and the Menu legend have isolated and live checks. Physical diagonal/edge cases are not exhaustively certified. |
-| Display/idle controls | L4 display-off/on and once-per-hold R4 Keep awake were physically accepted. Routine notifications expire. AC idle behavior and lid-close lock/suspend were exercised. |
+| Display/idle controls | Display-off/on and Keep awake were physically accepted, including the new Fn+F3/F4 bindings. R4 tap/hold dictation and cancellation were also accepted. Routine notifications expire. AC idle behavior and lid-close lock/suspend were exercised. |
 | Network and browsers | Wi-Fi chooser and Chromium were accepted; Chromium headless/WebDriver checks passed with its sandbox. Firefox is the default browser. Proxy dashboard, connectivity and Russian direct-routing rules were checked. |
 | Coding and navigation | Codex sandbox execution was repaired. CLI attribution preferences and scroll defaults are configured. Neovim navigation was checked across 17 file types and 11 language servers, including cross-file TypeScript and multiple-definition picking. |
 | Audio development | A native JUCE VST3 synth compiled, loaded in SuperCollider, received MIDI/parameter changes and produced a valid recording. LSP, Dragonfly, BYOD and AIDA-X provide 184 discovered VST3 effects; nine selected effects passed generated-audio recording. |
@@ -41,7 +41,7 @@ These are verification gaps, not known blockers to ordinary use:
 ## Deliberate choices
 
 - Lid close still locks and suspends on either power source. Hibernation/Secure Boot changes were declined; explicitly shut down before transport when suspend is unsuitable. Adding swap does not enable hibernation.
-- Power-button behavior is unchanged. Keep awake/display-only controls use R4/L4.
+- Power-button behavior is unchanged. Keep awake/display-only controls use Fn+F4/F3. R4 controls dictation; L4 and Fn+F5/F6 are unassigned.
 - Firmware cooling remains automatic. Custom fan curves and gyro input/automatic rotation are optional features.
 - Additional reboot cycles and low-priority peripheral tests were deferred by the user.
 

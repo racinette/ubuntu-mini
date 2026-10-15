@@ -6,6 +6,8 @@ mako-notifier
 swaylock
 swayidle
 wl-clipboard
+wtype
+libvulkan1
 network-manager
 network-manager-gnome
 python3-gi

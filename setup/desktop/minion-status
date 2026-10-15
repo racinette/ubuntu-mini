@@ -234,6 +234,14 @@ def launch_proxy_controls():
         pass
 
 
+def launch_voice_controls(action):
+    try:
+        subprocess.Popen(['minion-voice', action], stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    except OSError:
+        pass
+
+
 def launch_battery_statistics(instance=None):
     command = ['gnome-power-statistics']
     if isinstance(instance, str) and re.fullmatch(r'[A-Za-z0-9_]+', instance):
@@ -297,6 +305,18 @@ def awake_mode():
     return result
 
 
+def voice_mode():
+    directory = os.environ.get('XDG_RUNTIME_DIR')
+    state = read(Path(directory) / 'voxtype/state') if directory else ''
+    labels = {'idle': 'Mic', 'recording': 'Mic REC', 'transcribing': 'Mic …', 'outputting': 'Mic …'}
+    result = block('voice', labels.get(state, 'Mic OFF'))
+    if state == 'recording':
+        result['color'] = '#f7768e'
+    elif state in ('transcribing', 'outputting'):
+        result['color'] = '#e0af68'
+    return result
+
+
 def clicks(details):
     for line in sys.stdin:
         try:
@@ -316,6 +336,8 @@ def clicks(details):
             launch_proxy_controls()
         elif name == 'battery' and button == 1:
             launch_battery_statistics(event.get('instance'))
+        elif name == 'voice' and button in (1, 3):
+            launch_voice_controls('toggle' if button == 1 else 'cancel')
         elif (name == 'temperatures' and button == 1) or (name in ('wifi', 'power') and button == 3):
             title = {'wifi': 'Wi-Fi', 'temperatures': 'Temperatures', 'power': 'Power controls'}[name]
             run('notify-send', '-a', 'minion', '--', title, html.escape(details.get(name, 'Status is unavailable')))
@@ -338,7 +360,7 @@ def main():
                 network_future = workers.submit(wifi)
                 service_future = workers.submit(proxy)
                 health_future = workers.submit(health)
-            blocks = [stick_mode(), awake_mode()]
+            blocks = [stick_mode(), awake_mode(), voice_mode()]
             blocks += layout.result()
             if slow:
                 network, details['wifi'] = network_future.result()

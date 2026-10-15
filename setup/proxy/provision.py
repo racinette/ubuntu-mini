@@ -12,6 +12,7 @@ import tempfile
 import urllib.request
 
 from dashboard import install as install_dashboard
+from manage import load_config, migrate_dashboard
 
 HERE = Path(__file__).resolve().parent
 
@@ -71,6 +72,8 @@ def main():
     state.mkdir(parents=True, exist_ok=True, mode=0o700)
     state.chmod(0o700)
     install_dashboard(state, atomic_install, args.user, args.dashboard_asset)
+    if (state / 'config.json').exists():
+        migrate_dashboard(load_config())
     subprocess.run(['systemctl', 'daemon-reload'], check=True)
     print('Proxy service installed; existing configuration and activation state retained.')
     print('From the repository, configure with: sudo python3 setup/proxy/manage.py configure')

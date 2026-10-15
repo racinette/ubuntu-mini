@@ -60,11 +60,13 @@ if install_sensor_firmware():
 # Our no-recommends install includes them explicitly; they grant video-group
 # writes to screen backlights. New group membership takes effect next login.
 run('usermod', '-a', '-G', 'video', user.pw_name)
-for name in ('minion-session', 'minion-session-ready', 'minion-lock', 'minion-idle', 'minion-idle-controls', 'minion-rear-buttons', 'minion-status', 'minion-gamepad', 'minion-workspaces', 'minion-window-picker', 'minion-network', 'minion-proxy-ui', 'minion-night-light', 'minion-terminal', 'minion-voice', 'minion-layout-popup'):
+for name in ('minion-session', 'minion-session-ready', 'minion-lock', 'minion-idle', 'minion-idle-controls', 'minion-rear-buttons', 'minion-status', 'minion-gamepad', 'minion-workspaces', 'minion-window-picker', 'minion-proxy-ui', 'minion-night-light', 'minion-terminal', 'minion-voice', 'minion-layout-popup'):
     write('/usr/local/bin/' + name, HERE.joinpath(name).read_text(), 0o755)
 write('/etc/minion/sway.conf', HERE.joinpath('sway.conf').read_text())
 write('/etc/minion/gamepad.json', HERE.joinpath('gamepad.json').read_text())
-write('/usr/local/share/applications/minion-network.desktop', HERE.joinpath('minion-network.desktop').read_text())
+# NetworkManager already supplies the tray network picker and connection editor.
+for obsolete in ('/usr/local/bin/minion-network', '/usr/local/share/applications/minion-network.desktop'):
+    Path(obsolete).unlink(missing_ok=True)
 write('/usr/local/share/applications/minion-proxy-ui.desktop', HERE.joinpath('minion-proxy-ui.desktop').read_text())
 write('/usr/local/share/applications/minion-night-light.desktop', HERE.joinpath('minion-night-light.desktop').read_text())
 install_comfort(user)

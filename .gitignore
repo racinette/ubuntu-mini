@@ -3,6 +3,8 @@
 .aws/
 .codex/
 .agents/
+.gnupg/
+.password-store/
 credentials.json
 .env
 .env.*

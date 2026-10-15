@@ -11,3 +11,6 @@ alsa-utils
 snapd
 netplan.io
 util-linux
+gnupg
+pass
+pinentry-gnome3

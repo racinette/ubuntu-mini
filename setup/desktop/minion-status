@@ -220,7 +220,7 @@ def launch_power_controls():
 
 def launch_network_controls():
     try:
-        subprocess.Popen(['minion-network'], stdin=subprocess.DEVNULL,
+        subprocess.Popen(['nm-connection-editor'], stdin=subprocess.DEVNULL,
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
     except OSError:
         pass

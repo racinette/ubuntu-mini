@@ -62,22 +62,88 @@ def main():
         proxy.write_private(state / 'dashboard.json', json.dumps({'secret': secret}).encode())
         original = proxy.configuration('https://provider.invalid/private', 'tun', 'fixture')
         original['proxy-groups'].append({'name': 'Personal', 'type': 'select', 'proxies': ['DIRECT']})
+
+        def legacy(name=None):
+            config = json.loads(json.dumps(original))
+            config['proxy-groups'] = [g for g in config['proxy-groups'] if g['name'] != 'Automatic']
+            group = proxy.proxy_group(config)
+            group.clear()
+            if name is None:
+                group.update(name='PROXY', type='url-test', use=['subscription'],
+                             url='https://www.gstatic.com/generate_204', interval=300, tolerance=50)
+            else:
+                import re
+                pattern = '^' + re.escape(name).replace('`', r'\x60') + '$'
+                group.update(name='PROXY', type='select', use=['subscription'],
+                             filter=pattern, **{'empty-fallback': 'REJECT'})
+            return config
+
         with patch.object(proxy, 'STATE', state):
-            runtime, selection = proxy.dashboard_runtime(original)
-            assert proxy.proxy_group(original)['type'] == 'url-test'
+            runtime = proxy.dashboard_runtime(original)
+            assert proxy.proxy_group(original)['type'] == 'select'
             assert runtime['tun'] == original['tun'] and runtime['rules'] == original['rules']
             assert runtime['external-controller'] == '127.0.0.1:9090'
             assert runtime['secret'] == secret and runtime['profile']['store-selected']
             assert proxy.proxy_group(runtime)['proxies'] == ['Automatic']
-            pinned = json.loads(json.dumps(original))
-            proxy.proxy_group(pinned).update(type='select', filter=proxy.server_pattern('日本 🇯🇵'), **{'empty-fallback': 'REJECT'})
-            result, choice = proxy.dashboard_runtime(pinned)
-            assert choice['default'] == 'Configured selection'
-            legacy = next(group for group in result['proxy-groups'] if group['name'] == 'Configured selection')
-            assert legacy['filter'] == proxy.server_pattern('日本 🇯🇵') and legacy['empty-fallback'] == 'REJECT'
-            assert result['proxy-groups'][2] == original['proxy-groups'][1]
-            assert choice['fingerprint'] != selection['fingerprint']
-            assert proxy.dashboard_runtime(original)[1] == selection
+            assert proxy.migrate_dashboard(original) == original
+            pending = state / 'dashboard-migration.json'
+            with patch.object(proxy, 'validate'), patch.object(proxy, 'controller_request', side_effect=OSError):
+                for name in (None, '日本 🇯🇵', r'EU [1].*`test\path'):
+                    old = legacy(name)
+                    migrated = proxy.migrate_dashboard(old)
+                    assert proxy.proxy_group(migrated) == proxy.proxy_group(original)
+                    assert migrated['rules'] == old['rules'] and migrated['tun'] == old['tun']
+                    assert migrated['proxy-providers'] == old['proxy-providers']
+                    assert next(g for g in migrated['proxy-groups'] if g['name'] == 'Personal') == original['proxy-groups'][-1]
+                    assert json.loads(pending.read_text())['name'] == (name or 'Automatic')
+                    assert pending.stat().st_mode & 0o777 == 0o600
+                    assert proxy.migrate_dashboard(migrated) == migrated
+            # A newer graphical selection wins over the historical CLI pin.
+            with patch.object(proxy, 'validate'), patch.object(proxy, 'controller_request', return_value=(200, {'now':'New', 'all':['Old','New','Automatic']})):
+                proxy.migrate_dashboard(legacy('Old'))
+                assert json.loads(pending.read_text())['name'] == 'New'
+            with patch.object(proxy, 'validate'), patch.object(proxy, 'controller_request', side_effect=[
+                    (200, {'now':'Configured selection','all':['Configured selection','Old','New','Automatic']}),
+                    (200, {'now':'Old'})]):
+                proxy.migrate_dashboard(legacy('Old'))
+                assert json.loads(pending.read_text())['name'] == 'Old'
+            # Validation failures preserve both the old config and pending choice.
+            before = (state / 'config.json').read_bytes(), pending.read_bytes()
+            with patch.object(proxy, 'validate', side_effect=proxy.ProxyError('fixture')), patch.object(proxy, 'controller_request', side_effect=OSError):
+                try:
+                    proxy.migrate_dashboard(legacy('Another'))
+                except proxy.ProxyError:
+                    pass
+                else:
+                    raise AssertionError('Failed migration validation accepted')
+            assert before == ((state / 'config.json').read_bytes(), pending.read_bytes())
+            invalid = legacy('Old')
+            proxy.proxy_group(invalid)['filter'] = '^EU.*$'
+            try:
+                proxy.migrate_dashboard(invalid)
+            except proxy.ProxyError:
+                pass
+            else:
+                raise AssertionError('Personal regex treated as a literal pin')
+            # Only clear a migration after the native API confirms the choice.
+            child = type('Child', (), {'poll': lambda self: None})()
+            proxy.write_private(pending, b'{"name":"Old"}')
+            with patch.object(proxy, 'controller_request', side_effect=[
+                    (200, {'all':['Old','New']}), (204,None), (200,{'now':'Old'})]):
+                proxy.restore_migrated_selection(child)
+            assert not pending.exists()
+            with patch.object(proxy, 'controller_request') as request:
+                proxy.restore_migrated_selection(child)
+                request.assert_not_called()
+            proxy.write_private(pending, b'{"name":"Missing"}')
+            stopped = type('Child', (), {'poll': lambda self: 1})()
+            try:
+                proxy.restore_migrated_selection(stopped)
+            except proxy.ProxyError:
+                assert pending.exists()
+            else:
+                raise AssertionError('Lost a failed migration')
+            pending.unlink()
             if args.mihomo:
                 binary = args.mihomo.resolve()
                 names = ['Alpha', '日本 🇯🇵']
@@ -91,7 +157,8 @@ def main():
                 sock = socket.socket(); sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]; sock.close()
                 @contextmanager
                 def engine():
-                    runtime, selected = proxy.dashboard_runtime(proxy.load_config())
+                    config = proxy.migrate_dashboard(proxy.load_config())
+                    runtime = proxy.dashboard_runtime(config)
                     runtime['external-controller'] = f'127.0.0.1:{port}'
                     if args.dashboard_dir:
                         runtime['external-ui'] = str(args.dashboard_dir.resolve())
@@ -110,7 +177,7 @@ def main():
                                 if child.poll() is not None or time.monotonic() > deadline:
                                     raise AssertionError('Native dashboard core failed to start: ' + (state / 'engine.log').read_text()[-1500:])
                                 time.sleep(.05)
-                            proxy.reconcile_dashboard(child, selected)
+                            proxy.restore_migrated_selection(child)
                             yield child, port
                         finally:
                             child.terminate()
@@ -139,20 +206,27 @@ def main():
                 with engine():
                     assert query('/proxies/PROXY')[1]['now'] == 'Automatic', 'Missing GUI choice did not fall back to the first option'
                 proxy.write_private(state / 'providers/subscription.txt', payload.encode())
-                with patch.object(proxy, 'BINARY', binary), redirect_stdout(io.StringIO()):
-                    proxy.select_server(automatic=True, restart=False)
-                with engine():
-                    assert query('/proxies/PROXY')[1]['now'] == 'Automatic', 'Explicit auto did not supersede GUI selection'
-                    assert query('/proxies/PROXY', 'PUT', {'name': names[1]})[0] == 204
-                with patch.object(proxy, 'BINARY', binary), patch.object(proxy, 'cached_servers', return_value=names), redirect_stdout(io.StringIO()):
-                    proxy.select_server('Alpha', restart=False)
-                with engine():
-                    assert query('/proxies/PROXY')[1]['now'] == 'Configured selection'
-                    assert query('/proxies/Configured%20selection')[1]['now'] == 'Alpha'
-                with engine():
-                    assert query('/proxies/PROXY')[1]['now'] == 'Configured selection'
-                print('Passed: native authenticated API, local static panel, Unicode selection persistence and deliberate CLI override across restarts.')
-        print('Passed: safe dashboard extraction, automatic/pinned migration, preserved routing/credentials/personal groups and stable selection source.')
+                # A legacy pin is restored once, then GUI changes stay authoritative.
+                for active_gui_choice in (None, names[0]):
+                    old = legacy(names[1])
+                    old['tun']['enable'] = old['dns']['enable'] = False
+                    old['mixed-port'] = 0
+                    old['proxy-providers']['subscription'] = {'type': 'file', 'path': './providers/subscription.txt'}
+                    proxy.write_private(state / 'config.json', json.dumps(old, ensure_ascii=False).encode())
+                    if active_gui_choice is None:
+                        read = patch.object(proxy, 'controller_request', side_effect=OSError)
+                    else:
+                        read = patch.object(proxy, 'controller_request', return_value=(200,{'now':active_gui_choice,'all':['Automatic',*names]}))
+                    with patch.object(proxy, 'BINARY', binary), read:
+                        proxy.migrate_dashboard(proxy.load_config())
+                    with engine():
+                        assert query('/proxies/PROXY')[1]['now'] == (active_gui_choice or names[1])
+                        assert query('/proxies/PROXY', 'PUT', {'name': names[0]})[0] == 204
+                    assert not (state / 'dashboard-migration.json').exists()
+                    with engine():
+                        assert query('/proxies/PROXY')[1]['now'] == names[0], 'Legacy policy overrode a newer dashboard choice'
+                print('Passed: native authenticated API, local panel, Unicode selection persistence, missing-node fallback and one-time migration across restarts.')
+        print('Passed: safe dashboard assets, native selector, one-time legacy migration, current GUI choice, preservation/rollback and confirmed migration cleanup.')
 
 
 if __name__ == '__main__':

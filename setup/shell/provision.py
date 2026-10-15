@@ -12,6 +12,7 @@ import tempfile
 import urllib.request
 
 from auth import install as install_auth
+from secret_store import install as install_secrets
 
 HERE = Path(__file__).resolve().parent
 p = argparse.ArgumentParser(description=__doc__)
@@ -24,6 +25,7 @@ home = Path(user.pw_dir)
 (home / '.config').mkdir(exist_ok=True)
 os.chown(home / '.config', user.pw_uid, user.pw_gid)
 install_auth(user)
+install_secrets(user)
 artifacts = json.loads(HERE.joinpath('artifacts.json').read_text())
 with tempfile.TemporaryDirectory(prefix='minion-shell-') as scratch:
     root = Path(scratch)

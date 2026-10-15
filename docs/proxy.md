@@ -58,39 +58,22 @@ Mihomo refreshes the lists daily through the selected proxy and retains its cach
 
 ## Choose a subscription server
 
-The dashboard is the everyday picker. The following CLI commands remain available for administration. A deliberate CLI selection (including `--auto`) takes precedence at the next service start; subsequent dashboard selections are remembered until another explicit CLI selection. `--no-restart` still delays activation. The saved CLI policy is retained separately from the private generated dashboard runtime configuration. A previously pinned CLI choice appears as **Configured selection** in the dashboard and retains its exact-name filter and reject-if-missing behavior. A direct dashboard server choice uses Mihomo's native selection/cache behavior; if that server disappears, the selector falls back to its first available option, so choose another server if needed. `list` reports the saved CLI policy, which can differ from a later dashboard choice.
+Click **Proxy** in the bar or open **Proxy dashboard** from the launcher. Select
+**PROXY**, then a server or **Automatic**; use the dashboard's latency checks to
+compare servers. Selection changes take effect without restarting the service,
+and Mihomo remembers them across restarts. If a selected server disappears from
+the subscription, the native selector falls back to its first option, Automatic.
 
-After `configure`, check the cached servers and choose by number:
+The old CLI `list` and `select` commands are removed. On upgrade, an older saved
+CLI policy is converted once to the native selector, preserving a newer active
+dashboard choice when available. Otherwise, an exact saved server pin or
+Automatic is restored on the first start. Restoration is confirmed before the
+migration record is removed; later dashboard choices are never overridden by
+the old CLI policy. Personal regex policies that are not exact saved pins need
+manual migration and are retained with an error instead of being guessed.
 
-```bash
-sudo python3 setup/proxy/manage.py list
-sudo python3 setup/proxy/manage.py select 3
-sudo python3 setup/proxy/manage.py test
-```
-
-`list` tests HTTPS through every server and shows `OK` with response latency in milliseconds, `TIMEOUT` or `FAILED`. Successful checks are ordered by lowest latency first, with failed checks afterward. The numbers remain those of the original cached list, so sorting never changes what `select NUMBER` chooses. Latency measures response time, not download throughput in Mbps. It checks up to eight servers concurrently, with a five-second timeout per server. The default target is `https://www.gstatic.com/generate_204`; success means a TLS-verified HTTPS response with status 200–399 through that server. It does not prove every website works or that TUN capture works. The checker preserves your current selection and does not restart or stop the service.
-
-To use a different destination or allow more time:
-
-```bash
-sudo python3 setup/proxy/manage.py list --url https://github.com --timeout 10
-sudo python3 setup/proxy/manage.py list --all
-```
-
-`--all` restores the original unchecked list of all cached names/numbers in subscription order and works offline; `--no-check` is an alias. Both forms work while the service is stopped and read the cached subscription without fetching it again. A short-lived Mihomo instance parses/checks the cache through a Unix socket inside a private temporary directory, then exits. It opens no network proxy/control listeners and changes no routes or system DNS settings. With an active Minion TUN, checks bind to the physical default uplink and use direct DNS resolution, so they do not depend on the currently selected server. The helper displays names and check results without server URIs or subscription credentials.
-
-Replace `3` with the number from your list. Running `select` without an argument displays the cached list without checking and prompts for a choice. You can also pass an exact name or a unique **case-insensitive literal substring**, such as `sudo python3 setup/proxy/manage.py select "eu34"`. Exact names take priority over substring matching; if a substring matches several servers, the command lists their numbers and changes nothing. Names can contain spaces, emoji or punctuation; no regular-expression escaping is needed.
-
-`select` saves the full exact name and **restarts the service by default**, including when using `--auto`. This also starts a stopped service. It does not enable startup at boot; use `sudo systemctl enable minion-proxy.service` for that. A successful restart confirms service startup; `manage.py test` checks actual connectivity. If restart fails, the command returns an error and leaves the new choice saved for diagnosis or replacement. Use `select 3 --no-restart` to save a choice without changing the running service. `list` marks the saved choice; with `--no-restart` it may differ from the active choice until a later restart.
-
-Numbers can change when the subscription refreshes. Selection is saved by exact name, survives refreshes and ordinary setup reruns, and never switches to another server automatically. If that name disappears from the subscription, public traffic is rejected until you choose another server or restore automatic mode. Local/private network bypass rules still apply. Running `configure` again regenerates the configuration and returns to automatic selection.
-
-To return to automatic latency-based selection:
-
-```bash
-sudo python3 setup/proxy/manage.py select --auto
-sudo python3 setup/proxy/manage.py test
-```
+Proxy configuration, bypass rules, validation and service supervision remain
+available through `manage.py`; server selection belongs to the dashboard.
 
 ## Test with an explicit proxy first
 

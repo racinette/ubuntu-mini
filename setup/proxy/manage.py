@@ -2,10 +2,7 @@
 """Configure and supervise the optional private Mihomo proxy service."""
 import argparse
 import base64
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from contextlib import contextmanager
 import getpass
-import hashlib
 import http.client
 import ipaddress
 import json
@@ -30,7 +27,6 @@ BINARY = Path('/usr/local/lib/minion-proxy/mihomo')
 UNIT = 'minion-proxy.service'
 USER_AGENT = 'minion-proxy/1.0'
 MAX_SUBSCRIPTION = 4 * 1024 * 1024
-CHECK_URL = 'https://www.gstatic.com/generate_204'
 LAN = ['127.0.0.0/8', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16',
        '169.254.0.0/16', '224.0.0.0/4', '::1/128', 'fc00::/7', 'fe80::/10', 'ff00::/8']
 RU_PROVIDERS = {
@@ -74,7 +70,9 @@ def configuration(url, mode, identity):
             'interval': 3600, 'proxy': 'DIRECT', 'size-limit': MAX_SUBSCRIPTION,
             'header': {key: [value] for key, value in device_headers(identity).items()},
         }},
-        'proxy-groups': [{'name': 'PROXY', 'type': 'url-test', 'use': ['subscription'],
+        'proxy-groups': [{'name': 'PROXY', 'type': 'select', 'proxies': ['Automatic'],
+                          'use': ['subscription']},
+                         {'name': 'Automatic', 'type': 'url-test', 'use': ['subscription'],
                           'url': 'https://www.gstatic.com/generate_204', 'interval': 300,
                           'tolerance': 50}],
         'rules': [f'IP-CIDR{6 if ":" in cidr else ""},{cidr},DIRECT,no-resolve'
@@ -184,7 +182,7 @@ def configure(url, mode, bypass_ru=False):
         validate(scratch / 'config.json', scratch)
         write_private(STATE / 'providers/subscription.txt', payload)
         write_private(STATE / 'config.json', content)
-    (STATE / 'dashboard-selection-source.json').unlink(missing_ok=True)
+    (STATE / 'dashboard-migration.json').unlink(missing_ok=True)
     print('Subscription cached and configuration validated. Mode: ' + mode)
     print('Start or restart with: sudo systemctl restart ' + UNIT)
     print('Enable at boot with: sudo systemctl enable ' + UNIT)
@@ -195,11 +193,6 @@ def load_config():
         return json.loads((STATE / 'config.json').read_text())
     except (OSError, ValueError):
         raise ProxyError('From the repository, run sudo python3 setup/proxy/manage.py configure first') from None
-
-
-def server_pattern(name):
-    # Escape backtick filter separators too, producing one literal match.
-    return '^' + re.escape(name).replace('`', r'\x60') + '$'
 
 
 def controller_request(path, request_path, timeout=1, method='GET', body=None):
@@ -219,161 +212,11 @@ def controller_request(path, request_path, timeout=1, method='GET', body=None):
         connection.close()
 
 
-def check_interface(config):
-    if config.get('interface-name'):
-        return config['interface-name']
-    if not Path('/sys/class/net/minion-proxy').is_dir():
-        return None
-    # Bind checks to the real uplink rather than checking every candidate
-    # through the currently selected TUN proxy. Its routes use a policy table;
-    # Ubuntu's physical default route remains in the main table.
-    result = subprocess.run(['ip', '-j', 'route', 'show', 'table', 'main', 'default'],
-                            capture_output=True, text=True, timeout=5)
-    routes = json.loads(result.stdout) if result.returncode == 0 else []
-    routes = [route for route in routes if route.get('dev') not in (None, 'minion-proxy', 'lo')]
-    if not routes:
-        raise ProxyError('Could not find the uplink for checks; use list --no-check or stop the proxy first')
-    return min(routes, key=lambda route: route.get('metric', 0))['dev']
-
-
-@contextmanager
-def cached_engine(check=False):
-    """Parse/check the cached provider in an isolated Mihomo instance.
-
-    Only a Unix control socket in a private directory opens. No proxy/DNS
-    listeners, TUN routes or HTTP subscription refreshes are created.
-    """
-    try:
-        with (STATE / 'providers/subscription.txt').open('rb') as source:
-            payload = source.read(MAX_SUBSCRIPTION + 1)
-    except OSError:
-        raise ProxyError('No cached subscription; run configure first') from None
-    if len(payload) > MAX_SUBSCRIPTION:
-        raise ProxyError('Cached subscription exceeds the 4 MiB limit')
-    with tempfile.TemporaryDirectory(prefix='.list-', dir=STATE) as temporary:
-        scratch = Path(temporary)
-        write_private(scratch / 'subscription.txt', payload)
-        config = {
-            'external-controller': '', 'external-controller-unix': 'control.sock',
-            'log-level': 'silent', 'mode': 'rule',
-            'dns': {'enable': False}, 'tun': {'enable': False},
-            'proxy-providers': {'subscription': {'type': 'file', 'path': './subscription.txt'}},
-            'rules': ['MATCH,DIRECT'],
-        }
-        if check:
-            installed = load_config()
-            interface = check_interface(installed)
-            if interface:
-                config['interface-name'] = interface
-            # Resolve server hostnames directly using the installed resolver
-            # settings, independently of system DNS routed into an active TUN.
-            config['dns'] = dict(installed['dns'], enable=True, listen='',
-                                 **{'respect-rules': False, 'enhanced-mode': 'redir-host'})
-            config['tls'] = {'custom-certifactes': installed.get('tls', {}).get('custom-certifactes', [])}
-        write_private(scratch / 'config.json', json.dumps(config, ensure_ascii=False).encode())
-        env = {key: value for key, value in os.environ.items() if not key.startswith('CLASH_')}
-        child = subprocess.Popen([str(BINARY), '-d', str(scratch), '-f', str(scratch / 'config.json')],
-                                 env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        try:
-            deadline = time.monotonic() + 15
-            while child.poll() is None:
-                try:
-                    status, data = controller_request(scratch / 'control.sock', '/providers/proxies/subscription')
-                    if status == 200:
-                        names = [item['name'] for item in data['proxies']]
-                        if names and all(isinstance(name, str) and name for name in names):
-                            if len(names) != len(set(names)):
-                                raise ProxyError('Subscription contains duplicate server names')
-                            break
-                except (OSError, ValueError, KeyError, http.client.HTTPException):
-                    pass
-                if time.monotonic() >= deadline:
-                    raise ProxyError('Timed out reading servers from the cached subscription')
-                time.sleep(0.1)
-            else:
-                raise ProxyError('Could not read servers from the cached subscription with Mihomo')
-            yield names, scratch / 'control.sock'
-        finally:
-            if child.poll() is None:
-                child.terminate()
-            try:
-                child.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                child.kill()
-                child.wait()
-
-
-def cached_servers():
-    with cached_engine() as (names, _):
-        return names
-
-
-def check_server(control, name, timeout, url):
-    path = '/providers/proxies/subscription/' + urllib.parse.quote(name, safe='')
-    query = urllib.parse.urlencode({'url': url, 'timeout': timeout * 1000, 'expected': '200-399'})
-    try:
-        status, data = controller_request(control, path + '/healthcheck?' + query, timeout + 2)
-        if status == 504:
-            return 'TIMEOUT'
-        if status == 200 and isinstance(data.get('delay'), int) and data['delay'] > 0:
-            # URLTest can return a delay even for an unexpected HTTP status.
-            # Its per-URL alive state records whether the status was acceptable.
-            status, node = controller_request(control, path)
-            if status == 200 and node.get('extra', {}).get(url, {}).get('alive') is True:
-                return f"OK {data['delay']} ms"
-        return 'FAILED'
-    except (TimeoutError, socket.timeout):
-        return 'TIMEOUT'
-    except (OSError, ValueError, KeyError, http.client.HTTPException):
-        return 'FAILED'
-
-
-def list_servers(check=True, timeout=5, url=CHECK_URL):
-    config = load_config()
-    if not check:
-        show_servers(config, cached_servers())
-        return
-    with cached_engine(check=True) as (names, control):
-        print(f'Checking {len(names)} servers through HTTPS: {url} ({timeout}s timeout, up to 8 at once)', flush=True)
-        results = {}
-        pool = ThreadPoolExecutor(max_workers=8)
-        try:
-            pending = {pool.submit(check_server, control, name, timeout, url): name for name in names}
-            for count, future in enumerate(as_completed(pending), 1):
-                results[pending[future]] = future.result()
-                if count % 8 == 0 and count < len(names):
-                    print(f'Checked {count}/{len(names)}...', flush=True)
-        finally:
-            pool.shutdown(wait=True, cancel_futures=True)
-        show_servers(config, names, results)
-        passed = sum(result.startswith('OK ') for result in results.values())
-        print(f'{passed}/{len(names)} servers passed the HTTPS check.')
-        print('Results apply to this HTTPS destination now; they do not test TUN capture or every website.')
-
-
 def proxy_group(config):
     groups = [group for group in config['proxy-groups'] if group['name'] == 'PROXY']
     if len(groups) != 1:
         raise ProxyError('Expected one managed PROXY group in the configuration')
     return groups[0]
-
-
-def show_servers(config, names, results=None):
-    group = proxy_group(config)
-    automatic = group['type'] == 'url-test' and not group.get('filter')
-    print('Saved selection: automatic (latency)' if automatic else 'Saved selection: pinned/filter active')
-    rows = list(enumerate(names, 1))
-    if results is not None:
-        # Retain the cached-list numbers so sorting never changes select NUMBER.
-        rows.sort(key=lambda row: int(results[row[1]].split()[1])
-                  if results[row[1]].startswith('OK ') else float('inf'))
-        print('Ordered by HTTPS response latency (lowest first); failed checks follow.')
-    for number, name in rows:
-        selected = group.get('filter') == server_pattern(name)
-        # Quote display names to prevent embedded terminal controls from running.
-        status = f' [{results[name]}]' if results is not None else ''
-        print(f'{number:3}. {json.dumps(name, ensure_ascii=False)}' + status + (' [selected]' if selected else ''))
-    print('Numbers refer to this cached list and can change after subscription refresh.')
 
 
 def save_config(config):
@@ -443,117 +286,105 @@ def set_ru_bypass(enabled):
     print('Saved only. Activate with: sudo systemctl restart ' + UNIT)
 
 
-def match_server(server, names):
-    if server.isascii() and server.isdecimal():
-        number = int(server)
-        if not 1 <= number <= len(names):
-            raise ProxyError('Server number out of range; run list to see available servers')
-        return names[number - 1]
-    if server in names:
-        return server
-    matches = [(number, name) for number, name in enumerate(names, 1)
-               if server and server.casefold() in name.casefold()]
-    if not matches:
-        raise ProxyError('Server not found; run list to see available servers')
-    if len(matches) > 1:
-        choices = '\n'.join(f'{number:3}. {json.dumps(name, ensure_ascii=False)}' for number, name in matches)
-        raise ProxyError('Substring matches multiple servers; choose a number or a more specific substring:\n' + choices)
-    return matches[0][1]
-
-
-def select_server(server=None, automatic=False, restart=True):
-    config = load_config()
+def migrate_dashboard(config):
+    """Convert an older CLI policy once; subsequent choices belong to Mihomo."""
+    if not (STATE / 'dashboard.json').exists():
+        return config
     group = proxy_group(config)
-    if automatic:
-        replacement = configuration('', 'proxy', '')['proxy-groups'][0]
+    if group['type'] == 'select' and not group.get('filter'):
+        return config
+    if any(g['name'] in ('Automatic', 'Configured selection') for g in config['proxy-groups']):
+        raise ProxyError('Legacy proxy group names conflict with personal configuration')
+    if group['type'] == 'url-test' and not group.get('filter'):
+        choice = 'Automatic'
+    elif group['type'] == 'select' and isinstance(group.get('filter'), str):
+        pattern = group['filter']
+        choice = re.sub(r'\\(x60|.)', lambda m: '`' if m[1] == 'x60' else m[1], pattern[1:-1])
+        if not choice or '^' + re.escape(choice).replace('`', r'\x60') + '$' != pattern:
+            raise ProxyError('Cannot migrate a personal proxy filter automatically')
     else:
-        names = cached_servers()
-        if server is None:
-            show_servers(config, names)
-            server = input('Server number, exact name or unique substring: ').strip()
-        name = match_server(server, names)
-        replacement = {'name': 'PROXY', 'type': 'select', 'use': ['subscription'],
-                       'filter': server_pattern(name), 'empty-fallback': 'REJECT'}
-    group.clear()
-    group.update(replacement)
-    save_config(config)
+        raise ProxyError('Cannot migrate a personal proxy policy automatically')
+    # Prefer a newer dashboard choice when upgrading a running installation.
+    try:
+        status, active = controller_request(STATE / 'dashboard.sock', '/proxies/PROXY')
+        if status == 200:
+            selected = active.get('now')
+            if selected == 'Configured selection':
+                status, nested = controller_request(STATE / 'dashboard.sock', '/proxies/Configured%20selection')
+                selected = nested.get('now') if status == 200 else None
+            if selected and selected != 'Configured selection' and selected in active.get('all', []):
+                choice = selected
+    except (OSError, ValueError, http.client.HTTPException):
+        pass
+    updated = json.loads(json.dumps(config))
+    native = configuration('', 'proxy', '')['proxy-groups']
+    updated['proxy-groups'] = [native[0], *[g for g in updated['proxy-groups'] if g['name'] != 'PROXY'], native[1]]
+    # Persist the choice before replacing config, retaining it until the API
+    # confirms it. Failed validation must leave both previous files intact.
+    pending = STATE / 'dashboard-migration.json'
+    previous = pending.read_bytes() if pending.exists() else None
+    write_private(pending, json.dumps({'name': choice}, ensure_ascii=False).encode())
+    try:
+        save_config(updated)
+    except BaseException:
+        if previous is None:
+            pending.unlink(missing_ok=True)
+        else:
+            write_private(pending, previous)
+        raise
     (STATE / 'dashboard-selection-source.json').unlink(missing_ok=True)
-    print('Saved selection: ' + ('automatic (latency)' if automatic else json.dumps(name, ensure_ascii=False)))
-    if restart:
-        try:
-            result = subprocess.run(['systemctl', 'restart', UNIT], capture_output=True, timeout=60)
-        except (OSError, subprocess.TimeoutExpired):
-            raise ProxyError('Selection saved, but service restart could not complete; check sudo journalctl -u ' + UNIT) from None
-        if result.returncode:
-            raise ProxyError('Selection saved, but service restart failed; check sudo journalctl -u ' + UNIT)
-        print('Proxy service restarted. Run sudo python3 setup/proxy/manage.py test to check connectivity.')
-    else:
-        print('Saved only. Activate with: sudo systemctl restart ' + UNIT)
+    return updated
 
 
 def dashboard_runtime(config):
-    """Keep the saved CLI policy intact and expose a native, persistent selector."""
+    """Expose the native selector and let Mihomo persist dashboard choices."""
     settings = STATE / 'dashboard.json'
     if not settings.exists():
-        return config, None
+        return config
     access = json.loads(settings.read_text())
     if not isinstance(access.get('secret'), str) or len(access['secret']) < 32:
         raise ProxyError('Invalid dashboard identity; rerun proxy provisioning')
     runtime = json.loads(json.dumps(config))
-    saved = proxy_group(runtime)
-    fingerprint = hashlib.sha256(json.dumps(saved, sort_keys=True).encode()).hexdigest()
-    automatic = configuration('', 'proxy', '')['proxy-groups'][0]
-    automatic['name'] = 'Automatic'
-    groups = runtime['proxy-groups']
-    if any(group['name'] in ('Automatic', 'Configured selection') for group in groups):
-        raise ProxyError('Dashboard group names conflict with personal proxy groups')
-    if saved['type'] == 'url-test' and not saved.get('filter'):
-        groups.remove(saved)
-        default = 'Automatic'
-    else:
-        saved['name'] = 'Configured selection'
-        default = 'Configured selection'
-    groups.insert(0, {'name': 'PROXY', 'type': 'select',
-                      'proxies': [default] + ([] if default == 'Automatic' else ['Automatic']),
-                      'use': ['subscription']})
-    groups.append(automatic)
     runtime.update({'external-controller': '127.0.0.1:9090',
                     'external-controller-unix': 'dashboard.sock',
                     'external-ui': str(STATE / 'ui'), 'secret': access['secret'],
                     'external-controller-cors': {'allow-origins': ['http://127.0.0.1:9090']}})
     runtime.setdefault('profile', {})['store-selected'] = True
-    return runtime, {'fingerprint': fingerprint, 'default': default}
+    return runtime
 
 
-def reconcile_dashboard(child, selection):
-    """A deliberate CLI policy change supersedes the last dashboard selection once."""
-    marker = STATE / 'dashboard-selection-source.json'
-    if marker.exists() and json.loads(marker.read_text()).get('fingerprint') == selection['fingerprint']:
+def restore_migrated_selection(child):
+    pending = STATE / 'dashboard-migration.json'
+    if not pending.exists():
         return
+    choice = json.loads(pending.read_text())['name']
     deadline = time.monotonic() + 15
     while child.poll() is None:
         try:
             status, group = controller_request(STATE / 'dashboard.sock', '/proxies/PROXY')
-            if status == 200 and selection['default'] in group.get('all', []):
+            if status == 200 and choice in group.get('all', []):
                 status, _ = controller_request(STATE / 'dashboard.sock', '/proxies/PROXY',
-                                               method='PUT', body={'name': selection['default']})
+                                               method='PUT', body={'name': choice})
                 if status != 204:
-                    raise ProxyError('Could not restore configured proxy selection')
-                write_private(marker, json.dumps(selection).encode())
-                return
+                    raise ProxyError('Could not restore the migrated proxy choice')
+                status, selected = controller_request(STATE / 'dashboard.sock', '/proxies/PROXY')
+                if status == 200 and selected.get('now') == choice:
+                    pending.unlink()
+                    return
         except (OSError, ValueError, http.client.HTTPException):
             pass
         if time.monotonic() >= deadline:
-            raise ProxyError('Dashboard control did not initialize')
+            raise ProxyError('Migrated proxy choice is unavailable; migration retained for retry')
         time.sleep(.1)
-    raise ProxyError('Proxy stopped before dashboard selection initialized')
+    raise ProxyError('Proxy stopped before the migrated choice initialized')
 
 
 def supervise():
-    config = load_config()
-    runtime, selection = dashboard_runtime(config)
+    config = migrate_dashboard(load_config())
+    runtime = dashboard_runtime(config)
+    dashboard_enabled = (STATE / 'dashboard.json').exists()
     configuration_path = STATE / 'config.json'
-    if selection:
+    if dashboard_enabled:
         configuration_path = STATE / 'dashboard-runtime.json'
         write_private(configuration_path, (json.dumps(runtime, ensure_ascii=False) + '\n').encode())
         validate(configuration_path)
@@ -564,7 +395,7 @@ def supervise():
         secrets.append(parsed.path)
     if parsed.query:
         secrets.append(parsed.query)
-    if selection:
+    if dashboard_enabled:
         secrets.append(runtime['secret'])
     child = subprocess.Popen([str(BINARY), '-d', str(STATE), '-f', str(configuration_path)],
                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
@@ -576,11 +407,11 @@ def supervise():
     failures = []
     def reconcile():
         try:
-            reconcile_dashboard(child, selection)
+            restore_migrated_selection(child)
         except Exception:
             failures.append('Dashboard selection could not initialize')
             child.terminate()
-    reconciliation = threading.Thread(target=reconcile) if selection else None
+    reconciliation = threading.Thread(target=reconcile) if (STATE / 'dashboard-migration.json').exists() else None
     if reconciliation:
         reconciliation.start()
     failed = False
@@ -656,23 +487,6 @@ def test_connection():
         os.environ.update(previous)
 
 
-def check_timeout(value):
-    try:
-        seconds = int(value)
-    except ValueError:
-        raise argparse.ArgumentTypeError('Timeout must be a whole number of seconds from 1 to 30') from None
-    if not 1 <= seconds <= 30:
-        raise argparse.ArgumentTypeError('Timeout must be from 1 to 30 seconds')
-    return seconds
-
-
-def check_url(value):
-    try:
-        return validate_url(value)
-    except ProxyError:
-        raise argparse.ArgumentTypeError('Check URL must use HTTPS without credentials, whitespace or a fragment') from None
-
-
 def main():
     os.umask(0o077)
     parser = argparse.ArgumentParser(description=__doc__)
@@ -681,15 +495,6 @@ def main():
     setup.add_argument('--subscription-file', type=Path, help='Root-owned mode-600 file containing only the URL')
     setup.add_argument('--mode', choices=('proxy', 'tun'), default='tun')
     setup.add_argument('--bypass-ru', action='store_true', help='Bypass Russian domains and IP ranges')
-    listing = sub.add_parser('list', help='List cached servers with HTTPS connectivity checks')
-    listing.add_argument('--all', '--no-check', dest='no_check', action='store_true',
-                         help='Original unchecked list of all cached names/numbers; works offline')
-    listing.add_argument('--timeout', type=check_timeout, default=5, help='Per-server timeout in seconds (1–30; default: 5)')
-    listing.add_argument('--url', type=check_url, default=CHECK_URL, help='HTTPS destination to check through each server')
-    selection = sub.add_parser('select', help='Save a server choice and restart the proxy service')
-    selection.add_argument('server', nargs='?', help='Number, exact name or unique case-insensitive substring; omit to choose interactively')
-    selection.add_argument('--auto', action='store_true', help='Restore automatic latency-based selection')
-    selection.add_argument('--no-restart', action='store_true', help='Only save the selection; keep the service as it is')
     mode = sub.add_parser('mode', help='Change mode; restart the service separately to activate')
     mode.add_argument('mode', choices=('proxy', 'tun'))
     bypass = sub.add_parser('bypass-ru', help='Save Russian domain/IP bypass rules; restart separately')
@@ -700,8 +505,6 @@ def main():
     sub.add_parser('run', help='Service entry point with subscription URL redaction')
     sub.add_parser('test', help='Test HTTPS using the localhost proxy listener')
     args = parser.parse_args()
-    if args.command == 'select' and args.auto and args.server is not None:
-        parser.error('Use select SERVER or select --auto, not both')
     if os.geteuid() != 0:
         parser.error('Run with sudo')
     STATE.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -710,10 +513,6 @@ def main():
         if args.command == 'configure':
             url = private_file(args.subscription_file) if args.subscription_file else getpass.getpass('Subscription URL (hidden): ').strip()
             configure(url, args.mode, args.bypass_ru)
-        elif args.command == 'list':
-            list_servers(not args.no_check, args.timeout, args.url)
-        elif args.command == 'select':
-            select_server(args.server, args.auto, not args.no_restart)
         elif args.command == 'mode':
             config = load_config()
             config['tun']['enable'] = args.mode == 'tun'

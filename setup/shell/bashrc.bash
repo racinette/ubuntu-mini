@@ -1,5 +1,9 @@
 # Source at the end of the user's .bashrc. Noninteractive shells remain plain Bash.
 [[ $- == *i* ]] || return
+# Terminal fallback for GPG; the desktop normally uses a graphical pinentry.
+if [[ -t 0 ]]; then
+  export GPG_TTY=$(tty)
+fi
 case ":$PATH:" in
   *":$HOME/.local/bin:"*) ;;
   *) export PATH="$HOME/.local/bin:$PATH" ;;

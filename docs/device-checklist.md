@@ -45,6 +45,7 @@ systemctl status var-lib-minion-swapfile.swap
 
 ## Network and access for debugging
 
+- [ ] Initialize a passphrase-protected `pass` store privately. A disposable entry reaches the requested command using the shell example in the setup guide, consecutive lookups reuse the unlock, and a missing entry never starts the command. Check a graphical unlock prompt after `gpgconf --reload gpg-agent`. Back up the vault and encryption key separately; keep tokens out of reports.
 - [ ] One sudo authentication is reused across terminals for 15 minutes; `sudo -k` invalidates it. SSH/Git unlock a key on first use and reuse it through the shared agent for one hour. Confirm agent removal/activation after logout/login at the next planned session restart.
 - [ ] Connect to Wi-Fi through the network applet or `nmtui`; confirm both Firefox and a terminal can reach the internet. Reconnect after reboot.
 - [ ] Establish the intended on-device coding workflow: the agent can read this checkout, run commands and collect device diagnostics. Complete any required sign-in before starting hardware debugging.
@@ -177,9 +178,8 @@ Conda/Miniforge is optional and is not part of default installation. Local devel
 
 Configure a subscription privately using [proxy setup](proxy.md), only if proxy access is wanted. A fresh installation leaves the service disabled until explicitly enabled.
 
-- [ ] `manage.py list` checks servers and orders successful HTTPS checks by lowest response latency, retaining original selection numbers. `list --all` shows the original unchecked list and works offline. Interactive `select`, `select NUMBER` or a unique substring saves the intended server and restarts the service. Ambiguous substrings change nothing; `--no-restart` saves only. Reboot/setup reruns retain the choice; `select --auto` restores automatic selection and restarts. Verify the intended server is actually used.
 - [ ] The subscription fetch and `manage.py test` succeed after configuration. Confirm the expected TUN or explicit-proxy mode; an explicit-proxy test alone does not establish system-wide capture.
-- [ ] Clicking Proxy in the bar and choosing Proxy dashboard in the launcher open the local MetaCubeXD interface. PROXY lists subscription servers and Automatic; latency tests respond and a graphical server choice survives a proxy restart. Check readability at the device scale. CLI selections take effect when explicitly applied; dashboard credentials and subscription URLs stay private.
+- [ ] Clicking Proxy in the bar and choosing Proxy dashboard in the launcher open the local MetaCubeXD interface. PROXY lists subscription servers and Automatic; latency tests respond and a graphical server choice survives a proxy restart. Check readability at the device scale. On upgrade, the previous choice migrates once and later dashboard selections stay authoritative; dashboard credentials and subscription URLs stay private.
 - [ ] With TUN enabled, Firefox, ordinary terminal requests and coding agents work without application proxy settings. Confirm DNS, local/private network access and the expected public egress route.
 - [ ] Stop the service and confirm direct connectivity/DNS return; start it again and check recovery. The bar tracks service state, while actual requests establish connectivity.
 - [ ] Repeat after Wi-Fi changes, suspend/wake and reboot. Confirm the chosen boot activation state, retained configuration and device registration.

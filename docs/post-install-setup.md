@@ -130,6 +130,54 @@ The service's default key lifetime is one hour as well. To inspect it, run
 [sudo's timestamp controls](https://www.sudo.ws/docs/man/sudoers.man/) and
 [OpenSSH's agent settings](https://man.openbsd.org/ssh_config.5#AddKeysToAgent).
 
+## Local secrets
+
+Setup installs `pass`, GnuPG and a graphical password prompt. It seeds
+`~/.gnupg/gpg-agent.conf` only when absent: unlocks last 15 minutes without use,
+with a one-hour maximum even during continuous use. Existing GPG settings,
+encryption keys and password stores are retained. Setup never generates keys,
+collects tokens or decrypts secrets.
+
+Once per account, create a passphrase-protected encryption key and initialize
+the store with its fingerprint (shown by GPG):
+
+```bash
+gpg --quick-generate-key "Local secrets" rsa3072 encr 0
+gpg --list-secret-keys --keyid-format long
+pass init YOUR_ENCRYPTION_KEY_FINGERPRINT
+pass insert cloud/provider/token
+```
+
+Enter the token at `pass insert`'s hidden prompt. Store one token per entry.
+`pass` lists entry names; `pass show ENTRY` prints the plaintext. To supply a
+token to a command without printing it, use ordinary shell syntax:
+
+```bash
+(
+  token="$(pass show cloud/provider/token)" &&
+    PROVIDER_TOKEN="$token" provider-cli arguments
+)
+```
+
+Replace the example variable/command with the provider's documented values.
+The subshell keeps the temporary variable out of your interactive shell; `&&`
+prevents the command from running if lookup fails. The token is supplied through
+the command's environment and is available to its children. The command itself
+must also avoid logging credentials. This is not isolation from an unrestricted
+agent running as your account; prefer narrowly scoped cloud credentials.
+
+Clear GPG's cached passphrases with `gpgconf --reload gpg-agent` (this affects all
+keys using that agent). To change cache settings, edit `~/.gnupg/gpg-agent.conf`
+and run the same reload command. Interactive shells export `GPG_TTY` for terminal
+fallback; the installed graphical prompt also works for agent-launched commands.
+
+The encrypted store is `~/.password-store`; its entry filenames are visible.
+Back up it **and the matching secret key**, plus retain the key passphrase,
+separately from this checkout. A copy of the store alone is not recoverable
+without the key. Setup's configuration archive includes GPG settings, not the
+vault or private keys. See [pass](https://www.passwordstore.org/) and
+[GPG cache settings](https://www.gnupg.org/documentation/manuals/gnupg/Agent-Options.html).
+
 ## Coding CLIs
 
 Ordinary `sudo ./setup.sh` installs **Codex** (`codex`), **Claude Code** (`claude`) and **Cursor Agent** (`agent`) for the selected desktop account. Their official native installers run as that user, with the correct home directory and no root credentials or tool settings inherited. Their native installers are independent of the development Node.js/npm installation. Setup installs Git, curl, certificates, ripgrep, `xdg-utils` for opening browser sign-in links, bubblewrap for Linux sandboxing, and socat for Claude's optional Linux sandbox; it leaves tool permissions and sandbox settings at upstream defaults.
@@ -331,7 +379,13 @@ and CJK fonts are not included in this fallback set.
 
 The WIN Mini's built-in keyboard supports English (US) and Russian typing. Press **Ctrl+Space** to switch; the bar shows **US** or **RU**, and a centered popup briefly confirms the active language. It disappears after one second; switching again updates the same popup. `minion-layout-popup.service` watches actual Sway layout changes, including the gamepad shortcut, without displaying anything at login or changing focus. Select remains the gamepad window picker. Menus and system messages remain English. Desktop shortcuts keep the same physical keys in either layout. The physical keyboard and gamepad share a keymap so L2/R2 modifiers also work with physical typing; hold R2 and press the spacebar to switch languages. Personal layout overrides in `~/.config/sway/minion.conf` still take precedence.
 
-Click the **Wi-Fi** text in the bar, or choose **Wi-Fi networks** from Super+D, to open the graphical network chooser. It lists nearby networks and signal strengths; select one to connect. Saved profiles are reused, and NetworkManager's existing applet handles password prompts. Refresh scans for networks; Enable Wi-Fi turns the radio on. **Saved / hidden networks** opens the connection editor for hidden networks and enterprise authentication. Right-clicking the bar's Wi-Fi text shows the current SSID. Opening the chooser alone does not change your connection.
+Use the **NetworkManager tray icon** in the bottom bar to view nearby Wi-Fi
+networks and connect; its existing password prompts handle new networks.
+Click the **Wi-Fi** text in the bar, or choose **Advanced Network Configuration**
+from Super+D, to open NetworkManager's connection editor for saved profiles,
+hidden networks and enterprise authentication. Right-clicking the bar's Wi-Fi
+text shows the current SSID. Opening the menu or editor alone does not change
+your connection. Setup removes the former custom Wi-Fi chooser on upgrade.
 
 On the GPD WIN Mini 2023 (`G1617-01`), setup seeds the internal microphone at **10% input volume**, which selects **0 dB Capture and 0 dB Internal Mic Boost** on its ALC245 codec. The initial 100% level selected +30 dB for each control and badly distorted speech during the device check. Setup writes only this internal-microphone route in `~/.local/state/wireplumber/default-routes` before the first desktop login; other audio devices and any saved microphone level are preserved. Later volume changes persist normally, and setup reruns retain them. To apply the tested level manually in an existing session, run `pactl set-source-volume alsa_input.pci-0000_63_00.6.analog-stereo 10%`, or adjust the internal microphone in `pavucontrol`.
 
@@ -345,7 +399,7 @@ These controls are also available as `minion-idle-controls off`, `on`, `toggle-a
 
 Routine notification popups expire after five seconds by default; Keep awake messages expire after 2.5 seconds, and language popups after one second. Critical alerts remain until dismissed unless the sender requests an explicit timeout. Applications' explicit timeout requests are honored. Setup seeds `~/.config/mako/config` when absent and adds the app-specific `minion-layout` style without changing other settings. An existing personal rule for that app is preserved on reruns. After editing that file, run `makoctl reload`; right-click or tap a popup to dismiss it manually.
 
-The bottom bar shows the HHD power target, available temperatures, Wi-Fi signal, output volume/mute, proxy service state, battery, dictation state, both stick modes (for example `L:Scroll R:Windows`) and date/time. Click Wi-Fi to see the connected network name. A keyboard layout indicator appears when multiple layouts are configured; it prefers physical keyboards over the gamepad's virtual keyboard. The compact battery display uses `73% ↑` for charging, `↓` for discharging, `Full` for a full battery and `Idle` when connected but not charging. The battery indicator is hidden when no readable system battery is detected; peripheral batteries are excluded.
+The bottom bar shows the HHD power target, available temperatures, Wi-Fi signal, output volume/mute, proxy service state, battery, dictation state, both stick modes (for example `L:Scroll R:Windows`) and date/time. Click Wi-Fi to edit connections; right-click it to see the connected network name. A keyboard layout indicator appears when multiple layouts are configured; it prefers physical keyboards over the gamepad's virtual keyboard. The compact battery display uses `73% ↑` for charging, `↓` for discharging, `Full` for a full battery and `Idle` when connected but not charging. The battery indicator is hidden when no readable system battery is detected; peripheral batteries are excluded.
 
 Battery, audio, layout and stick mode refresh every second; power, temperatures, Wi-Fi and proxy state refresh every five seconds. Wi-Fi uses cached readings without requesting scans. `Proxy ON` means the system service is active, rather than proving internet connectivity. Unavailable Wi-Fi/audio/proxy readings show `?` without stopping the bar. These indicators use the packages already installed by setup.
 

@@ -1,6 +1,6 @@
 # Validation status
 
-Current device status as of **2026-10-15** for the **GPD WIN Mini 2023 / Ryzen 7 7840U**. The installed system is in everyday use. This summary supersedes the earlier pre-device backlog; dated experiments and their limits remain in [testing](testing.md). The [device checklist](device-checklist.md) is a reusable checklist for another installation and deliberately stays unchecked.
+Current device status as of **2026-10-16** for the **GPD WIN Mini 2023 / Ryzen 7 7840U**. The installed system is in everyday use. This summary supersedes the earlier pre-device backlog; dated experiments and their limits remain in [testing](testing.md). The [device checklist](device-checklist.md) is a reusable checklist for another installation and deliberately stays unchecked.
 
 ## Completed on this device
 
@@ -36,14 +36,14 @@ These are verification gaps, not known blockers to ordinary use:
 - **Network edge cases:** actual connection to a new password-protected Wi-Fi network, hidden/enterprise networks and Bluetooth automatic reconnection after sleep/reboot remain separate checks. Pairing and normal connectivity already passed.
 - **Optional workflows:** screen sharing/portal chooser, external display/dock/storage/card reader, Vulkan rendering and hardware video decoding remain untested. Test them when needed.
 - **Guitar input:** the USB audio interface was unavailable. Verify its routing, input gain, live effects and latency when connected; generated-audio VST3 processing already passed. Realtime-priority fallback in the host/modeler logs needs evaluation during that latency check.
-- **Specific refinements:** lock-screen language switching, sensor calibration/resume and real-project LSP edge cases are not exhaustively tested. Confirm the SSH agent lifecycle at the next planned logout/login; live key reuse already passed. The intermittent Codex-only terminal redraw stripe was set aside after it stopped reproducing.
+- **Specific refinements:** lock-screen language switching, sensor calibration/resume and real-project LSP edge cases are not exhaustively tested. Confirm the SSH agent lifecycle at the next planned logout/login; live key reuse already passed. Transient wrong-color graphics flicker is now also reported in the browser; a 60 Hz comparison is under way, with no root cause established.
 - **Memory pressure:** observe sustained real workloads and confirm swap activation at the next planned boot. The bounded read/write check passed; the earlier Firefox out-of-memory exit motivates continued observation.
 - **Low-battery policy:** real warning visibility during discharge, charger cancellation of a pending power action and a deliberate saved-work shutdown remain untested. Policy readback, active services and simulated warning transitions passed.
 
 ## Deliberate choices
 
 - Lid close still locks and suspends on either power source. Hibernation/Secure Boot changes were declined; explicitly shut down before transport when suspend is unsuitable. Adding swap does not enable hibernation.
-- Power-button behavior is unchanged. Keep awake/display-only controls use Fn+F4/F3. R4 controls dictation; L4 and Fn+F5/F6 are unassigned.
+- Power-button behavior is unchanged. Keep awake/display-only controls use Fn+F4/F3. Fn+F5 switches 60/120 Hz and remembers the rate. R4 controls dictation; L4 and Fn+F6 are unassigned.
 - Firmware cooling remains automatic. Custom fan curves and gyro input/automatic rotation are optional features.
 - Additional reboot cycles and low-priority peripheral tests were deferred by the user.
 

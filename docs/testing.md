@@ -10,6 +10,22 @@ Firefox-first browser preferences were applied on the WIN Mini: `xdg-settings ge
 
 ## Recent device checks
 
+On 2026-10-16, Fn+F5 gained internal-panel 60/120 Hz switching, with the selected
+mode saved for later sessions. The bar now reads the active rate and abbreviates
+stick modes as `L:S/T R:W/R`. Native 60 → 120 → 60 Hz checks passed. Installation
+exposed Sway resetting the panel's implicit 90° rotation on reload; landscape was
+restored and the saved preference now includes current rotation and scale.
+The corrected configuration reloaded successfully at 60 Hz, landscape and 2×
+scaling. Installed scripts matched and a live bar stream showed `L:S R:W 60Hz`.
+Isolated checks covered advertised/current-resolution modes, persistence, failed
+switch/readback/write rollback, missing/inactive panel, personal/symlink refusal,
+all compact labels and live refresh/error readings. Idle-policy, status-bar,
+setup-staging, Sway validation and diff checks passed. The user confirmed that
+Fn+F5 taps switch rates and a two-second hold switches only once. Next-login
+persistence remains to be confirmed. Graphics-artifact recurrence at
+60 Hz has not been assessed and no root cause is established.
+[Private refresh-controls report](../.local/device-checks/refresh-controls/result.json).
+
 On 2026-10-16, the Neovim Back mapping reproduced `E19: Mark has invalid line
 number` after an external edit shortened a loaded file and `checktime` reloaded
 it. The saved jump still referred to line 90. Back/Forward now recover this

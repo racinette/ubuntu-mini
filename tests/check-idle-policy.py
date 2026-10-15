@@ -176,9 +176,72 @@ fn_bindings = [line for line in sway_config.splitlines() if line.startswith(phys
 assert any('XF86AudioStop exec minion-idle-controls display-press' in line and '--locked' in line for line in fn_bindings)
 assert any('XF86AudioStop exec minion-idle-controls display-release' in line and '--release' in line for line in fn_bindings)
 assert any('XF86AudioPrev exec minion-idle-controls toggle-awake' in line and '--locked' not in line for line in fn_bindings)
-for key in ('XF86AudioPlay', 'XF86AudioPause', 'XF86AudioNext'):
-    assert any(line.endswith(key + ' nop') for line in fn_bindings)
+for key in ('XF86AudioPlay', 'XF86AudioPause'):
+    assert any(line.endswith(key + ' exec minion-idle-controls toggle-refresh') for line in fn_bindings)
+assert any(line.endswith('XF86AudioNext nop') for line in fn_bindings)
 assert all('--no-repeat' in line for line in fn_bindings)
+assert sway_config.index('include ~/.config/sway/minion-refresh.conf') < sway_config.index('include ~/.config/sway/minion.conf')
+
+# Select only advertised modes at the current native resolution, persist only
+# successful readback, and restore the old mode after a switch/write failure.
+with tempfile.TemporaryDirectory() as temporary, patch.dict(os.environ, XDG_RUNTIME_DIR=temporary):
+    directory = Path(temporary)
+    preference = directory / 'config/sway/minion-refresh.conf'
+    low = dict(width=1080, height=1920, refresh=60012)
+    high = dict(width=1080, height=1920, refresh=120007)
+    panel = dict(name='eDP-1', active=True, current_mode=dict(low), scale=2, transform='90',
+                 modes=[dict(width=1920, height=1080, refresh=120000), low, high])
+    commands = []
+    behavior = {'reject': False, 'wrong_readback': False}
+
+    def display_command(command, **kwargs):
+        if command[-1] == 'get_outputs':
+            return json.dumps([dict(name='HDMI-A-1', active=True, current_mode=high), panel])
+        commands.append(command[-1])
+        if behavior['reject'] and '@120.007Hz' in command[-1]:
+            return '[{"success":false}]'
+        if not behavior['wrong_readback']:
+            panel['current_mode'] = dict(high if '@120.007Hz' in command[-1] else low)
+        return '[{"success":true}]'
+
+    with patch.object(subprocess, 'check_output', side_effect=display_command), \
+            patch.object(subprocess, 'run') as notify:
+        assert controls['toggle_refresh'](preference) == 120
+        assert panel['current_mode'] == high and panel['scale'] == 2 and panel['transform'] == '90'
+        assert preference.read_text().endswith('output eDP-1 mode 1080x1920@120.007Hz transform 90 scale 2\n')
+        assert preference.stat().st_mode & 0o777 == 0o600
+        assert controls['toggle_refresh'](preference) == 60
+        original = preference.read_bytes()
+        assert preference.read_text().endswith('output eDP-1 mode 1080x1920@60.012Hz transform 90 scale 2\n')
+        for failure in ('reject', 'wrong_readback', 'write'):
+            behavior.update(reject=failure == 'reject', wrong_readback=failure == 'wrong_readback')
+            with patch.object(Path, 'replace', side_effect=OSError('fixture disk failure')) if failure == 'write' else contextlib.nullcontext():
+                try:
+                    controls['toggle_refresh'](preference)
+                except (RuntimeError, OSError):
+                    pass
+                else:
+                    raise AssertionError('Failed refresh switch was accepted')
+            assert preference.read_bytes() == original and panel['current_mode'] == low
+            assert commands[-1].endswith('@60.012Hz')
+        behavior.update(reject=False, wrong_readback=False)
+        for invalid in ('unsupported', 'inactive', 'personal', 'symlink'):
+            commands.clear()
+            panel['modes'] = [low] if invalid == 'unsupported' else [low, high]
+            panel['active'] = invalid != 'inactive'
+            preference.write_bytes(original if invalid != 'personal' else b'# Personal configuration\n')
+            link = directory / 'link'
+            link.symlink_to(preference)
+            candidate = link if invalid == 'symlink' else preference
+            before = preference.read_bytes()
+            try:
+                controls['toggle_refresh'](candidate)
+            except RuntimeError:
+                pass
+            else:
+                raise AssertionError('Invalid refresh preference or display accepted')
+            assert preference.read_bytes() == before and not commands
+            link.unlink()
 
 # Fn+F3 snapshots state on press and acts on release, including a long hold
 # after input has already woken a dark screen. A wake marker is consumed once.

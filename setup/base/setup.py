@@ -111,6 +111,7 @@ def backup_configuration(path, user):
     paths.append(Path('/usr/local/share/applications/minion-network.desktop'))
     paths.append(Path('/usr/local/share/applications/minion-night-light.desktop'))
     paths.append(Path(user.pw_dir) / '.config/gammastep')
+    paths.append(Path(user.pw_dir) / '.config/sway/minion-refresh.conf')
     paths.append(Path(user.pw_dir) / '.config/voxtype')
     paths.append(Path(user.pw_dir) / '.bashrc')
     paths.append(Path(user.pw_dir) / '.gnupg/gpg-agent.conf')

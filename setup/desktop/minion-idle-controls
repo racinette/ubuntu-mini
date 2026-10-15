@@ -1,11 +1,12 @@
 #!/usr/bin/python3
-"""Control display power and the session's explicit keep-awake override."""
+"""Control display power/refresh and the session's explicit keep-awake override."""
 import argparse
 import fcntl
 import json
 import os
 from pathlib import Path
 import subprocess
+import tempfile
 import time
 
 
@@ -89,9 +90,72 @@ def toggle_awake():
     return enabled
 
 
+REFRESH_HEADER = '# Managed by minion-idle-controls: internal-panel refresh rate.\n'
+
+
+def internal_output():
+    data = json.loads(subprocess.check_output(['swaymsg', '-r', '-t', 'get_outputs'], text=True, timeout=5))
+    return next((item for item in data if item.get('name') == 'eDP-1' and item.get('active')), None)
+
+
+def set_mode(mode):
+    command = f"output eDP-1 mode {mode['width']}x{mode['height']}@{mode['refresh'] / 1000:.3f}Hz"
+    result = json.loads(subprocess.check_output(['swaymsg', '-r', command], text=True, timeout=5))
+    if not result or not all(item.get('success') for item in result):
+        raise RuntimeError('The display rejected the requested refresh rate')
+    return command
+
+
+def toggle_refresh(preference=None):
+    preference = preference or Path.home() / '.config/sway/minion-refresh.conf'
+    with (state_directory() / 'control.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if preference.is_symlink():
+            raise RuntimeError('Refusing a symlinked refresh preference')
+        if preference.exists() and not preference.read_text().startswith(REFRESH_HEADER):
+            raise RuntimeError('The refresh preference contains personal configuration')
+        output = internal_output()
+        if output is None:
+            raise RuntimeError('The internal display is unavailable')
+        current = output['current_mode']
+        target = 120000 if abs(current['refresh'] - 60000) < 1000 else 60000
+        modes = [mode for mode in output['modes']
+                 if mode['width'] == current['width'] and mode['height'] == current['height']
+                 and abs(mode['refresh'] - target) < 1000]
+        if not modes:
+            raise RuntimeError(f'The internal display does not advertise {target // 1000} Hz at this resolution')
+        selected = min(modes, key=lambda mode: abs(mode['refresh'] - target))
+        preference.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(mode='w', dir=preference.parent, delete=False) as stream:
+            prepared = Path(stream.name)
+        try:
+            command = set_mode(selected)
+            actual = internal_output()
+            # Extra advertised-mode metadata can differ from current_mode.
+            if actual is None or any(actual['current_mode'].get(key) != selected[key]
+                                     for key in ('width', 'height', 'refresh')):
+                raise RuntimeError('The active display mode did not match the requested rate')
+            # Sway reload otherwise resets an implicit firmware rotation to
+            # normal. Retain the panel geometry alongside the selected mode;
+            # explicit personal output settings are included afterward.
+            geometry = f" transform {output['transform']} scale {output['scale']:g}"
+            prepared.write_text(REFRESH_HEADER + command + geometry + '\n')
+            prepared.chmod(0o600)
+            prepared.replace(preference)
+        except BaseException:
+            set_mode(current)
+            raise
+        finally:
+            prepared.unlink(missing_ok=True)
+    rate = round(selected['refresh'] / 1000)
+    subprocess.run(['notify-send', '-a', 'minion', '-t', '2000', '--', 'Refresh rate', f'{rate} Hz'],
+                   check=False, timeout=5)
+    return rate
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('off', 'on', 'display-press', 'display-release', 'toggle-awake', 'status'))
+    parser.add_argument('action', choices=('off', 'on', 'display-press', 'display-release', 'toggle-awake', 'toggle-refresh', 'status'))
     action = parser.parse_args().action
     if action in ('off', 'on'):
         display_power(action == 'on')
@@ -99,6 +163,13 @@ def main():
         display_toggle(action.removeprefix('display-'))
     elif action == 'toggle-awake':
         toggle_awake()
+    elif action == 'toggle-refresh':
+        try:
+            toggle_refresh()
+        except (OSError, ValueError, KeyError, RuntimeError, subprocess.SubprocessError) as error:
+            subprocess.run(['notify-send', '-a', 'minion', '--', 'Refresh rate', str(error)],
+                           check=False, timeout=5)
+            parser.exit(1, f'Refresh rate: {error}\n')
     else:
         target = state_directory() / 'keep-awake'
         print(json.dumps({'keep_awake': target.exists() and target.read_text().strip() == '1'}))

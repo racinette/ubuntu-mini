@@ -292,8 +292,23 @@ def keyboard_layout():
 def stick_mode():
     directory = os.environ.get('XDG_RUNTIME_DIR')
     mode = read(Path(directory) / 'minion-gamepad/stick-mode') if directory else ''
-    valid = {f'L:{left} R:{right}' for left in ('Scroll', 'Text') for right in ('Windows', 'Resize')}
-    return block('stick', mode if mode in valid else 'L:Scroll R:Windows')
+    labels = {f'L:{left} R:{right}': f'L:{left[0]} R:{right[0]}'
+              for left in ('Scroll', 'Text') for right in ('Windows', 'Resize')}
+    return block('stick', labels.get(mode, 'L:S R:W'))
+
+
+def refresh_rate():
+    try:
+        outputs = json.loads(run('swaymsg', '-r', '-t', 'get_outputs') or 'null')
+        if isinstance(outputs, list):
+            for output in outputs:
+                if isinstance(output, dict) and output.get('name') == 'eDP-1' and output.get('active'):
+                    rate = output.get('current_mode', {}).get('refresh')
+                    if isinstance(rate, (int, float)) and not isinstance(rate, bool) and 0 < rate < 1000000:
+                        return block('refresh', f'{rate / 1000:.0f}Hz')
+    except (ValueError, TypeError, AttributeError):
+        pass
+    return block('refresh', 'Hz ?')
 
 
 def awake_mode():
@@ -350,17 +365,18 @@ def main():
     network, service = block('wifi', 'Wi-Fi ?'), block('proxy', 'Proxy ?')
     power_block, thermal_blocks = block('power', 'Power ?'), []
     next_slow = 0
-    with ThreadPoolExecutor(max_workers=5) as workers:
+    with ThreadPoolExecutor(max_workers=6) as workers:
         while True:
             started = time.monotonic()
             volume = workers.submit(audio)
             layout = workers.submit(keyboard_layout)
+            refresh = workers.submit(refresh_rate)
             slow = started >= next_slow
             if slow:
                 network_future = workers.submit(wifi)
                 service_future = workers.submit(proxy)
                 health_future = workers.submit(health)
-            blocks = [stick_mode(), awake_mode(), voice_mode()]
+            blocks = [stick_mode(), refresh.result(), awake_mode(), voice_mode()]
             blocks += layout.result()
             if slow:
                 network, details['wifi'] = network_future.result()

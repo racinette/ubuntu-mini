@@ -208,9 +208,20 @@ def main():
         # Run the actual streaming entry point with isolated CLI providers.
         binary = root / 'bin'; binary.mkdir()
         fixture = root / 'state.json'
+        outputs = [dict(name='eDP-1', active=True, current_mode=dict(refresh=60012))]
+        for rate, label in ((60012, '60Hz'), (120007, '120Hz'), (59940, '60Hz')):
+            with patch.object(status, 'run', return_value=json.dumps([
+                    dict(name='HDMI-A-1', active=True, current_mode=dict(refresh=144000)),
+                    dict(name='eDP-1', active=True, current_mode=dict(refresh=rate))])):
+                assert status.refresh_rate()['full_text'] == label
+        for output in (None, 'invalid', '{}', '[]', json.dumps([dict(name='eDP-1', active=False)]),
+                       json.dumps([dict(name='eDP-1', active=True, current_mode=None)]),
+                       json.dumps([dict(name='eDP-1', active=True, current_mode=dict(refresh=0))])):
+            with patch.object(status, 'run', return_value=output):
+                assert status.refresh_rate()['full_text'] == 'Hz ?'
         data = {'nmcli': '*:67:Cafe: "Guest"', 'wpctl': 'Volume: 0.42',
                 'systemctl': 'LoadState=loaded\nActiveState=active',
-                'swaymsg': json.dumps([virtual, physical]), 'hhd': automatic}
+                'swaymsg': json.dumps([virtual, physical]), 'outputs': json.dumps(outputs), 'hhd': automatic}
         def save():
             staged = fixture.with_suffix('.new')
             staged.write_text(json.dumps(data)); staged.replace(fixture)
@@ -219,7 +230,8 @@ def main():
 import json,os,sys,time
 from pathlib import Path
 name=Path(sys.argv[0]).name
-value=json.loads(Path(os.environ['MINION_STATUS_FIXTURE']).read_text()).get(name)
+data=json.loads(Path(os.environ['MINION_STATUS_FIXTURE']).read_text())
+value=data.get('outputs' if name=='swaymsg' and 'get_outputs' in sys.argv else name)
 if value is None: sys.exit(1)
 if value == 'TIMEOUT': time.sleep(3)
 print(value)
@@ -235,9 +247,9 @@ print(value)
                 for right in ('Windows', 'Resize'):
                     label = f'L:{left} R:{right}'
                     mode.write_text(label + '\n')
-                    assert status.stick_mode()['full_text'] == label
+                    assert status.stick_mode()['full_text'] == f'L:{left[0]} R:{right[0]}'
             mode.write_text('unknown\n')
-            assert status.stick_mode()['full_text'] == 'L:Scroll R:Windows'
+            assert status.stick_mode()['full_text'] == 'L:S R:W'
             mode.write_text('L:Scroll R:Windows\n')
             assert status.awake_mode()['full_text'] == 'Awake OFF'
             awake.write_text('1\n')
@@ -295,7 +307,7 @@ main()
             assert json.loads(line()) == {'version': 1, 'click_events': True}
             assert line() == '['
             expected = {'wifi': 'Wi-Fi 67%', 'audio': 'Vol 42%', 'proxy': 'Proxy ON',
-                        'layout': 'RU', 'stick': 'L:Scroll R:Windows', 'power': 'Auto', 'awake': 'Awake OFF',
+                        'layout': 'RU', 'stick': 'L:S R:W', 'refresh': '60Hz', 'power': 'Auto', 'awake': 'Awake OFF',
                         'temperatures': 'CPU65° GPU58° SSD40° Bat32°'}
             deadline = time.monotonic() + 8
             while True:
@@ -305,7 +317,8 @@ main()
                 # Cold interpreter startup in fake providers can exceed the CLI timeout.
                 assert time.monotonic() < deadline, first
             data.update(nmcli='', wpctl='Volume: 0.42 [MUTED]', systemctl='LoadState=loaded\nActiveState=failed',
-                        swaymsg=json.dumps([dict(physical, xkb_active_layout_name='English (US)')]), hhd=manual)
+                        swaymsg=json.dumps([dict(physical, xkb_active_layout_name='English (US)')]),
+                        outputs=json.dumps([dict(name='eDP-1', active=True, current_mode=dict(refresh=120007))]), hhd=manual)
             (cpu / 'temp2_input').write_text('72000')
             (ssd / 'temp1_input').write_text('48000')
             mode.write_text('L:Text R:Resize\n'); awake.write_text('1\n'); save()
@@ -316,11 +329,12 @@ main()
                     break
                 assert time.monotonic() < deadline, 'Slow indicators did not refresh'
             assert (current['wifi'], current['audio'], current['layout'], current['stick']) == (
-                'Wi-Fi disconnected', 'Muted', 'US', 'L:Text R:Resize')
+                'Wi-Fi disconnected', 'Muted', 'US', 'L:T R:R')
             assert current['power'] == 'Limit 18W'
+            assert current['refresh'] == '120Hz'
             assert current['awake'] == 'Awake ON'
             assert current['temperatures'] == 'CPU72° GPU58° SSD48° Bat32°'
-            data.update(wpctl='TIMEOUT', swaymsg=None); save()
+            data.update(wpctl='TIMEOUT', swaymsg=None, outputs=None); save()
             deadline = time.monotonic() + 5
             while True:
                 current = frame()
@@ -328,6 +342,7 @@ main()
                     break
                 assert time.monotonic() < deadline, 'Unavailable providers froze status'
             data['hhd'] = None; save()
+            assert current['refresh'] == 'Hz ?'
             shutil.rmtree(hwmon)
             (supplies / 'BAT0/temp').unlink()
             deadline = time.monotonic() + 9

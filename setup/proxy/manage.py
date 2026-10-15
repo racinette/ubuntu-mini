@@ -38,6 +38,8 @@ RU_PROVIDERS = {
         'path': './rules/ru-ips.list', 'interval': 86400, 'proxy': 'PROXY'},
 }
 RU_RULES = [f'RULE-SET,{name},DIRECT' for name in RU_PROVIDERS]
+# Use ASCII IDNA for the Belarusian .бел suffix, as sent by browsers/clients.
+BY_RULES = ['DOMAIN-SUFFIX,by,DIRECT', 'DOMAIN-SUFFIX,xn--90ais,DIRECT']
 
 
 class ProxyError(Exception):
@@ -76,7 +78,7 @@ def configuration(url, mode, identity):
                           'url': 'https://www.gstatic.com/generate_204', 'interval': 300,
                           'tolerance': 50}],
         'rules': [f'IP-CIDR{6 if ":" in cidr else ""},{cidr},DIRECT,no-resolve'
-                  for cidr in LAN] + ['MATCH,PROXY'],
+                  for cidr in LAN] + BY_RULES + ['MATCH,PROXY'],
         'tun': {
             'enable': mode == 'tun', 'device': 'minion-proxy', 'stack': 'gvisor',
             'auto-route': True, 'auto-redirect': False,

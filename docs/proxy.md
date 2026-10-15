@@ -41,6 +41,24 @@ The local HTTP/SOCKS listener binds only to `127.0.0.1:7890`. The dashboard and 
 
 Setup installs a checksum-pinned [MetaCubeXD static release](https://github.com/MetaCubeX/metacubexd), retaining its API identity on reruns. Installation does not start or restart the proxy. Restart an already configured service after upgrading to activate the dashboard. No second proxy engine is installed.
 
+## Belarusian website bypass
+
+Default proxy configuration sends `.by` and `.бел` domains directly, including
+`hoster.by` and their subdomains. The two native Mihomo rules are:
+
+```text
+DOMAIN-SUFFIX,by,DIRECT
+DOMAIN-SUFFIX,xn--90ais,DIRECT
+```
+
+`xn--90ais` is the ASCII IDNA spelling of `.бел`. These suffix rules require no
+downloaded registry or updates and work independently of the optional Russian
+bypass lists. They cover these domain zones, not all Belarusian IP addresses
+or Belarusian services using other domain suffixes. Earlier personal rules keep
+priority. Existing installations retain their config on setup reruns; add these
+rules before `MATCH,PROXY` and restart the proxy when upgrading manually.
+See [Mihomo suffix rules](https://wiki.metacubex.one/en/config/rules/#domain-suffix).
+
 ## Russian website and IP bypass
 
 To route Russian services directly while keeping the proxy for other public destinations:

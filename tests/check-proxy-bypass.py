@@ -26,6 +26,8 @@ def main():
     parser.add_argument('--mihomo', type=Path)
     args = parser.parse_args()
     original = proxy.configuration('https://provider.invalid/private', 'tun', 'fixture')
+    assert original['rules'][-3:] == proxy.BY_RULES + ['MATCH,PROXY']
+    assert 'бел'.encode('idna').decode() == 'xn--90ais'
     original['rules'].insert(0, 'DOMAIN,personal.invalid,REJECT')
     original['rule-providers'] = {'personal': {'type': 'inline', 'behavior': 'domain', 'payload': ['personal.invalid']}}
     enabled = proxy.ru_bypass_config(original, True)
@@ -74,7 +76,10 @@ def main():
                       'external-controller-unix': str(state / 'api.sock'),
                       'hosts': {'direct.test.invalid': '127.0.0.1', 'proxy.test.invalid': '127.0.0.1'},
                       'proxy-groups': [{'name': 'PROXY', 'type': 'select', 'proxies': ['REJECT']}],
-                      'rule-providers': {}, 'rules': proxy.RU_RULES + ['MATCH,PROXY']}
+                      'rule-providers': {}, 'rules': ['DOMAIN,blocked.by,REJECT'] + proxy.BY_RULES + proxy.RU_RULES + ['MATCH,PROXY']}
+            belarus_domains = ['hoster.by', 'api.hoster.by', 'пример.бел'.encode('idna').decode()]
+            for host in belarus_domains + ['hoster.by.example.invalid', 'blocked.by']:
+                config['hosts'][host] = '127.0.0.1'
             for name, definition in proxy.RU_PROVIDERS.items():
                 config['rule-providers'][name] = {'type': 'file', 'behavior': definition['behavior'],
                                                  'format': 'text', 'path': definition['path']}
@@ -108,6 +113,10 @@ def main():
             try:
                 with run_checks():
                     assert request('direct.test.invalid') == (200, b'direct fixture'), 'Domain bypass failed'
+                    for host in belarus_domains:
+                        assert request(host) == (200, b'direct fixture'), 'Belarus suffix bypass failed: ' + host
+                    assert request('hoster.by.example.invalid')[0] != 200, 'Suffix lookalike bypassed PROXY'
+                    assert request('blocked.by')[0] != 200, 'Bypass overrode an earlier personal rule'
                     assert request('127.0.0.1')[0] != 200, 'Unmatched destination bypassed PROXY'
                 (state / 'api.sock').unlink(missing_ok=True)
                 (state / 'rules/ru-ips.list').write_text('127.0.0.1/32\n')
@@ -115,7 +124,7 @@ def main():
                     assert request('127.0.0.1') == (200, b'direct fixture'), 'IP bypass failed'
             finally:
                 server.shutdown(); server.server_close(); worker.join(timeout=5)
-            print('Passed: real domain and IP direct routing with unmatched traffic sent to PROXY.')
+            print('Passed: Russian domain/IP and Belarus suffix direct routing, IDNA/subdomains, earlier exceptions and unmatched traffic through PROXY.')
     print('Passed: bypass precedence, idempotence, personal settings, disabling and failed-download preservation.')
 
 

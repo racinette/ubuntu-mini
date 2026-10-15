@@ -150,6 +150,7 @@ See [development setup](post-install-setup.md#development-environment) for manag
 - [ ] `/usr/bin/python3` remains Ubuntu's interpreter, independently of the development `python`/`python3`. Minion's desktop services and HHD continue to start.
 - [ ] After the fresh login, `id -nG` includes `docker`. Docker works without sudo; Buildx can build an image and Compose can start, inspect and remove a disposable service with the device's normal storage/network configuration.
 - [ ] Sign in to Codex, Claude Code and Cursor Agent, test browser handoff and rendering at 2× scaling, and complete a small repository task with each. Check each tool's available sandbox diagnostics on the actual kernel; a version command alone does not establish sandbox operation.
+- [ ] In Neovim insert mode, one physical Enter/Backspace or gamepad A/X tap performs one action; holding X still repeats. Check the same controls in the file tree/pickers, and repeat after reopening the editor.
 - [ ] Open Neovim from the launcher and a project with `nvim .`. Check tree navigation, fuzzy lookup, project text search, definitions/references, return navigation, normal file editing/saving and external LLM edits appearing on focus/idle without overwriting unsaved work. Check Go, Rust, JS/TS, Python, shell, JSON, YAML, TOML and C/C++ language-server attachment and on-device D-pad/stick usability.
 
 ```bash

@@ -10,6 +10,8 @@ Firefox-first browser preferences were applied on the WIN Mini: `xdg-settings ge
 
 ## Recent device checks
 
+On 2026-10-15, duplicate Neovim Enter/Backspace actions were reproduced in real Foot 1.16.2 windows with both a clean editor and the previous project config. A single synthetic Return inserted two newlines, and Backspace removed two characters. Keeping CSI-u disambiguation while disabling key-event reporting reduced each to one action. The correction runs on UI attachment/resume and replaces protocol flags rather than growing the terminal's mode stack. A disposable PTY regression passed startup, single actions, intentional repeat, the resume hook and clean-exit mode restoration; it rejects the previous config. All 14 project-scope/navigation checks passed again, installed/repository configs matched, and setup staging/syntax/diff checks passed. Physical keyboard/gamepad confirmation and a physical suspend/resume cycle were still pending at this point. [Private Neovim input report](../.local/device-checks/neovim-input/result.json).
+
 On 2026-10-15, the custom Wi-Fi chooser and legacy proxy CLI server-list/selection checker were removed. NetworkManager's existing tray menu supplies nearby networks, while the bar's Wi-Fi text opens its connection editor; the user accepted the upstream GUI. The live proxy choice migrated to Mihomo's native selector, remained selected after the service restart, and the one-time migration record was consumed. Routing, subscription and credential settings were retained; a proxied GitHub HTTPS request succeeded. Disposable native-engine tests verified authenticated control, Unicode choices, later GUI selections persisting across restarts, missing-node fallback and domain/IP bypass routing. Installed sources matched, the bar reloaded and launch actions opened the upstream editor/dashboard. Setup staging, status-bar, proxy supervision/bypass/migration, syntax and diff checks passed. No new Wi-Fi password, network switch, next-login cycle or full setup was tested. [Private cleanup report](../.local/device-checks/helper-cleanup/result.json).
 
 On 2026-10-15, Ubuntu pass 1.7.4 and graphical GPG pinentry were installed, and the user initialized a personal encryption key/store through private prompts. A disposable token decrypted successfully, a second lookup reused the unlock in 0.401 seconds, and the test entry was removed. Effective GPG settings matched the 15-minute idle/one-hour maximum cache defaults, with external passphrase caching disabled. The proposed custom command wrapper was subsequently removed from the device and setup at the user's request. The setup guide now uses ordinary shell syntax with a failed-lookup guard. Private config/store modes, preservation tests and setup staging passed. Actual cache expiry and next-login prompts were not timed, and the user still needs a separate backup of the vault and secret key. No real cloud token or API request was used. [Private pass report](../.local/device-checks/pass/result.json).
@@ -86,6 +88,7 @@ python3 tests/check-status-bar.py
 python3 tests/check-layout-popup.py
 python3 tests/check-night-light.py
 python3 tests/check-terminal-launch.py
+python3 tests/check-neovim-input.py
 python3 tests/check-idle-policy.py
 python3 tests/check-install-plan.py
 python3 tests/check-install-launch.py
@@ -99,6 +102,8 @@ python3 tests/check-audio-effects.py
 ```
 
 The secret-store check verifies private settings, retention of personal configuration/keys/stores and symlink refusal. With `pass` and GnuPG installed, `python3 tests/check-secret-store.py --integration` additionally creates a disposable fixture key/store to check actual encryption and the documented standard shell example: command environment injection, literal argument preservation, child exit status and missing-entry blocking. It never opens the personal vault.
+
+The Neovim input check runs the actual editor/config in a disposable PTY that emulates Foot's keyboard negotiation and its measured duplicate release bytes. It verifies single Enter/Backspace actions, intentional repeat, the resume hook and restoring the shell's keyboard mode on exit. It needs the installed Neovim/plugins and host PTY/local-socket access, but sends no desktop input and opens no project files. A separate live Foot check reproduced the same bug with the previous config and single actions with the corrected config.
 
 The microphone-default check covers WIN Mini model matching, the tested 10% input level, user ownership, fresh state creation, merging other routes and retaining saved levels byte-for-byte on reruns. It changes no host audio settings. The format follows [WirePlumber 0.4's per-route volume storage](https://github.com/PipeWire/wireplumber/blob/0.4.17/src/scripts/policy-device-routes.lua).
 

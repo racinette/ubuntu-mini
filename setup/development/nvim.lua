@@ -2,6 +2,14 @@
 vim.g.loaded_netrw = 1
 vim.g.loaded_netrwPlugin = 1
 vim.g.mapleader = ' '
+-- Foot 1.16 emits Enter/Backspace twice with key-event reporting enabled.
+-- Keep CSI-u key disambiguation, but omit release events. Replace the current
+-- flags rather than pushing a mode, so Neovim's normal exit restores the shell.
+if vim.env.TERM and vim.env.TERM:match('^foot') and vim.api.nvim_ui_send then
+  vim.api.nvim_create_autocmd({ 'UIEnter', 'VimResume' }, {
+    callback = vim.schedule_wrap(function() vim.api.nvim_ui_send('\27[=1u') end),
+  })
+end
 vim.opt.termguicolors = true
 vim.opt.mouse = 'a'
 vim.opt.clipboard = 'unnamedplus'

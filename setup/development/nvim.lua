@@ -43,18 +43,23 @@ local root_markers = { '.git', 'Cargo.toml', 'go.mod', 'pyproject.toml', 'packag
 local start_path = vim.fn.argc() > 0 and vim.fn.fnamemodify(vim.fn.argv(0), ':p') or vim.fn.getcwd()
 -- An explicitly opened directory defines the browsing/search scope, even when
 -- an ancestor contains project markers. Infer a root only for file arguments.
-local project_root = vim.fn.isdirectory(start_path) == 1
+local start_root = vim.fn.isdirectory(start_path) == 1
   and start_path or vim.fs.root(start_path, root_markers)
-if project_root then vim.api.nvim_set_current_dir(project_root) end
+if start_root then vim.api.nvim_set_current_dir(start_root) end
 require('nvim-tree').setup({
   sync_root_with_cwd = true,
-  update_focused_file = { enable = true, update_root = true },
+  -- Track files inside the chosen scope without moving it to dependency folders.
+  update_focused_file = { enable = true, update_root = false },
   view = { width = 26 },
   renderer = {
     group_empty = true,
     icons = { show = { file = false, folder = false, folder_arrow = false, git = false, modified = false, diagnostics = false, bookmarks = false } },
   },
-  actions = { open_file = { quit_on_open = true, window_picker = { enable = false } } },
+  actions = {
+    -- Explicit tree navigation sets the scope within this Neovim instance.
+    change_dir = { global = true },
+    open_file = { quit_on_open = true, window_picker = { enable = false } },
+  },
   git = { enable = true },
   on_attach = function(buf)
     tree.map.on_attach.default(buf)
@@ -65,10 +70,7 @@ require('nvim-tree').setup({
     map('<CR>', tree.node.open.edit, 'Open file/folder')
     map('<Right>', tree.node.open.edit, 'Open file/folder')
     map('<Left>', tree.node.navigate.parent_close, 'Parent/collapse folder')
-    map('<BS>', function()
-      project_root = nil
-      tree.tree.change_root_to_parent()
-    end, 'Browse parent directory')
+    map('<BS>', tree.tree.change_root_to_parent, 'Browse parent directory')
     map('<Esc>', tree.tree.close, 'Close tree')
     map('<Tab>', tree.tree.close, 'Return to code')
     map('q', tree.tree.close, 'Close tree')
@@ -80,17 +82,6 @@ require('nvim-tree').setup({
   end,
 })
 
-local function select_project(args)
-  if vim.bo[args.buf].buftype == '' then
-    -- Choose a project when browsing from home, but keep searches there while
-    -- following definitions into dependency sources and standard libraries.
-    if not project_root then
-      project_root = vim.fs.root(args.buf, root_markers)
-      if project_root then vim.api.nvim_set_current_dir(project_root) end
-    end
-  end
-end
-vim.api.nvim_create_autocmd({ 'BufReadPost', 'BufNewFile' }, { callback = select_project })
 vim.api.nvim_create_autocmd({ 'FocusGained', 'BufEnter', 'CursorHold' }, {
   callback = function() if vim.fn.getcmdwintype() == '' then vim.cmd('checktime') end end,
 })
@@ -199,7 +190,7 @@ vim.diagnostic.config({ virtual_text = false, signs = false, underline = true })
 vim.api.nvim_create_autocmd('VimEnter', {
   callback = function()
     if vim.fn.argc() == 0 or vim.fn.isdirectory(vim.fn.argv(0)) == 1 then
-      tree.tree.open({ path = project_root or vim.fn.getcwd() })
+      tree.tree.open({ path = vim.fn.getcwd() })
     end
   end,
 })

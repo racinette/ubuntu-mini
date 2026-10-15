@@ -10,6 +10,24 @@ Firefox-first browser preferences were applied on the WIN Mini: `xdg-settings ge
 
 ## Recent device checks
 
+On 2026-10-15, the WIN Mini's UPower policy changed from a 2% action threshold
+to 20% low / 10% critical / 5% PowerOff. UPower was enabled for boot and restarted;
+its live API confirmed PowerOff. The session warning service is active and part
+of the graphical session, including the device's older target location. Installed
+sources matched, unrelated UPower settings were preserved and a second policy
+application made no changes. Isolated real-D-Bus warning transitions, policy,
+idle/status-bar, setup-staging, service-unit, syntax and diff checks passed. No
+real battery drain, shutdown or next-login cycle was performed.
+[Private battery-protection report](../.local/device-checks/battery-protection/result.json).
+
+`/usr/bin/python3 tests/check-battery-policy.py --integration` checks UPower policy
+merging, retained unrelated settings, rerun stability, malformed-file/symlink
+refusal, warning escalation/deduplication, charger reset and delivery retry. Its
+real watcher runs against a private D-Bus with simulated UPower and notification
+services; it checks notification urgency, replacement IDs, expiry, peripheral
+filtering and daemon-owner changes. It never changes host battery readings or
+calls a power action. This does not test a real battery discharge or shutdown.
+
 On 2026-10-15, native domain-suffix DIRECT rules for `.by` and IDNA `.бел` (`xn--90ais`) were added to proxy defaults and the live device. The installed configuration and selected proxy were preserved apart from those two rules. Live TLS connection inspection confirmed `hoster.by` matched the direct suffix rule while GitHub still used PROXY; the public Hoster.by page returned HTTP 200. A disposable native engine verified root/subdomain and IDNA matches, lookalikes staying proxied, earlier personal exceptions and retained Russian domain/IP bypasses. Proxy supervision/dashboard checks, setup staging, syntax and diff checks passed. No browser sign-in or account-specific page behavior was tested. [Private Belarus bypass report](../.local/device-checks/belarus-bypass/result.json).
 
 On 2026-10-15, duplicate Neovim Enter/Backspace actions were reproduced in real Foot 1.16.2 windows with both a clean editor and the previous project config. A single synthetic Return inserted two newlines, and Backspace removed two characters. Keeping CSI-u disambiguation while disabling key-event reporting reduced each to one action. The correction runs on UI attachment/resume and replaces protocol flags rather than growing the terminal's mode stack. A disposable PTY regression passed startup, single actions, intentional repeat, the resume hook and clean-exit mode restoration; it rejects the previous config. All 14 project-scope/navigation checks passed again, installed/repository configs matched, and setup staging/syntax/diff checks passed. Physical keyboard/gamepad confirmation and a physical suspend/resume cycle were still pending at this point. [Private Neovim input report](../.local/device-checks/neovim-input/result.json).

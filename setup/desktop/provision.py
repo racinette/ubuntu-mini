@@ -13,6 +13,7 @@ from comfort import install as install_comfort
 from firmware import install as install_sensor_firmware
 from voice import install as install_voice
 from notifications import install as install_notifications
+from battery import install as install_battery
 
 HERE = Path(__file__).resolve().parent
 parser = argparse.ArgumentParser(description=__doc__)
@@ -54,13 +55,14 @@ try:
 finally:
     if created_mask:
         run('systemctl', 'unmask', '--runtime', 'greetd.service')
+battery_changed = install_battery()
 if install_sensor_firmware():
     print('Installed verified WIN Mini BMI260 motion-sensor firmware.')
 # Ubuntu splits these rules out of brightnessctl as a recommended package.
 # Our no-recommends install includes them explicitly; they grant video-group
 # writes to screen backlights. New group membership takes effect next login.
 run('usermod', '-a', '-G', 'video', user.pw_name)
-for name in ('minion-session', 'minion-session-ready', 'minion-lock', 'minion-idle', 'minion-idle-controls', 'minion-rear-buttons', 'minion-status', 'minion-gamepad', 'minion-workspaces', 'minion-window-picker', 'minion-proxy-ui', 'minion-night-light', 'minion-terminal', 'minion-voice', 'minion-layout-popup'):
+for name in ('minion-session', 'minion-session-ready', 'minion-lock', 'minion-idle', 'minion-idle-controls', 'minion-rear-buttons', 'minion-status', 'minion-gamepad', 'minion-workspaces', 'minion-window-picker', 'minion-proxy-ui', 'minion-night-light', 'minion-terminal', 'minion-voice', 'minion-layout-popup', 'minion-battery-warnings'):
     write('/usr/local/bin/' + name, HERE.joinpath(name).read_text(), 0o755)
 write('/etc/minion/sway.conf', HERE.joinpath('sway.conf').read_text())
 write('/etc/minion/gamepad.json', HERE.joinpath('gamepad.json').read_text())
@@ -130,7 +132,7 @@ run('udevadm', 'trigger', '--action=add', '--subsystem-match=backlight')
 run('udevadm', 'trigger', '--action=add', '--subsystem-match=misc', '--sysname-match=uinput')
 run('udevadm', 'trigger', '--action=change', '--subsystem-match=input')
 run('udevadm', 'settle')
-for name in ('minion-gamepad', 'minion-workspaces', 'minion-screen-lock', 'minion-display-wake', 'minion-rear-buttons', 'minion-night-light', 'minion-voice', 'minion-layout-popup'):
+for name in ('minion-gamepad', 'minion-workspaces', 'minion-screen-lock', 'minion-display-wake', 'minion-rear-buttons', 'minion-night-light', 'minion-voice', 'minion-layout-popup', 'minion-battery-warnings'):
     write('/etc/systemd/user/' + name + '.service', HERE.joinpath(name + '.service').read_text())
 write('/etc/greetd/config.toml', '''[terminal]
 vt = 1
@@ -167,6 +169,10 @@ BindsTo=graphical-session.target
 After=graphical-session.target
 Wants=mako.service minion-polkit.service minion-idle.service minion-display-wake.service minion-rear-buttons.service minion-network-applet.service minion-bluetooth-applet.service minion-gamepad.service minion-workspaces.service minion-night-light.service minion-ssh-agent.service minion-voice.service minion-layout-popup.service
 ''')
+# Extend older targets in /etc/xdg/systemd/user as well as fresh installations.
+write('/etc/systemd/user/minion-session.target.d/battery.conf', '''[Unit]
+Wants=minion-battery-warnings.service
+''')
 write('/etc/systemd/user/mako.service.d/session.conf', '''[Unit]
 PartOf=minion-session.target
 After=graphical-session.target
@@ -202,13 +208,14 @@ if not list(Path('/run/systemd/network').glob('*netplan*')):
     run('systemctl', 'disable', *([] if args.defer_activation else ['--now']), 'systemd-networkd-wait-online.service',
         'systemd-networkd.service', 'systemd-networkd.socket')
 run('systemctl', 'daemon-reload')
-run('systemctl', 'enable', 'NetworkManager.service', 'bluetooth.service', 'greetd.service')
+run('systemctl', 'enable', 'NetworkManager.service', 'bluetooth.service', 'greetd.service', 'upower.service')
 run('systemctl', 'set-default', 'graphical.target')
 if args.defer_activation:
     print('Desktop configured. Reboot to activate networking and password-authenticated login.')
     raise SystemExit(0)
 # Start/apply only after package/config writes. Existing SSH remains a fallback.
 run('systemctl', 'start', 'NetworkManager.service', 'bluetooth.service')
+run('systemctl', 'restart' if battery_changed else 'start', 'upower.service')
 run('netplan', 'apply')
 run('nm-online', '--quiet', '--wait-for-startup', '--timeout=60')
 # On a first renderer transition NM can retain an assumed external connection

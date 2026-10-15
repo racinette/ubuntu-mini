@@ -393,6 +393,13 @@ On the GPD WIN Mini 2023 (`G1617-01`), setup seeds the internal microphone at **
 
 On external power, the desktop stays on and does not lock or blank automatically while the lid is open. On battery, idle locking occurs after five minutes and displays turn off after ten. Closing the lid locks and suspends on either power source, including when docked. Plugging or unplugging is detected within about two seconds; unplugging starts fresh battery idle timers. Super+L still locks on either power source, and explicit suspend still locks before sleeping. Connecting a charger does not unlock an already locked session. Setup installs the lid policy through `/etc/systemd/logind.conf.d/60-minion-power.conf`; reboot after setup to activate it.
 
+Low-battery protection shows a warning at 20%, an urgent warning at 10%, and
+initiates a clean shutdown at 5%. Save your work and connect power when warned:
+shutdown closes applications without preserving unsaved work. UPower performs
+the action even outside the graphical session or with Keep awake enabled.
+See [low-battery protection](power-controls.md#low-battery-protection) for timing,
+configuration and verification limits.
+
 On the WIN Mini, **Fn+F3** toggles display power without locking or suspending; another press or ordinary input restores the display. **Fn+F4** toggles Keep awake, suppressing automatic idle locking/display-off while background work runs. Holding either combination does not repeat its action. The bar shows `Awake ON`/`Awake OFF`; click it to toggle. The override survives charger changes and service restarts and resets at reboot. Closing the lid and explicit suspend still lock and sleep. Super+L remains lock-only, and the power button is unchanged. The rear **R4** button now controls dictation; **L4** is unassigned. See [controls](gamepad-controls.md) for device matching and the background-agent workflow.
 
 These controls are also available as `minion-idle-controls off`, `on`, `toggle-awake` and `status`. The independent `minion-display-wake.service` restores display power on input and resume, including on AC and with Keep awake enabled. Display-off fails before blanking if the wake listener cannot be signaled. Normal idle policy changes are detected within about two seconds.

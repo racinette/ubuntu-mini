@@ -1,0 +1,9 @@
+[Unit]
+Description=Minion low-battery warnings
+PartOf=minion-session.target
+After=graphical-session.target mako.service
+
+[Service]
+ExecStart=/usr/local/bin/minion-battery-warnings
+Restart=on-failure
+RestartSec=3

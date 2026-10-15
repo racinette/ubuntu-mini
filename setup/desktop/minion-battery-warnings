@@ -1,0 +1,106 @@
+#!/usr/bin/python3
+"""Show UPower's system-battery warnings; UPower alone handles shutdown."""
+import logging
+import math
+
+from gi.repository import Gio, GLib
+
+UPOWER = 'org.freedesktop.UPower'
+ROOT = '/org/freedesktop/UPower'
+DISPLAY = ROOT + '/devices/DisplayDevice'
+PROPERTIES = 'org.freedesktop.DBus.Properties'
+NOTIFICATIONS = 'org.freedesktop.Notifications'
+
+
+class Warnings:
+    def __init__(self, notify, close):
+        self.notify, self.close = notify, close
+        self.announced = 0
+        self.notification_id = 0
+
+    def update(self, on_battery, device):
+        if not on_battery or not device.get('IsPresent', False):
+            if self.notification_id:
+                self.close(self.notification_id)
+                self.notification_id = 0
+            self.announced = 0
+            return
+        percentage = float(device.get('Percentage', float('nan')))
+        level = int(device.get('WarningLevel', 0))
+        if (device.get('Type') not in (2, 3) or not math.isfinite(percentage)
+                or not 0 <= percentage <= 100 or level not in (3, 4, 5)
+                or level <= self.announced):
+            return
+        titles = {3: 'Low battery', 4: 'Critical battery', 5: 'Battery shutdown pending'}
+        body = ('Save your work and connect power.' if level == 3 else
+                'Save your work and connect power now, before the device shuts down.' if level == 4 else
+                'Connect power immediately to cancel automatic shutdown.')
+        # Record only successfully delivered alerts, so a notification-server
+        # failure is retried. One replacement ID avoids accumulating popups.
+        self.notification_id = self.notify(self.notification_id,
+                                           f'{titles[level]} — {percentage:.0f}%', body,
+                                           1 if level == 3 else 2, 15000 if level == 3 else 0)
+        self.announced = level
+
+
+def main():
+    system = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+    session = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+
+    def call(bus, name, path, interface, method, args, reply):
+        return bus.call_sync(name, path, interface, method, args,
+                             GLib.VariantType.new(reply), Gio.DBusCallFlags.NONE, 2000, None).unpack()
+
+    def notify(previous, title, body, urgency, timeout):
+        return call(session, NOTIFICATIONS, '/org/freedesktop/Notifications', NOTIFICATIONS,
+                    'Notify', GLib.Variant('(susssasa{sv}i)', (
+                        'minion-battery', previous, 'battery-caution-symbolic', title, body, [],
+                        {'urgency': GLib.Variant('y', urgency)}, timeout)), '(u)')[0]
+
+    def close(notification_id):
+        call(session, NOTIFICATIONS, '/org/freedesktop/Notifications', NOTIFICATIONS,
+             'CloseNotification', GLib.Variant('(u)', (notification_id,)), '()')
+
+    warnings = Warnings(notify, close)
+
+    def refresh():
+        try:
+            daemon = call(system, UPOWER, ROOT, PROPERTIES, 'GetAll',
+                          GLib.Variant('(s)', (UPOWER,)), '(a{sv})')[0]
+            device = call(system, UPOWER, DISPLAY, PROPERTIES, 'GetAll',
+                          GLib.Variant('(s)', (UPOWER + '.Device',)), '(a{sv})')[0]
+            warnings.update(daemon['OnBattery'], device)
+        except (GLib.Error, ValueError, TypeError, KeyError) as error:
+            logging.warning('Could not refresh battery warnings: %s', error)
+        return GLib.SOURCE_CONTINUE
+
+    pending = False
+
+    def changed(*_):
+        nonlocal pending
+        if not pending:
+            pending = True
+            GLib.idle_add(update)
+
+    def update():
+        nonlocal pending
+        pending = False
+        refresh()
+        return GLib.SOURCE_REMOVE
+
+    # Subscribe before the initial snapshot. Only the system display battery
+    # and daemon state matter; headphones/controllers must never trigger this.
+    for path in (ROOT, DISPLAY):
+        system.signal_subscribe(UPOWER, PROPERTIES, 'PropertiesChanged', path, None,
+                                Gio.DBusSignalFlags.NONE, changed)
+    system.signal_subscribe('org.freedesktop.DBus', 'org.freedesktop.DBus',
+                            'NameOwnerChanged', '/org/freedesktop/DBus', UPOWER,
+                            Gio.DBusSignalFlags.NONE, changed)
+    refresh()
+    # Retry missed events or a temporarily unavailable notification/UPower daemon.
+    GLib.timeout_add_seconds(30, refresh)
+    GLib.MainLoop().run()
+
+
+if __name__ == '__main__':
+    main()

@@ -204,6 +204,7 @@ sudo journalctl -u minion-proxy.service -b
 - [ ] Closing the lid and manual suspend lock before sleeping on both AC and battery, including when docked. Repeat several cycles, including a cycle after using HHD controls and one with the proxy active.
 - [ ] After each wake, recheck display, touch coordinates, physical keyboard/touchpad, controller, Wi-Fi, Bluetooth, audio, brightness, power controls and bar readings. No stale modifier, duplicate input or frozen reading remains.
 - [ ] Record battery percentage, elapsed time and approximate charge loss during a longer battery suspend. Compare with your intended daily use rather than assuming a fixed acceptable loss.
+- [ ] Confirm UPower is enabled and the 20% warning / 10% critical / 5% PowerOff policy is installed. In a saved-work battery session, check readable warning popups and charger clearing. A real low-battery shutdown remains a separate, deliberate test; do not drain the device during ordinary setup verification.
 - [ ] After a cold boot, confirm the same essential services and workflows recover. If later applying Ubuntu/kernel updates, repeat boot/unlock, module acceptance, suspend and Windows boot checks.
 
 ## Record failures for the debugging session

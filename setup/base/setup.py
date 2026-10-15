@@ -84,10 +84,11 @@ def preflight(args):
 def backup_configuration(path, user):
     paths = [Path(name) for name in (
         '/etc/greetd', '/etc/minion', '/etc/netplan', '/etc/pam.d/greetd',
-        '/etc/localtime', '/etc/timezone', '/etc/fstab',
+        '/etc/localtime', '/etc/timezone', '/etc/fstab', '/etc/UPower/UPower.conf',
         '/etc/pam.d/greetd-greeter', '/etc/systemd/system/greetd.service.d',
         '/etc/xdg/xdg-desktop-portal/sway-portals.conf',
         '/etc/systemd/user/minion-session.target', '/etc/systemd/user/mako.service.d',
+        '/etc/systemd/user/minion-session.target.d',
         '/etc/systemd/user/xdg-desktop-portal.service.d',
         '/etc/systemd/user/xdg-desktop-portal-gtk.service.d',
         '/etc/systemd/user/xdg-desktop-portal-wlr.service.d',

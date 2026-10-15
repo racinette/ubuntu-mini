@@ -43,6 +43,40 @@ sudo systemctl disable --now minion-hhd.service
 
 Stopping HHD prevents further overrides; it does not promise to restore every firmware value already written. For a clean baseline, disable the relevant controls in HHD and reboot. Rerunning setup enables the service again and retains its settings.
 
+## Low-battery protection
+
+Setup configures UPower to warn at **20%**, report a critical battery at **10%**,
+and initiate a normal **shutdown at 5%**, using percentage rather than estimated
+runtime. This leaves more reserve than Ubuntu's original 2% action threshold.
+Shutdown closes programs; save your work when a warning appears. Hibernation is
+not configured on this encrypted, Secure Boot device.
+
+`minion-battery-warnings.service` follows UPower's aggregate system-battery
+warning level in the graphical session. The 20% popup lasts 15 seconds; urgent
+10% and shutdown-pending popups remain until dismissed or charging resumes.
+Each severity appears once per discharge, replacing the previous popup. Charging
+clears the alert and rearms warnings. Headphone/controller batteries are ignored.
+
+UPower handles the power action independently of the session, notification
+service, display state and Keep awake setting. UPower 1.90.3 waits approximately
+20 seconds after reaching its action level; connecting power before the action
+runs cancels the pending action. Battery estimates can be inaccurate, so a
+percentage policy cannot guarantee protection against a sudden hardware cutoff.
+The [UPower interface](https://upower.freedesktop.org/docs/UPower/) exposes the
+available critical action and system battery state.
+
+The five policy keys in `/etc/UPower/UPower.conf` are managed by setup; unrelated
+settings and comments are retained and the previous file is included in the
+setup configuration backup. Setup enables `upower.service` at boot. A normal
+desktop setup reloads changed policy; deferred setup leaves activation for reboot.
+Inspect the installed services with:
+
+```sh
+upower --dump
+systemctl status upower.service
+systemctl --user status minion-battery-warnings.service
+```
+
 ## Bottom bar
 
 The power block reads HHD's authenticated localhost API every five seconds, without sudo or configuration writes. `Auto` means its TDP override is disabled; `Limit 15W` is its configured steady APU target, not measured consumption or confirmation that the firmware applied it. The detailed skin/STAPM target takes precedence over the quick-access slider. An unavailable daemon or unready backend shows `Power ?`; enabled controls without a supported target show `Limit ?`. Left-click opens HHD; right-click explains the current power label.

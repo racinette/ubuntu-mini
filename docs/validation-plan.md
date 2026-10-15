@@ -1,6 +1,6 @@
 # Validation status
 
-Current device status as of **2026-10-14** for the **GPD WIN Mini 2023 / Ryzen 7 7840U**. The installed system is in everyday use. This summary supersedes the earlier pre-device backlog; dated experiments and their limits remain in [testing](testing.md). The [device checklist](device-checklist.md) is a reusable checklist for another installation and deliberately stays unchecked.
+Current device status as of **2026-10-15** for the **GPD WIN Mini 2023 / Ryzen 7 7840U**. The installed system is in everyday use. This summary supersedes the earlier pre-device backlog; dated experiments and their limits remain in [testing](testing.md). The [device checklist](device-checklist.md) is a reusable checklist for another installation and deliberately stays unchecked.
 
 ## Completed on this device
 
@@ -10,6 +10,7 @@ Current device status as of **2026-10-14** for the **GPD WIN Mini 2023 / Ryzen 7
 | Touch and display | Explicit touchscreen-to-eDP-1 mapping fixed missed taps. Center/four-corner taps passed, including after reboot. Desktop scaling, brightness and everyday keyboard/touchpad use were accepted. |
 | Power backend | HHD starts and its UI works. The existing DKMS signing key was enrolled with Secure Boot enabled; `acpi_call` loaded. Power targets were exercised on AC and battery. |
 | Cooling/background work | A 12-minute CPU workload continued on battery with Keep awake enabled and the panel truly off. Cooling remained stable, CPU peaked at 52.5°C, and the fan responded. Separate OpenGL load also passed. |
+| Low-battery protection | UPower is enabled with 20% low / 10% critical / 5% clean-shutdown policy. The session warning service is active; isolated D-Bus escalation and charger reset passed. A real low-battery shutdown has not been tested. |
 | GPU and sensors | Hardware-accelerated OpenGL completed the full glmark2 suite with no observed corruption or recorded GPU errors. RADV enumerates the GPU. Missing BMI260 firmware was supplied and all six sensor channels changed. |
 | Audio and Bluetooth | Speakers and volume/mute were accepted. Reducing internal-mic capture/boost to 0 dB fixed audible distortion; plain ALSA capture works through PipeWire. soundcore AeroClip paired and the user confirmed it worked. Local English/Russian Voxtype dictation was also accepted; R4 tap/hold activation and cancellation were accepted. |
 | Controller | Current defaults combine left-stick scrolling and right-stick window selection; L3/R3 switch independently. Held Space/Backspace/D-pad, face-first chords, terminal signals, workspace compaction/wraparound and the Menu legend have isolated and live checks. Physical diagonal/edge cases are not exhaustively certified. |
@@ -37,6 +38,7 @@ These are verification gaps, not known blockers to ordinary use:
 - **Guitar input:** the USB audio interface was unavailable. Verify its routing, input gain, live effects and latency when connected; generated-audio VST3 processing already passed. Realtime-priority fallback in the host/modeler logs needs evaluation during that latency check.
 - **Specific refinements:** lock-screen language switching, sensor calibration/resume and real-project LSP edge cases are not exhaustively tested. Confirm the SSH agent lifecycle at the next planned logout/login; live key reuse already passed. The intermittent Codex-only terminal redraw stripe was set aside after it stopped reproducing.
 - **Memory pressure:** observe sustained real workloads and confirm swap activation at the next planned boot. The bounded read/write check passed; the earlier Firefox out-of-memory exit motivates continued observation.
+- **Low-battery policy:** real warning visibility during discharge, charger cancellation of a pending power action and a deliberate saved-work shutdown remain untested. Policy readback, active services and simulated warning transitions passed.
 
 ## Deliberate choices
 

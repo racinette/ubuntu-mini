@@ -12,6 +12,7 @@ from audio import seed_microphone_level
 from comfort import install as install_comfort
 from firmware import install as install_sensor_firmware
 from voice import install as install_voice
+from notifications import install as install_notifications
 
 HERE = Path(__file__).resolve().parent
 parser = argparse.ArgumentParser(description=__doc__)
@@ -59,7 +60,7 @@ if install_sensor_firmware():
 # Our no-recommends install includes them explicitly; they grant video-group
 # writes to screen backlights. New group membership takes effect next login.
 run('usermod', '-a', '-G', 'video', user.pw_name)
-for name in ('minion-session', 'minion-session-ready', 'minion-lock', 'minion-idle', 'minion-idle-controls', 'minion-rear-buttons', 'minion-status', 'minion-gamepad', 'minion-workspaces', 'minion-window-picker', 'minion-network', 'minion-proxy-ui', 'minion-night-light', 'minion-terminal', 'minion-voice'):
+for name in ('minion-session', 'minion-session-ready', 'minion-lock', 'minion-idle', 'minion-idle-controls', 'minion-rear-buttons', 'minion-status', 'minion-gamepad', 'minion-workspaces', 'minion-window-picker', 'minion-network', 'minion-proxy-ui', 'minion-night-light', 'minion-terminal', 'minion-voice', 'minion-layout-popup'):
     write('/usr/local/bin/' + name, HERE.joinpath(name).read_text(), 0o755)
 write('/etc/minion/sway.conf', HERE.joinpath('sway.conf').read_text())
 write('/etc/minion/gamepad.json', HERE.joinpath('gamepad.json').read_text())
@@ -102,6 +103,7 @@ if not mako_config.exists():
     write(mako_config, HERE.joinpath('mako.conf').read_text(), 0o600)
     for path in (mako_config, mako_config.parent, mako_config.parent.parent):
         os.chown(path, user.pw_uid, user.pw_gid)
+install_notifications(user)
 # Per-route state supplies the first-login default without changing other mics
 # or forcing the level on subsequent logins. Existing saved levels win.
 if seed_microphone_level(user):
@@ -126,7 +128,7 @@ run('udevadm', 'trigger', '--action=add', '--subsystem-match=backlight')
 run('udevadm', 'trigger', '--action=add', '--subsystem-match=misc', '--sysname-match=uinput')
 run('udevadm', 'trigger', '--action=change', '--subsystem-match=input')
 run('udevadm', 'settle')
-for name in ('minion-gamepad', 'minion-workspaces', 'minion-screen-lock', 'minion-display-wake', 'minion-rear-buttons', 'minion-night-light', 'minion-voice'):
+for name in ('minion-gamepad', 'minion-workspaces', 'minion-screen-lock', 'minion-display-wake', 'minion-rear-buttons', 'minion-night-light', 'minion-voice', 'minion-layout-popup'):
     write('/etc/systemd/user/' + name + '.service', HERE.joinpath(name + '.service').read_text())
 write('/etc/greetd/config.toml', '''[terminal]
 vt = 1
@@ -161,7 +163,7 @@ write('/etc/systemd/user/minion-session.target', '''[Unit]
 Description=Minion graphical session services
 BindsTo=graphical-session.target
 After=graphical-session.target
-Wants=mako.service minion-polkit.service minion-idle.service minion-display-wake.service minion-rear-buttons.service minion-network-applet.service minion-bluetooth-applet.service minion-gamepad.service minion-workspaces.service minion-night-light.service minion-ssh-agent.service minion-voice.service
+Wants=mako.service minion-polkit.service minion-idle.service minion-display-wake.service minion-rear-buttons.service minion-network-applet.service minion-bluetooth-applet.service minion-gamepad.service minion-workspaces.service minion-night-light.service minion-ssh-agent.service minion-voice.service minion-layout-popup.service
 ''')
 write('/etc/systemd/user/mako.service.d/session.conf', '''[Unit]
 PartOf=minion-session.target

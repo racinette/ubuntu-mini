@@ -1,0 +1,9 @@
+[Unit]
+Description=Minion keyboard layout popup
+PartOf=minion-session.target
+After=graphical-session.target mako.service
+
+[Service]
+ExecStart=/usr/local/bin/minion-layout-popup
+Restart=on-failure
+RestartSec=2

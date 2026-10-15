@@ -94,8 +94,21 @@ vim.api.nvim_create_autocmd({ 'FocusGained', 'BufEnter', 'CursorHold' }, {
   callback = function() if vim.fn.getcmdwintype() == '' then vim.cmd('checktime') end end,
 })
 
+local function jump(key)
+  local ok, err = pcall(vim.cmd, 'normal! ' .. vim.v.count1 .. vim.keycode(key))
+  if ok then return end
+  if not tostring(err):find(':E19:', 1, true) then error(err, 0) end
+  -- External edits can shorten a file without updating its jump locations.
+  -- The native jump has already selected the buffer and history entry before
+  -- reporting E19. cursor() clips the old position to the remaining text and
+  -- leaves the jumplist intact, so forward/back navigation still works.
+  local history, index = unpack(vim.fn.getjumplist())
+  local mark = history[index + 1]
+  if not mark or mark.bufnr ~= vim.api.nvim_get_current_buf() then error(err, 0) end
+  vim.fn.cursor(mark.lnum, mark.col + 1)
+end
 local function back()
-  vim.cmd('normal! ' .. vim.api.nvim_replace_termcodes('<C-o>', true, false, true))
+  jump('<C-o>')
 end
 local function lsp(action)
   if #vim.lsp.get_clients({ bufnr = 0 }) == 0 then
@@ -144,7 +157,7 @@ local mappings = {
   ['<BS>'] = { back, 'Previous location' },
   ['<Esc>'] = { back, 'Previous location' },
   ['<M-Left>'] = { back, 'Navigation back' },
-  ['<M-Right>'] = { '<C-i>', 'Navigation forward' },
+  ['<M-Right>'] = { function() jump('<C-i>') end, 'Navigation forward' },
   ['<Tab>'] = { '<Cmd>bnext<CR>', 'Next open file' },
   ['<S-Tab>'] = { '<Cmd>bprevious<CR>', 'Previous open file' },
 }

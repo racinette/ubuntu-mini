@@ -239,6 +239,12 @@ Press **F1** for the controls: **F2** toggles the file tree, **F3/Ctrl+P** finds
 
 For Foot terminals, Neovim's config keeps CSI-u key disambiguation enabled but disables key-release reporting on UI attachment/resume. Foot 1.16.2 otherwise sends Enter and Backspace twice, affecting both physical and gamepad input. The correction replaces the current protocol flags so ordinary repeat remains available and exiting Neovim restores the previous terminal mode. See the [upstream issue](https://github.com/neovim/neovim/issues/39627). Existing editor instances need reopening to load changed configuration.
 
+If an external tool shortens a file, its old jump-history position can refer to
+a line that no longer exists. Back/Forward and normal-mode Esc/Backspace recover
+from Neovim's `E19` by landing on the last remaining line and clipping the column
+to existing text. History stays available in both directions; unrelated errors
+remain visible. This also handles files emptied by an external edit.
+
 Language servers cover Go, Rust, JavaScript/TypeScript, Python, shell, JSON, YAML, TOML and C/C++. JavaScript/TypeScript uses TypeScript 7's native language server (`tsc --lsp`). Native syntax highlighting also works for other Neovim-supported file types. Servers attach according to their project/filetype rules; Rust projects need `Cargo.toml`, and accurate C/C++ navigation benefits from the project's `compile_commands.json`. Plugins and language servers are downloaded during setup rather than first launch. The plugin manifest records exact revisions. Personal `~/.config/nvim/init.lua` settings survive setup reruns. To update only the pinned plugins and seed the default configuration after the language tools are installed, run `/usr/bin/python3 setup/development/nvim.py` as your normal user.
 
 Audio development uses SuperCollider 3.13 from Ubuntu, the VSTPlugin 0.6.2 extension for native Linux VST3 instruments/effects, and JUCE 9.0.4 for building your own plugins with CMake/Ninja. [The manifest](../setup/development/audio-sources.json) pins the user-owned SDK sources and VST3 interfaces by commit. Setup builds the extension under `~/.local/share/SuperCollider/Extensions/VSTPlugin` and puts JUCE under `~/.local/share/minion/audio`. Downloads and builds run as the desktop user. The graphical SuperCollider IDE and Wine plugin bridge are not installed.

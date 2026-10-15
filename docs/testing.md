@@ -10,6 +10,19 @@ Firefox-first browser preferences were applied on the WIN Mini: `xdg-settings ge
 
 ## Recent device checks
 
+On 2026-10-16, the Neovim Back mapping reproduced `E19: Mark has invalid line
+number` after an external edit shortened a loaded file and `checktime` reloaded
+it. The saved jump still referred to line 90. Back/Forward now recover this
+specific error using Neovim's selected history entry and `cursor()` clipping,
+without clearing history or hiding unrelated errors. The previous config fails
+the new regression with the reported E19. All 20 scope/navigation cases passed,
+including Esc/Backspace/Alt+Left recovery, forward recovery, empty-file recovery,
+repeat/reverse navigation and propagation of an unrelated autocmd failure.
+The tested config was installed after an exact baseline comparison. Existing
+editor instances need reopening. These are disposable headless checks; the
+user's particular live editing sequence has not been replayed.
+[Private stale-jump report](../.local/device-checks/neovim-stale-jumps/result.json).
+
 On 2026-10-15, the WIN Mini's UPower policy changed from a 2% action threshold
 to 20% low / 10% critical / 5% PowerOff. UPower was enabled for boot and restarted;
 its live API confirmed PowerOff. The session warning service is active and part

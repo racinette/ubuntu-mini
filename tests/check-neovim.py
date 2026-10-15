@@ -84,6 +84,52 @@ local function run()
       tree.tree.open()
       scope()
     end
+  elseif (action or ''):match('^stale%-') then
+    tree.tree.close()
+    local source = base .. '/project/nested/example.txt'
+    local target = base .. '/outside/dependency.txt'
+    local lines = {}
+    for i = 1, 100 do lines[i] = 'original line ' .. i end
+    local forward = action == 'stale-forward'
+    vim.fn.writefile(lines, source)
+    if forward then vim.fn.writefile(lines, target) end
+    edit(source)
+    vim.cmd.clearjumps()
+    vim.api.nvim_win_set_cursor(0, {90, 12})
+    edit(target)
+    if forward then
+      vim.api.nvim_win_set_cursor(0, {90, 12})
+      key('<M-Left>')
+      assert(vim.api.nvim_buf_get_name(0) == source, 'Initial back did not reach source')
+      vim.fn.writefile({'short', 'last'}, target)
+    else
+      vim.fn.writefile(action == 'stale-empty' and {} or {'short', 'last'}, source)
+    end
+    vim.cmd.checktime()
+    local lhs = forward and '<M-Right>' or action == 'stale-escape' and '<Esc>'
+      or action == 'stale-backspace' and '<BS>' or '<M-Left>'
+    local ok, err = pcall(vim.fn.maparg(lhs, 'n', false, true).callback)
+    assert(ok, 'Shortened-file navigation raised an error: ' .. tostring(err))
+    assert(vim.api.nvim_buf_get_name(0) == (forward and target or source), 'Stale jump lost target file')
+    local position = action == 'stale-empty' and {1, 0} or {2, 3}
+    assert(vim.deep_equal(vim.api.nvim_win_get_cursor(0), position), 'Stale jump was not clipped to surviving text')
+    key(forward and '<M-Left>' or '<M-Right>')
+    assert(vim.api.nvim_buf_get_name(0) == (forward and source or target), 'Stale jump broke reverse history')
+    key(lhs)
+    assert(vim.deep_equal(vim.api.nvim_win_get_cursor(0), position), 'Repeating stale jump did not recover')
+    tree.tree.open()
+    scope()
+  elseif action == 'jump-error' then
+    tree.tree.close()
+    local source = base .. '/project/nested/example.txt'
+    edit(source)
+    edit(base .. '/outside/dependency.txt')
+    local hook = vim.api.nvim_create_autocmd('BufEnter', {
+      buffer = vim.fn.bufnr(source), callback = function() error('UNRELATED_JUMP_FAILURE') end,
+    })
+    local ok, err = pcall(vim.fn.maparg('<M-Left>', 'n', false, true).callback)
+    vim.api.nvim_del_autocmd(hook)
+    assert(not ok and tostring(err):find('UNRELATED_JUMP_FAILURE', 1, true), 'Unrelated navigation error was hidden')
   elseif action == 'parent' then
     key('<BS>')
     expected = base
@@ -159,6 +205,12 @@ def main():
             ('no arguments', nested, [], nested, ''),
             ('no markers', outside, ['.'], outside, ''),
             ('external file and history', nested, ['.'], nested, 'external'),
+            ('back after external file shortening', nested, ['.'], nested, 'stale-back'),
+            ('escape after external file shortening', nested, ['.'], nested, 'stale-escape'),
+            ('backspace after external file shortening', nested, ['.'], nested, 'stale-backspace'),
+            ('forward after external file shortening', nested, ['.'], nested, 'stale-forward'),
+            ('back after external file emptying', nested, ['.'], nested, 'stale-empty'),
+            ('unrelated navigation errors remain visible', nested, ['.'], nested, 'jump-error'),
             ('file and text search after external navigation', nested, ['.'], nested, 'pickers'),
             ('parent scope survives opening project files', base / 'project', ['.'], base / 'project', 'parent'),
             ('explicit cd', nested, ['.'], nested, 'cd'),
@@ -179,6 +231,10 @@ def main():
             return command, cwd, env
 
         for case in cases:
+            # External-edit regressions shorten these files; each editor case
+            # starts with its own original contents, including search needles.
+            (nested / 'example.txt').write_text('LOCAL_NEEDLE\n')
+            (outside / 'dependency.txt').write_text('OUTSIDE_NEEDLE\n')
             command, cwd, env = launch(*case)
             run = subprocess.run(command, cwd=cwd, env=env, capture_output=True, text=True, timeout=15)
             assert run.returncode == 0, f'{case[0]}:\n{run.stdout}\n{run.stderr}'

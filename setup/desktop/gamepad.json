@@ -14,6 +14,7 @@
     "BTN_THUMBR": "right_stick_context"
   },
   "hold_actions": {
+    "BTN_START": "file_manager",
     "BTN_MODE": "legend"
   },
   "action_hold": 0.75,

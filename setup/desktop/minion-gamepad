@@ -26,7 +26,7 @@ ACTION_COMMANDS = {
     'layout': 'layout toggle tabbed split',
     'fullscreen': 'fullscreen toggle',
     'close': 'kill', 'floating': 'floating toggle', 'split': 'split toggle',
-    'file_manager': 'exec thunar', 'screenshot': 'exec grim - | wl-copy --type image/png',
+    'file_manager': 'exec thunar', 'screenshot': 'exec minion-screenshot',
 }
 
 KEY_ACTIONS = {
@@ -257,8 +257,8 @@ def configuration(path, codes):
         raise ValueError('A button may have only one individual action')
     if len(set(config['toggle_buttons'])) != 2 or len(bumpers) != 2:
         raise ValueError('Toggle buttons and bumpers must be distinct pairs')
-    if set(config['hold_actions']) & set(config['toggle_buttons']):
-        raise ValueError('Hold actions cannot use the passthrough toggle buttons')
+    if code('BTN_SELECT', 'BTN_') in config['hold_actions']:
+        raise ValueError('Select is reserved for release shortcuts')
     return config
 
 
@@ -659,7 +659,9 @@ class Mapper:
                     self.toggle()
                     return
         if desktop:
-            for button in sorted(set(self.config['hold_actions']) & self.pending_buttons):
+            # Toggle-pair members wait until release, so a late overlap still
+            # consumes both individual actions, even after a long solo hold.
+            for button in sorted((set(self.config['hold_actions']) & self.pending_buttons) - combo):
                 if now - self.button_since.get(button, now) >= self.config['action_hold']:
                     self.pending_buttons.discard(button)
                     action = self.config['hold_actions'][button]
@@ -677,7 +679,11 @@ class Mapper:
                 elif button == self.config['next_bumper']:
                     self.workspace(1)
                 elif button in self.config['actions']:
-                    self.dispatch(self.config['actions'][button])
+                    action = self.config['actions'][button]
+                    if (button in combo and button in self.config['hold_actions']
+                            and now - self.button_since.get(button, now) >= self.config['action_hold']):
+                        action = self.config['hold_actions'][button]
+                    self.dispatch(action)
         self.pending_buttons.difference_update(released)
         for button in released:
             self.button_since.pop(button, None)

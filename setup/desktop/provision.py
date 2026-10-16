@@ -62,7 +62,7 @@ if install_sensor_firmware():
 # Our no-recommends install includes them explicitly; they grant video-group
 # writes to screen backlights. New group membership takes effect next login.
 run('usermod', '-a', '-G', 'video', user.pw_name)
-for name in ('minion-session', 'minion-session-ready', 'minion-lock', 'minion-idle', 'minion-idle-controls', 'minion-rear-buttons', 'minion-status', 'minion-gamepad', 'minion-workspaces', 'minion-window-picker', 'minion-proxy-ui', 'minion-night-light', 'minion-terminal', 'minion-voice', 'minion-layout-popup', 'minion-battery-warnings'):
+for name in ('minion-session', 'minion-session-ready', 'minion-lock', 'minion-idle', 'minion-idle-controls', 'minion-rear-buttons', 'minion-status', 'minion-gamepad', 'minion-workspaces', 'minion-window-picker', 'minion-proxy-ui', 'minion-night-light', 'minion-terminal', 'minion-screenshot', 'minion-voice', 'minion-layout-popup', 'minion-battery-warnings'):
     write('/usr/local/bin/' + name, HERE.joinpath(name).read_text(), 0o755)
 write('/etc/minion/sway.conf', HERE.joinpath('sway.conf').read_text())
 write('/etc/minion/gamepad.json', HERE.joinpath('gamepad.json').read_text())
@@ -77,18 +77,18 @@ chromium_init = Path(user.pw_dir) / '.chromium-browser.init'
 if not chromium_init.exists():
     write(chromium_init, HERE.joinpath('chromium.init').read_text(), 0o600)
     os.chown(chromium_init, user.pw_uid, user.pw_gid)
-# Prefer Firefox over Snap's browser discovery order; retain explicit choices.
+# Seed browser and media handlers; retain explicit personal choices on reruns.
 mimeapps = Path(user.pw_dir) / '.config/mimeapps.list'
-browser_defaults = configparser.ConfigParser(interpolation=None)
-browser_defaults.optionxform = str
-browser_defaults.read(HERE / 'mimeapps.list')
+desktop_defaults = configparser.ConfigParser(interpolation=None)
+desktop_defaults.optionxform = str
+desktop_defaults.read(HERE / 'mimeapps.list')
 associations = configparser.ConfigParser(interpolation=None)
 associations.optionxform = str
 associations.read(mimeapps)
 if not associations.has_section('Default Applications'):
     associations.add_section('Default Applications')
 changed = False
-for kind, applications in browser_defaults['Default Applications'].items():
+for kind, applications in desktop_defaults['Default Applications'].items():
     if kind not in associations['Default Applications']:
         associations['Default Applications'][kind] = applications
         changed = True

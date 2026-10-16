@@ -51,6 +51,16 @@ files and magnet links. Its Web UI is not enabled by setup. Application
 preferences, download locations and file associations can be changed in its
 settings; setup does not start downloads or seed files.
 
+**[imv](https://github.com/diniamo/imv)** views images and
+**[mpv](https://mpv.io/)** plays videos; both come from Ubuntu's repositories.
+Open files from Thunar (**Super+E**) or run `imv-wayland /path/to/image.png` /
+`mpv /path/to/video.mp4`. Setup seeds these as the handlers for common image
+and video formats, preserving explicit personal associations on reruns.
+Thunar uses Tumbler and its extra plugins for image and video thumbnails.
+In imv, use Left/Right for the previous/next image, `f` for fullscreen and `q`
+to quit. In mpv, Space pauses, Left/Right seeks, `f` toggles fullscreen and
+`q` quits; moving the pointer reveals playback controls.
+
 On the WIN Mini 2023 (`GPD` / `G1617-01`), setup also supplies `bmi260-init-data.fw` if Ubuntu's firmware package has not supplied it. The in-tree `bmi270_i2c` driver requires this file for the gyro/accelerometer. The firmware and its BSD license are downloaded from a pinned linux-firmware revision and verified against `setup/desktop/firmware.json` before installation. Existing plain or compressed firmware is retained. This conditional download is independent of the shell/browser cache; `--check` reports whether it is needed without downloading. Normal setup leaves driver activation to the next boot and does not enable gyro controls or automatic screen rotation.
 
 Setup also installs and enables [Handheld Daemon power controls](power-controls.md), with verified, pinned daemon and UI releases. Open **Handheld Daemon** from Super+D or run `minion-hhd-ui`. Initial power overrides are disabled until explicitly enabled in its interface; Minion's controller mapper remains in charge of input. Startup, signing-key enrollment, module loading and selected AC/battery power profiles passed on the 2023/7840U handheld; not every GPU or power-control combination has been tested.
@@ -370,7 +380,7 @@ Upstream guides: [mise](https://mise.jdx.dev/getting-started.html), [rustup](htt
 
 ## Desktop controls
 
-**Gamepad Start** and **Super+Enter** open a new Foot terminal in the focused
+**A short Gamepad Start press** and **Super+Enter** open a new Foot terminal in the focused
 Foot window's shell directory. This also works while a command or coding agent
 is running in that shell. When another application is focused, or the shell's
 directory cannot be determined, the new terminal starts in home. The shared
@@ -441,7 +451,7 @@ charging rate is net power entering the battery. Runtime estimates follow the
 recent workload and can change quickly. `htop`, when installed, remains useful
 for ordinary CPU/memory process inspection.
 
-Setup also installs [gamepad desktop navigation](gamepad-controls.md): triggers hold Shift/Ctrl and bumpers change workspaces. D-pad first sends arrows immediately and accelerates while held; hold A/B first, then choose a D-pad direction for a named shortcut, or hold Select before a face button for a layout toggle. Start opens a terminal; Select opens the window picker; Menu opens the launcher. X/Y provide immediate, holdable Backspace/Space; A/B singles and other discrete controls act on release. [A/B + D-pad and Select + face shortcuts](gamepad-chord-layout.md) perform editing, text navigation and desktop actions; use the physical QWERTY keyboard for typing. Hold Start+Select together, then release both, or press Super+Ctrl+G to toggle normal gamepad input for games. Personal overrides in `~/.config/minion/gamepad.json` are preserved across setup reruns. The mapping has [VM acceptance tests](testing.md#gamepad-tests); actual WIN Mini controls still need verification.
+Setup also installs [gamepad desktop navigation](gamepad-controls.md): triggers hold Shift/Ctrl and bumpers change workspaces. D-pad first sends arrows immediately and accelerates while held; hold A/B first, then choose a D-pad direction for a named shortcut, or hold Select before a face button for a layout toggle. Start taps open a terminal; holding Start for 0.75 seconds then releasing opens a new Thunar window. Select opens the window picker; Menu opens the launcher. X/Y provide immediate, holdable Backspace/Space; A/B singles and other discrete controls act on release. [A/B + D-pad and Select + face shortcuts](gamepad-chord-layout.md) perform editing, text navigation and desktop actions; use the physical QWERTY keyboard for typing. Hold Start+Select together, then release both, or press Super+Ctrl+G to toggle normal gamepad input for games. Personal overrides in `~/.config/minion/gamepad.json` are preserved across setup reruns. The mapping has [VM acceptance tests](testing.md#gamepad-tests); actual WIN Mini controls still need verification.
 
 The default layout uses left-stick scrolling and right-stick window focus/move together. Sway centers the pointer in a newly selected window only when it is outside that window (`mouse_warping container`), so scrolling follows selection while preserving an existing in-window pointer position. L3 switches the left stick between scrolling and text navigation; R3 independently switches the right stick between window focus/move and resize. Each change waits only for its own stick to return to neutral; the bar shows both behaviors. L2 adds Shift for text selection and R2 adds Ctrl. Hold Menu for 0.75 seconds to open a persistent shortcut legend; a short Menu tap, B/Escape or Enter dismisses it. Menu taps otherwise toggle the launcher. Hold B then Up to close the focused window. Hold Select then A for fullscreen, B for floating, Y for tiled/tabbed, or X for split orientation. A+D-pad carries editing shortcuts; B+Left/Right navigates back/forward. X holds Backspace and Y holds Space, both with immediate press and normal repeat. Editing shortcuts include terminal-aware copy/paste. Old character-typing personal profiles must be replaced with the new shortcut layout; setup performs no migration.
 
@@ -461,7 +471,7 @@ The desktop defaults to 2× output scaling for the WIN Mini's 7-inch 1920×1080 
 
 The WIN Mini touchscreen (`8746:65521:ILTP7807:00_222A:FFF1`) is explicitly mapped to the built-in `eDP-1` output. On the device, missing this association caused Firefox taps to miss controls; the mapping restored single-tap activation at the center and all four corners, including after reboot. It leaves calibration and display rotation unchanged. If your hardware reports different identifiers, inspect `swaymsg -t get_inputs` and `swaymsg -t get_outputs`, then override the mapping in `~/.config/sway/minion.conf`.
 
-Fn+F1/F2 adjust the screen backlight. Setup explicitly installs `brightness-udev` and adds your account to the `video` group so `brightnessctl` can write to it without sudo. Brightness and volume controls also work while the screen is locked. On the built-in keyboard, Fn+F3 controls display power, Fn+F4 toggles Keep awake, Fn+F5 toggles the internal display between 60 and 120 Hz, and Fn+F6 is unassigned. Media keys from other keyboards/headphones still use `playerctl` with an active MPRIS-capable player: stop, previous, play/pause and next. Print Screen copies a screenshot to the clipboard. Insert and Scroll Lock are passed through to applications; ordinary F1–F12 remain available to applications.
+Fn+F1/F2 adjust the screen backlight. Setup explicitly installs `brightness-udev` and adds your account to the `video` group so `brightnessctl` can write to it without sudo. Brightness and volume controls also work while the screen is locked. On the built-in keyboard, Fn+F3 controls display power, Fn+F4 toggles Keep awake, Fn+F5 toggles the internal display between 60 and 120 Hz, and Fn+F6 is unassigned. Media keys from other keyboards/headphones still use `playerctl` with an active MPRIS-capable player: stop, previous, play/pause and next. Print Screen saves a uniquely named PNG under `~/Pictures/screenshots`, copies it to the clipboard and shows `Screenshot taken.` for one second. The directory is created automatically. Run `minion-screenshot` for the same behavior from a terminal. Insert and Scroll Lock are passed through to applications; ordinary F1–F12 remain available to applications.
 
 To update only the desktop on an already configured device, from your normal account in the cloned repository:
 

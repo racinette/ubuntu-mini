@@ -13,7 +13,7 @@ Post-install setup installs this profile automatically. In the WIN Mini's gamepa
 | L1 / R1 | Previous / next numbered workspace, on release; wrap in both directions |
 | L2 + bumper | Send focused window to adjacent workspace without following it |
 | R3 | Switch right stick between window focus/move / resize, on release |
-| Start | Open terminal in the focused Foot shell's directory, on release |
+| Start | Tap: terminal in the focused Foot shell's directory; hold 0.75 s then release: file manager |
 | Select | Window picker, on release |
 | Menu / Xbox | Tap: toggle launcher; hold 0.75 s: toggle shortcut legend |
 | L3 | Switch left stick between scroll / text navigation, on release |
@@ -71,6 +71,8 @@ Hold Menu/Xbox for at least 0.75 seconds to open a persistent Fuzzel legend deri
 
 The window picker lists windows across workspaces, with the current window first. D-pad up/down selects, A focuses the selected window, and B cancels. Typing filters by application, title or workspace. The launcher uses the same navigation keys. Optional buttons missing from a controller are reported in status.
 
+Hold Start alone for at least 0.75 seconds, then release it to open a new Thunar window. A shorter press opens a terminal on release. Start waits for release so adding Select at any point still consumes both individual actions. Holding does not open repeated windows.
+
 ## Switch to normal gamepad input
 
 Hold Start+Select together for at least 0.75 seconds, then release both, or press Super+Ctrl+G. A notification shows the mode. Any overlapping Start/Select press consumes their individual actions, including a short overlap. In passthrough the mapper releases its controller grab and all keyboard keys so games receive normal input. The toggle gesture also reaches games; use the keyboard shortcut if it conflicts.
@@ -94,7 +96,7 @@ systemctl --user restart minion-gamepad.service
 minion-gamepad --status
 ```
 
-Setup preserves this file. Top-level settings override the defaults; a nested object replaces that entire object. Chord values are named actions such as `copy`, `close`, `home` and `equalize`, as shown in the default JSON. `actions` assigns named actions to buttons, including `legend`, `left_stick_context` and `right_stick_context`. `hold_actions` assigns alternate actions to the same buttons after `action_hold` seconds, consuming the short-press action. Passthrough toggle buttons cannot have hold actions. The older `stick_context`, `selection` and `text_navigation` actions remain compatible and request changes to both sticks, each waiting for its own neutral position. X must remain Backspace and cannot appear in a chord. Set `chords` to `{}` to disable shortcuts and restore held D-pad arrows. D-pad acceleration uses `dpad_repeat_delay`, `dpad_acceleration_time`, `dpad_rate` and `dpad_line_rate`. Thresholds, repeat timing and resize increments are configurable. `workspace_numbers: null` selects the dynamic ring and automatic renumbering; an explicit list such as `"workspace_numbers": [1, 2, 3, 4]` retains circular navigation through that list. Existing personal lists are preserved and disable automatic renumbering.
+Setup preserves this file. Top-level settings override the defaults; a nested object replaces that entire object. Chord values are named actions such as `copy`, `close`, `home` and `equalize`, as shown in the default JSON. `actions` assigns named actions to buttons, including `legend`, `left_stick_context` and `right_stick_context`. `hold_actions` assigns alternate actions to the same buttons after `action_hold` seconds, consuming the short-press action. Hold actions on passthrough toggle buttons wait until release, so any overlap still consumes the individual action. Select is reserved for its release shortcuts and cannot have a hold action. The older `stick_context`, `selection` and `text_navigation` actions remain compatible and request changes to both sticks, each waiting for its own neutral position. X must remain Backspace and cannot appear in a chord. Set `chords` to `{}` to disable shortcuts and restore held D-pad arrows. D-pad acceleration uses `dpad_repeat_delay`, `dpad_acceleration_time`, `dpad_rate` and `dpad_line_rate`. Thresholds, repeat timing and resize increments are configurable. `workspace_numbers: null` selects the dynamic ring and automatic renumbering; an explicit list such as `"workspace_numbers": [1, 2, 3, 4]` retains circular navigation through that list. Existing personal lists are preserved and disable automatic renumbering.
 
 Text navigation and selection speed is configurable with `selection_rate` (horizontal) and `selection_line_rate` (vertical), retaining the earlier setting names. Each is a pair of minimum and maximum steps per second, from 1 to 100. Scrolling speed uses `scroll_rate`, another minimum/maximum pair of wheel steps per second. Window focus and resizing retain their existing repeat timing.
 

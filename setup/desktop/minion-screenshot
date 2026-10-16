@@ -1,0 +1,50 @@
+#!/usr/bin/python3
+"""Save a full-screen screenshot, copy it, and report the result."""
+from datetime import datetime
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+
+
+def notify(title, message='', timeout=4000):
+    try:
+        subprocess.run(['notify-send', '-a', 'minion', '-t', str(timeout),
+                        title, message], check=False, timeout=3)
+    except (OSError, subprocess.SubprocessError) as error:
+        print(f'Cannot show screenshot notification: {error}', file=sys.stderr)
+
+
+def main():
+    image = None
+    try:
+        directory = Path.home() / 'Pictures/screenshots'
+        directory.mkdir(parents=True, exist_ok=True)
+        prefix = datetime.now().strftime('Screenshot-%Y-%m-%d_%H-%M-%S-')
+        fd, name = tempfile.mkstemp(prefix=prefix, suffix='.png', dir=directory)
+        os.close(fd)
+        image = Path(name)
+        subprocess.run(['grim', str(image)], check=True, timeout=15)
+    except (OSError, subprocess.SubprocessError) as error:
+        if image is not None:
+            image.unlink(missing_ok=True)
+        print(f'Screenshot failed: {error}', file=sys.stderr)
+        notify('Screenshot failed', 'Could not save the screenshot.')
+        return 1
+
+    try:
+        with image.open('rb') as stream:
+            subprocess.run(['wl-copy', '--type', 'image/png'], stdin=stream,
+                           check=True, timeout=5)
+    except (OSError, subprocess.SubprocessError) as error:
+        print(f'Screenshot clipboard copy failed: {error}', file=sys.stderr)
+        notify('Screenshot taken.', 'Clipboard copy failed.')
+        return 1
+    notify('Screenshot taken.', timeout=1000)
+    print(image)
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

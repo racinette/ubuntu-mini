@@ -25,6 +25,10 @@ brightness-udev
 playerctl
 grim
 thunar
+tumbler
+tumbler-plugins-extra
+imv
+mpv
 gvfs
 mate-polkit
 xwayland

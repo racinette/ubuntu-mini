@@ -439,6 +439,20 @@ else:raise ValueError('Mapped keyboard is missing')
         report['start_terminal_id'] = terminal_id
         report['checks']['start_terminal_on_release'] = True
 
+        before_explorer = {node['id'] for node in tree()}
+        control('emit', [[1, 315, 1]])
+        time.sleep(1)
+        if {node['id'] for node in tree()} != before_explorer:
+            raise ValueError('Start hold opened a window before release')
+        control('emit', [[1, 315, 0]])
+        explorer_tree = wait(tree, lambda nodes: any(n['id'] not in before_explorer and n['app_id'] == 'thunar' for n in nodes), 'Start hold did not open Thunar')
+        explorer_id = next(n['id'] for n in explorer_tree if n['id'] not in before_explorer and n['app_id'] == 'thunar')
+        time.sleep(.4)
+        if len({n['id'] for n in tree()} - before_explorer) != 1:
+            raise ValueError('One Start hold opened multiple windows')
+        report['checks']['start_hold_file_manager_on_release'] = True
+        graphical(directory, f'swaymsg "[con_id={explorer_id}] kill"')
+
         control('emit', [[1, 316, 1]])
         time.sleep(.3)
         if status()['legend_open'] or picker_processes() or keyboard_keys():

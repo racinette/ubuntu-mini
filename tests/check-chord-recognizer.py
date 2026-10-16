@@ -50,7 +50,7 @@ def main():
     assert profile['chords'] == expected
     assert profile['actions']['BTN_THUMBL'] == 'left_stick_context'
     assert profile['actions']['BTN_THUMBR'] == 'right_stick_context'
-    assert profile['hold_actions'] == {'BTN_MODE': 'legend'}
+    assert profile['hold_actions'] == {'BTN_MODE': 'legend', 'BTN_START': 'file_manager'}
     with tempfile.TemporaryDirectory(prefix='minion-shortcut-test-') as temporary:
         directory = Path(temporary)
         def path(value):
@@ -349,7 +349,7 @@ def main():
                     assert state.keys == held
         for action, command in {'close': 'kill', 'fullscreen': 'fullscreen toggle', 'floating': 'floating toggle',
                                 'layout': 'layout toggle tabbed split', 'split': 'split toggle',
-                                'file_manager': 'exec thunar', 'screenshot': 'exec grim - | wl-copy --type image/png'}.items():
+                                'file_manager': 'exec thunar', 'screenshot': 'exec minion-screenshot'}.items():
             reset()
             with patch.object(state, 'command') as run:
                 state.dispatch(action); run.assert_called_once_with(command)
@@ -375,6 +375,50 @@ def main():
                 frame(buttons=(button,)); frame(buttons=(button,))
                 assert not dispatch.called
                 frame(); dispatch.assert_called_once_with(action)
+        # Start waits for release even on a long hold; a late Select overlap
+        # must still suppress both launches and retain passthrough priority.
+        for duration, action in ((.74, 'terminal'), (.75, 'file_manager'), (5, 'file_manager')):
+            reset()
+            with patch.object(state, 'dispatch') as dispatch:
+                frame(buttons=(315,), at=10)
+                frame(buttons=(315,), at=10 + duration)
+                assert not dispatch.called
+                frame(at=10 + duration)
+                dispatch.assert_called_once_with(action)
+                frame(at=20)
+                dispatch.assert_called_once_with(action)
+        reset()
+        with patch.object(state, 'dispatch') as dispatch:
+            frame(buttons=(315,), at=10)
+            frame(at=11)  # No intermediate held frame.
+            dispatch.assert_called_once_with('file_manager')
+        for first in (314, 315):
+            for duration in (.1, 1):
+                for last in (314, 315):
+                    reset()
+                    with patch.object(state, 'dispatch') as dispatch, patch.object(state, 'toggle') as toggle:
+                        frame(buttons=(first,), at=10)
+                        frame(buttons=(first,), at=12)
+                        frame(buttons=(314, 315), at=13)
+                        frame(buttons=(last,), at=13 + duration)
+                        frame(at=15)
+                        assert not dispatch.called
+                        assert toggle.call_count == (1 if duration >= .75 else 0)
+        for mode in ('paused', 'inactive', 'reset', 'passthrough'):
+            reset()
+            with patch.object(state, 'dispatch') as dispatch:
+                frame(buttons=(315,), at=10)
+                if mode == 'paused':
+                    (directory / 'paused').touch()
+                elif mode == 'reset':
+                    state.reset()
+                elif mode == 'passthrough':
+                    state.mode = 'passthrough'
+                frame(at=12, active=mode != 'inactive')
+                if mode == 'paused':
+                    (directory / 'paused').unlink()
+                assert not dispatch.called
+
         # Menu hold fires once at the threshold, consumes release, and short
         # presses stay distinct even if a release frame arrives after the deadline.
         reset()
@@ -778,7 +822,7 @@ def main():
                         {'action_hold': 0}, {'hold_actions': {'BTN_MODE': 'unknown'}},
                         {'hold_actions': {'BTN_THUMBL': 'unknown'}},
                         {'hold_actions': {'BTN_TL': 'legend'}},
-                        {'hold_actions': {'BTN_START': 'legend'}},
+                        {'hold_actions': {'BTN_SELECT': 'legend'}},
                         {'workspace_numbers': []}, {'workspace_numbers': [1, 1]},
                         {'workspace_numbers': [0, 1]}, {'workspace_numbers': [True, 2]},
                         {'workspace_numbers': 'all'}, {'workspace_numbers': [[1]]}):

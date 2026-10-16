@@ -10,6 +10,63 @@ Firefox-first browser preferences were applied on the WIN Mini: `xdg-settings ge
 
 ## Recent device checks
 
+On 2026-10-17, Print Screen and the mapper's named screenshot action were routed
+through `minion-screenshot`. Captures now save uniquely named, mode-0600 PNGs
+under `~/Pictures/screenshots`, retain the clipboard copy and report success
+with a one-second `Screenshot taken.` notification, without the filename.
+Isolated checks passed unique paths, capture-failure cleanup and retaining saved
+files if clipboard copying fails.
+A live capture produced a 1920×1080 PNG; clipboard bytes matched the file and
+the notification appeared and expired. Sway validation/reload preserved panel
+mode, rotation and scale; the mapper restarted and became ready. Existing
+personal Sway differences were retained. Recognizer, idle-policy, setup-staging,
+syntax and diff checks passed; setup now stages 96 sources. A physical Print
+Screen retest and fresh full setup remain pending.
+[Private screenshot report](../.local/device-checks/screenshots/result.json).
+
+On 2026-10-17, holding Start for 0.75 seconds then releasing gained a file-manager
+action; short presses still open a terminal. Start's hold waits for release so
+any overlap with Select retains passthrough priority, even after a long solo
+hold. Recognizer checks passed threshold boundaries, stalled-frame release,
+one-shot behavior, both overlap/release orders, cancellation and existing Menu
+holds. Installed mapper/profile matched the previous committed baseline before
+replacement; the restarted service selected the controller and became ready.
+Synthetic frames through the installed mapper opened exactly one new Foot or
+Thunar window through live Sway commands, with no launch before release.
+The generated legend includes the configured Start hold automatically.
+Setup-staging, syntax and diff checks passed. The physical Start retest and the
+extended virtual-controller VM acceptance check remain pending.
+[Private Start-hold report](../.local/device-checks/start-file-manager/result.json).
+
+On 2026-10-17, Thunar reported a missing
+`org.freedesktop.thumbnails.Thumbnailer1` service. Tumbler 4.18.1 and its extra
+plugins were installed and added explicitly to the no-recommends package list.
+Live D-Bus activation and generation of PNG/MP4 preview thumbnails passed;
+a separate Thunar session browsed two folders without the missing-service
+warning. Its `GFileInfo created without standard::size` critical remains.
+A debugger run, deliberately configured to trap criticals, located that message
+in the GTK cell-rendering path through `g_file_info_get_size`; ordinary browsing
+continued without that debug setting. Upstream Thunar 4.18.8 uses this getter
+without checking whether size exists; [4.20's source](https://github.com/xfce-mirror/thunar/blob/thunar-4.20.0/thunar/thunar-file.c#L2654)
+handles missing size metadata for virtual locations. Ubuntu's configured sources
+offer only 4.18.8, so no alternate build or warning suppression was installed.
+Setup-staging and diff checks passed. Existing Thunar windows may need reopening
+to refresh their supported thumbnail types.
+[Private thumbnail report](../.local/device-checks/thunar-diagnostics/thumbnail-result.json)
+and [browsing report](../.local/device-checks/thunar-diagnostics/browsing-result.json).
+
+On 2026-10-17, imv 4.4.0 and mpv 0.37.0 were installed from Ubuntu packages
+and added to ordinary desktop setup. Common image/video associations now use
+their native desktop entries; existing browser and unrelated defaults were
+preserved. `xdg-open` opened a generated PNG in imv and an H.264 MP4 in mpv
+in the live Sway session. A separate one-second playback completed with VA-API
+hardware decoding and GPU rendering. Ubuntu exposes the image command as
+`imv-wayland`, rather than `imv`. Isolated provisioning checks retained personal
+handlers and were idempotent; setup-staging, syntax and diff checks passed.
+The video fixture was silent; audio, subtitles, other codecs and a fresh full
+setup were not retested.
+[Private media-viewer report](../.local/device-checks/media-viewers/result.json).
+
 On 2026-10-16, Fn+F5 gained internal-panel 60/120 Hz switching, with the selected
 mode saved for later sessions. The bar now reads the active rate and abbreviates
 stick modes as `L:S/T R:W/R`. Native 60 → 120 → 60 Hz checks passed. Installation
@@ -22,8 +79,11 @@ switch/readback/write rollback, missing/inactive panel, personal/symlink refusal
 all compact labels and live refresh/error readings. Idle-policy, status-bar,
 setup-staging, Sway validation and diff checks passed. The user confirmed that
 Fn+F5 taps switch rates and a two-second hold switches only once. Next-login
-persistence remains to be confirmed. Graphics-artifact recurrence at
-60 Hz has not been assessed and no root cause is established.
+persistence remains to be confirmed. In a subsequent observation on the same
+day, the user reported that graphics flicker at 60 Hz had fallen to nearly zero,
+with occasional recurrence. This is a qualitative report without a controlled
+comparison or occurrence count; 60 Hz appears to mitigate the symptom, but does
+not eliminate it or establish a root cause.
 [Private refresh-controls report](../.local/device-checks/refresh-controls/result.json).
 
 On 2026-10-16, the Neovim Back mapping reproduced `E19: Mark has invalid line

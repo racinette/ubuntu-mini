@@ -8,8 +8,10 @@ case ":$PATH:" in
   *":$HOME/.local/bin:"*) ;;
   *) export PATH="$HOME/.local/bin:$PATH" ;;
 esac
-if [[ -S "${XDG_RUNTIME_DIR:-/run/user/$UID}/minion-ssh-agent/socket" ]]; then
-  export SSH_AUTH_SOCK="${XDG_RUNTIME_DIR:-/run/user/$UID}/minion-ssh-agent/socket"
+# Preserve forwarded/personal agents; recover stale sockets or canonicalize aliases.
+if [[ -S "${XDG_RUNTIME_DIR:-/run/user/$UID}/openssh_agent" &&
+      ( ! -S "${SSH_AUTH_SOCK:-}" || "${SSH_AUTH_SOCK:-}" -ef "${XDG_RUNTIME_DIR:-/run/user/$UID}/openssh_agent" ) ]]; then
+  export SSH_AUTH_SOCK="${XDG_RUNTIME_DIR:-/run/user/$UID}/openssh_agent"
 fi
 [[ ${MINION_SHELL_LOADED-} ]] && return
 MINION_SHELL_LOADED=1

@@ -22,7 +22,7 @@ Current device status as of **2026-10-16** for the **GPD WIN Mini 2023 / Ryzen 7
 | Additional desktop apps | Telegram 7.3.1 launched; GIMP 3.2.6 opened a generated PNG; qBittorrent 4.6.3 launched natively on Wayland with torrent/magnet handlers registered. Account messaging and torrent transfers were not exercised. |
 | Recent desktop fixes | Minsk timezone/NTP and 4500K night colors passed; the user accepted the warm palette. Noto fallbacks fixed missing characters. Start/Super+Enter inherit the focused Foot shell directory; native focus behavior is unchanged. |
 | Swap | An 8 GiB private swapfile is active on encrypted root and configured for boot. A bounded cgroup test forced real swap use and passed readback; a setup rerun preserved the file and boot configuration. |
-| Authentication caching | Sudo authentication carries across terminals for 15 minutes. One shared SSH agent caches keys for an hour; a second real Git query passed without a prompt, and automatic key expiry passed in an isolated probe. |
+| Authentication caching | Sudo authentication carries across terminals for 15 minutes. Ubuntu's packaged OpenSSH agent runs with a one-hour timeout; live disposable-key signing passed after migration. Real Git reuse and isolated expiry passed before migration. Logout/login remains deferred. |
 
 See [testing](testing.md) for measurements, source revisions and links to private evidence. A successful observation applies to that workload and configuration, rather than every possible application or hardware state.
 

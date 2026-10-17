@@ -89,6 +89,8 @@ def backup_configuration(path, user):
         '/etc/xdg/xdg-desktop-portal/sway-portals.conf',
         '/etc/systemd/user/minion-session.target', '/etc/systemd/user/mako.service.d',
         '/etc/systemd/user/minion-session.target.d',
+        '/etc/systemd/user/ssh-agent.service.d',
+        '/etc/xdg/systemd/user/minion-ssh-agent.service',
         '/etc/systemd/user/xdg-desktop-portal.service.d',
         '/etc/systemd/user/xdg-desktop-portal-gtk.service.d',
         '/etc/systemd/user/xdg-desktop-portal-wlr.service.d',

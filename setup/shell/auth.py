@@ -8,6 +8,7 @@ import tempfile
 HERE = Path(__file__).resolve().parent
 SUDOERS = Path('/etc/sudoers.d')
 UNITS = Path('/etc/systemd/user')
+LEGACY_UNITS = Path('/etc/xdg/systemd/user')
 
 
 def sudo_policy(username):
@@ -62,6 +63,10 @@ def user_write(path, text, user):
 
 def install(user):
     install_sudo(user)
+    install_ssh(user)
+
+
+def install_ssh(user):
     directory = Path(user.pw_dir) / '.ssh'
     if directory.is_symlink():
         raise ValueError('Configure the SSH include manually when ~/.ssh is a symlink')
@@ -72,8 +77,7 @@ def install(user):
     defaults = directory / 'minion.conf'
     if config.is_symlink() or defaults.is_symlink():
         raise ValueError('SSH config symlinks are retained; add the Minion include manually')
-    if not defaults.exists():
-        user_write(defaults, (HERE / 'ssh-agent.conf').read_text(), user)
+    original_defaults = defaults.read_text() if defaults.exists() else None
     text = config.read_text() if config.exists() else ''
     include = '    Include ~/.ssh/minion.conf'
     original = text if config.exists() else None
@@ -81,6 +85,14 @@ def install(user):
         user_write(config, text.rstrip() + '\n\n# Minion defaults; personal host options above take precedence.\nHost *\n' + include + '\n', user)
     # Validate as the account, since a personal Match exec must never run as root.
     try:
+        if original_defaults is None:
+            user_write(defaults, (HERE / 'ssh-agent.conf').read_text(), user)
+        else:
+            # Remove only the formerly managed socket override, preserving edits.
+            migrated = ''.join(line for line in original_defaults.splitlines(keepends=True)
+                               if line.strip() != 'IdentityAgent /run/user/%i/minion-ssh-agent/socket')
+            if migrated != original_defaults:
+                user_write(defaults, migrated, user)
         subprocess.run(['ssh', '-G', '-F', str(config), 'minion-config-check.invalid'],
                        user=user.pw_uid, group=user.pw_gid, extra_groups=[],
                        env={'HOME': user.pw_dir, 'PATH': '/usr/bin:/bin', 'LC_ALL': 'C'},
@@ -90,6 +102,14 @@ def install(user):
             config.unlink(missing_ok=True)
         else:
             user_write(config, original, user)
+        if original_defaults is None:
+            defaults.unlink(missing_ok=True)
+        elif defaults.read_text() != original_defaults:
+            user_write(defaults, original_defaults, user)
         raise
-    (UNITS / 'minion-ssh-agent.service').write_text((HERE / 'minion-ssh-agent.service').read_text())
-    (UNITS / 'minion-ssh-agent.service').chmod(0o644)
+    dropin = UNITS / 'ssh-agent.service.d/60-minion-session.conf'
+    dropin.parent.mkdir(parents=True, exist_ok=True)
+    dropin.write_text((HERE / 'ssh-agent-session.conf').read_text())
+    dropin.chmod(0o644)
+    for directory in (UNITS, LEGACY_UNITS):
+        (directory / 'minion-ssh-agent.service').unlink(missing_ok=True)

@@ -189,7 +189,7 @@ write('/etc/systemd/user/minion-session.target', '''[Unit]
 Description=Minion graphical session services
 BindsTo=graphical-session.target
 After=graphical-session.target
-Wants=mako.service minion-polkit.service minion-idle.service minion-display-wake.service minion-rear-buttons.service minion-network-applet.service minion-bluetooth-applet.service minion-gamepad.service minion-workspaces.service minion-night-light.service minion-ssh-agent.service minion-voice.service minion-layout-popup.service
+Wants=mako.service minion-polkit.service minion-idle.service minion-display-wake.service minion-rear-buttons.service minion-network-applet.service minion-bluetooth-applet.service minion-gamepad.service minion-workspaces.service minion-night-light.service ssh-agent.service minion-voice.service minion-layout-popup.service
 ''')
 # Extend older targets in /etc/xdg/systemd/user as well as fresh installations.
 write('/etc/systemd/user/minion-session.target.d/battery.conf', '''[Unit]

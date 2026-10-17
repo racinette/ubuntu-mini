@@ -3,12 +3,15 @@ set -eu
 export XDG_CURRENT_DESKTOP=sway
 export XDG_SESSION_DESKTOP=sway
 export XDG_SESSION_TYPE=wayland
-export SSH_AUTH_SOCK="${XDG_RUNTIME_DIR:?PAM must create the user runtime directory}/minion-ssh-agent/socket"
 # Only VM profiles set a software renderer. Device sessions use driver defaults.
 if [ -f /etc/minion/vm-environment ]; then
     . /etc/minion/vm-environment
 fi
 test -S "${XDG_RUNTIME_DIR:?PAM must create the user runtime directory}/bus"
+# Start Ubuntu's agent before Sway so applications inherit its standard socket.
+systemctl --user daemon-reload
+systemctl --user start ssh-agent.service
+export SSH_AUTH_SOCK="$XDG_RUNTIME_DIR/openssh_agent"
 xdg-user-dirs-update
 config="${XDG_CONFIG_HOME:-$HOME/.config}/sway/config"
 if [ ! -f "$config" ]; then config=/etc/minion/sway.conf; fi

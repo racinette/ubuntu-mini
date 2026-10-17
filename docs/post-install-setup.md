@@ -125,28 +125,41 @@ account-specific `/etc/sudoers.d/60-minion-auth-USERNAME` policy; it changes cac
 scope and lifetime while retaining the account's existing command permissions.
 Run `sudo -k` to invalidate the shared cache immediately.
 
-The desktop runs one OpenSSH agent through `minion-ssh-agent.service`. On first
-SSH/Git use, unlock the key normally; `AddKeysToAgent 1h` keeps it in the agent
-for **one hour from loading**, after which the next use needs the passphrase
-again. Using a key does not restart that hour. Logout/reboot stops the desktop
-agent and clears its loaded keys. No passphrase is written into the configuration.
+The desktop uses Ubuntu's packaged `ssh-agent.service` and its standard
+`$XDG_RUNTIME_DIR/openssh_agent` socket. A small systemd drop-in sets the default
+key lifetime to one hour, clears an inherited agent socket during service
+startup, and stops the agent with the desktop session. Sway starts it before
+launching applications so they inherit the socket. On first SSH/Git use, unlock
+the key normally; `AddKeysToAgent 1h` keeps it loaded for **one hour from
+loading**. Using the key does not restart that hour. Logout/reboot stops the
+agent and clears its loaded keys. No passphrase is saved in configuration.
 
-Setup appends a `Host *` include to `~/.ssh/config` and seeds `~/.ssh/minion.conf`.
-Earlier personal host options take precedence; an edited Minion SSH defaults
-file is retained on reruns. `IdentityAgent` points SSH/Git to the shared socket,
-including from already running terminals without `SSH_AUTH_SOCK`. New shells
-also export that socket for `ssh-add`. In an existing shell, run:
+Setup appends a `Host *` include to `~/.ssh/config` and seeds
+`~/.ssh/minion.conf` with the cache duration. Earlier personal host options and
+other edits are retained. SSH follows `SSH_AUTH_SOCK`; setup does not force an
+`IdentityAgent`. Migration removes only the old managed socket override and
+custom agent service. Interactive shells recover a missing/stale socket using
+the packaged agent, while retaining valid forwarded or personal agents.
 
 ```bash
-export SSH_AUTH_SOCK="/run/user/$UID/minion-ssh-agent/socket"
+systemctl --user status ssh-agent.service
 ssh-add -l                    # List loaded keys
 ssh-add -D                    # Clear loaded keys when desired
 ```
 
-The service's default key lifetime is one hour as well. To inspect it, run
-`systemctl --user status minion-ssh-agent.service`. These defaults follow
-[sudo's timestamp controls](https://www.sudo.ws/docs/man/sudoers.man/) and
-[OpenSSH's agent settings](https://man.openbsd.org/ssh_config.5#AddKeysToAgent).
+After a live migration, existing processes can keep using a temporary alias
+from the old socket to the packaged agent for the current session. New Bash
+terminals use the standard path. To update an existing shell explicitly:
+
+```bash
+export SSH_AUTH_SOCK="$XDG_RUNTIME_DIR/openssh_agent"
+```
+
+The service override lives in
+`/etc/systemd/user/ssh-agent.service.d/60-minion-session.conf` and uses Ubuntu's
+`/usr/lib/openssh/agent-launch` rather than replacing the vendor unit. These
+defaults follow [sudo's timestamp controls](https://www.sudo.ws/docs/man/sudoers.man/)
+and [OpenSSH's agent settings](https://man.openbsd.org/ssh_config.5#AddKeysToAgent).
 
 ## Local secrets
 

@@ -10,6 +10,22 @@ Firefox-first browser preferences were applied on the WIN Mini: `xdg-settings ge
 
 ## Recent device checks
 
+On 2026-10-17, SSH setup switched from the custom agent service to Ubuntu's
+packaged `ssh-agent.service`, using its native launcher/socket and a drop-in
+for the one-hour lifetime and desktop-session teardown. Migration removes the
+old managed `IdentityAgent` override and both legacy unit paths while retaining
+personal SSH settings. Isolated checks passed fresh setup, migration/reruns,
+user precedence, parse-failure rollback, stale-socket recovery, alias
+canonicalization and preservation of forwarded agents. Setup staging and
+shell/Python syntax checks passed. Live installation verified the vendor unit
+and native socket, actual `ssh-agent -t 1h` process, manager environment,
+removal of the forced agent setting, and signing with a disposable key through
+both the standard socket and a temporary legacy alias. The test key was removed;
+real keys were not read or loaded and no remote login was attempted. Installed
+session/shell sources match the repository. Next logout/login lifecycle remains
+for the next planned session restart.
+[Private packaged-agent report](../.local/device-checks/packaged-ssh-agent/result.json).
+
 On 2026-10-17, the workspace service gained process-ancestry placement for newly
 opened child windows. A live terminal fixture reproduced the original bug with
 the installed service, then verified the new watcher kept agent-like child

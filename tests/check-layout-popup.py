@@ -77,14 +77,28 @@ def main():
             first = config.read_bytes()
             assert config.stat().st_mode & 0o777 == 0o600
             assert b'anchor=center' in first and b'default-timeout=1000' in first
+            assert first.count(b'on-notify=exec pw-play') == 2
+            assert b'[app-name=minion-agent]' in first
+            assert b'[app-name=minion-agent-attention]' in first
+            assert b'--volume=0.35 --media-role=Notification' in first
+            assert b'/usr/share/sounds/freedesktop/stereo/message-new-instant.oga' in first
             assert not settings.install(user)
             assert config.read_bytes() == first
             for rule in ('[app-name=minion-layout]', '[app-name="minion-layout"]',
                          '[app-name = "minion-layout" urgency=low]'):
                 personal = '# personal\nfont=Sans 12\n\n' + rule + '\ninvisible=1\n'
                 config.write_text(personal)
+                assert settings.install(user)  # Add independent agent rules only.
+                assert config.read_text().startswith(personal)
+                assert config.read_text().count('minion-layout') == 1
                 assert not settings.install(user)
-                assert config.read_text() == personal
+            personal = ('# personal\n[app-name=minion-agent]\non-notify=none\n'
+                        '[app-name="minion-agent-attention"]\non-notify=exec my-sound\n')
+            config.write_text(personal)
+            assert settings.install(user)  # Add independent layout styling only.
+            assert config.read_text().startswith(personal)
+            assert 'pw-play' not in config.read_text()
+            assert not settings.install(user)
             config.write_text('# personal\nfont=Sans 12\n')
             assert settings.install(user)
             assert config.read_text().startswith('# personal\nfont=Sans 12\n')

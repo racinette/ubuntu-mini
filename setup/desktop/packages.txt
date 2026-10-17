@@ -16,6 +16,7 @@ gir1.2-nm-1.0
 bluez
 blueman
 pipewire
+pipewire-bin
 pipewire-alsa
 pipewire-pulse
 wireplumber
@@ -37,6 +38,7 @@ xdg-desktop-portal-wlr
 xdg-desktop-portal-gtk
 dbus-user-session
 libnotify-bin
+sound-theme-freedesktop
 fonts-dejavu-core
 fonts-noto-core
 fonts-noto-color-emoji

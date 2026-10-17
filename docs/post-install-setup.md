@@ -274,6 +274,12 @@ Setup seeds Foot's `[bell] urgent=yes` and `notify=yes` and a three-second notif
 command, retaining explicit personal values. This also enables attention alerts
 for other terminal applications that ring the bell. Restart agent sessions to
 load the configuration; open a new terminal for Codex's Foot bell settings.
+Mako plays a brief freedesktop message chime for these agent popups through
+PipeWire, at 35% stream volume (also subject to the output volume and mute).
+This includes other terminal bells handled by Foot's attention notifications.
+The two app-specific rules in `~/.config/mako/config` control this sound;
+set their `on-notify=none` to silence it and run `makoctl reload`.
+Setup preserves existing rules for those apps and leaves other popups silent.
 See [Codex notifications](https://learn.chatgpt.com/docs/config-file/config-advanced#notifications),
 [Claude hooks](https://code.claude.com/docs/en/hooks#stop), and
 [Cursor hooks](https://cursor.com/docs/hooks).

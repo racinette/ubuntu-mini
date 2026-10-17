@@ -30,18 +30,31 @@ def main():
     assert 'бел'.encode('idna').decode() == 'xn--90ais'
     original['rules'].insert(0, 'DOMAIN,personal.invalid,REJECT')
     original['rule-providers'] = {'personal': {'type': 'inline', 'behavior': 'domain', 'payload': ['personal.invalid']}}
-    enabled = proxy.ru_bypass_config(original, True)
+    enabled = proxy.regional_bypass_config(original, True)
     assert enabled['rules'][-3:] == proxy.RU_RULES + ['MATCH,PROXY']
     assert enabled['rules'][:-3] == original['rules'][:-1]
     assert enabled['tun'] == original['tun'] and enabled['dns'] == original['dns']
     assert enabled['proxy-providers'] == original['proxy-providers']
-    assert proxy.ru_bypass_config(enabled, True) == enabled
-    assert proxy.ru_bypass_config(enabled, False) == original
+    assert proxy.regional_bypass_config(enabled, True) == enabled
+    assert proxy.regional_bypass_config(enabled, False) == original
     assert enabled['rule-providers']['personal'] == original['rule-providers']['personal']
+    belarus = proxy.regional_bypass_config(enabled, True, 'by')
+    assert belarus['rules'][-2:] == proxy.BY_IP_RULES + ['MATCH,PROXY']
+    assert proxy.regional_bypass_config(belarus, True, 'by') == belarus
+    assert proxy.regional_bypass_config(belarus, False, 'by') == enabled
+    assert belarus['rule-providers']['minion-ru-ips'] == enabled['rule-providers']['minion-ru-ips']
+    conflict_by = json.loads(json.dumps(enabled))
+    conflict_by['rule-providers']['minion-by-ips'] = {'type': 'file', 'path': './personal'}
+    try:
+        proxy.regional_bypass_config(conflict_by, True, 'by')
+    except proxy.ProxyError:
+        pass
+    else:
+        raise AssertionError('Overwrote a personal Belarus provider')
     conflict = json.loads(json.dumps(original))
     conflict['rule-providers']['minion-ru-domains'] = {'type': 'file', 'path': './personal'}
     try:
-        proxy.ru_bypass_config(conflict, True)
+        proxy.regional_bypass_config(conflict, True)
     except proxy.ProxyError:
         pass
     else:
@@ -51,18 +64,32 @@ def main():
         with patch.object(proxy, 'STATE', state):
             proxy.write_private(state / 'config.json', json.dumps(original).encode())
             before = (state / 'config.json').read_bytes()
-            with patch.object(proxy, 'cache_ru_rules', side_effect=proxy.ProxyError('Failed download')):
+            with patch.object(proxy, 'cache_bypass_rules', side_effect=proxy.ProxyError('Failed download')):
                 try:
-                    proxy.set_ru_bypass(True)
+                    proxy.set_bypass(True)
                 except proxy.ProxyError:
                     pass
                 else:
                     raise AssertionError('Accepted a failed download')
             assert (state / 'config.json').read_bytes() == before
-            with patch.object(proxy, 'cache_ru_rules'), patch.object(proxy, 'validate'), redirect_stdout(io.StringIO()):
-                proxy.set_ru_bypass(True)
+            with patch.object(proxy, 'cache_bypass_rules'), patch.object(proxy, 'validate'), redirect_stdout(io.StringIO()):
+                proxy.set_bypass(True)
                 assert proxy.load_config() == enabled
-                proxy.set_ru_bypass(False)
+                proxy.set_bypass(False)
+                assert proxy.load_config() == original
+            before = (state / 'config.json').read_bytes()
+            with patch.object(proxy, 'cache_bypass_rules', side_effect=proxy.ProxyError('Failed download')):
+                try:
+                    proxy.set_bypass(True, 'by')
+                except proxy.ProxyError:
+                    pass
+                else:
+                    raise AssertionError('Accepted a failed Belarus download')
+            assert (state / 'config.json').read_bytes() == before
+            with patch.object(proxy, 'cache_bypass_rules'), patch.object(proxy, 'validate'), redirect_stdout(io.StringIO()):
+                proxy.set_bypass(True, 'by')
+                assert proxy.load_config() == proxy.regional_bypass_config(original, True, 'by')
+                proxy.set_bypass(False, 'by')
                 assert proxy.load_config() == original
         if args.mihomo:
             class Handler(BaseHTTPRequestHandler):
@@ -76,17 +103,18 @@ def main():
                       'external-controller-unix': str(state / 'api.sock'),
                       'hosts': {'direct.test.invalid': '127.0.0.1', 'proxy.test.invalid': '127.0.0.1'},
                       'proxy-groups': [{'name': 'PROXY', 'type': 'select', 'proxies': ['REJECT']}],
-                      'rule-providers': {}, 'rules': ['DOMAIN,blocked.by,REJECT'] + proxy.BY_RULES + proxy.RU_RULES + ['MATCH,PROXY']}
+                      'rule-providers': {}, 'rules': ['DOMAIN,blocked.by,REJECT'] + proxy.BY_RULES + proxy.RU_RULES + proxy.BY_IP_RULES + ['MATCH,PROXY']}
             belarus_domains = ['hoster.by', 'api.hoster.by', 'пример.бел'.encode('idna').decode()]
             for host in belarus_domains + ['hoster.by.example.invalid', 'blocked.by']:
                 config['hosts'][host] = '127.0.0.1'
-            for name, definition in proxy.RU_PROVIDERS.items():
+            for name, definition in (proxy.RU_PROVIDERS | proxy.BY_PROVIDERS).items():
                 config['rule-providers'][name] = {'type': 'file', 'behavior': definition['behavior'],
                                                  'format': 'text', 'path': definition['path']}
             (state / 'rules').mkdir()
             (state / 'rules/ru-domains.list').write_text('+.test.invalid\n')
             # An unrelated IP range makes the domain test depend on domain routing.
             (state / 'rules/ru-ips.list').write_text('192.0.2.0/24\n')
+            (state / 'rules/by-ips.list').write_text('198.51.100.0/24\n')
             path = state / 'fixture.json'; path.write_text(json.dumps(config))
             def request(host):
                 client = http.client.HTTPConnection('127.0.0.1', port, timeout=3)
@@ -122,9 +150,16 @@ def main():
                 (state / 'rules/ru-ips.list').write_text('127.0.0.1/32\n')
                 with run_checks():
                     assert request('127.0.0.1') == (200, b'direct fixture'), 'IP bypass failed'
+                (state / 'api.sock').unlink(missing_ok=True)
+                (state / 'rules/ru-ips.list').write_text('192.0.2.0/24\n')
+                (state / 'rules/by-ips.list').write_text('127.0.0.1/32\n')
+                with run_checks():
+                    assert request('127.0.0.1') == (200, b'direct fixture'), 'Belarus IP bypass failed'
+                    status, connections = proxy.controller_request(state / 'api.sock', '/rules')
+                    assert status == 200 and any(r.get('payload') == 'minion-by-ips' for r in connections['rules'])
             finally:
                 server.shutdown(); server.server_close(); worker.join(timeout=5)
-            print('Passed: Russian domain/IP and Belarus suffix direct routing, IDNA/subdomains, earlier exceptions and unmatched traffic through PROXY.')
+            print('Passed: Russian domain/IP and Belarus suffix/IP direct routing, IDNA/subdomains, earlier exceptions and unmatched traffic through PROXY.')
     print('Passed: bypass precedence, idempotence, personal settings, disabling and failed-download preservation.')
 
 

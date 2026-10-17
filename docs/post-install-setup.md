@@ -57,6 +57,14 @@ Open files from Thunar (**Super+E**) or run `imv-wayland /path/to/image.png` /
 `mpv /path/to/video.mp4`. Setup seeds these as the handlers for common image
 and video formats, preserving explicit personal associations on reruns.
 Thunar uses Tumbler and its extra plugins for image and video thumbnails.
+To copy text from a file without opening it, right-click a single text/source
+file in Thunar and choose **Copy File Contents**, then paste normally. This
+copies its contents rather than its path; a one-second popup confirms success.
+The action also appears for miscellaneous file types such as JSON; use it for
+plain-text files. Existing personal custom actions are preserved by setup.
+If Thunar was already running when the action was installed, close its windows,
+run `thunar --quit`, then reopen it to load the new action.
+From a terminal, use `wl-copy < path/to/file` for the same clipboard operation.
 In imv, use Left/Right for the previous/next image, `f` for fullscreen and `q`
 to quit. In mpv, Space pauses, Left/Right seeks, `f` toggles fullscreen and
 `q` quits; moving the pointer reveals playback controls.

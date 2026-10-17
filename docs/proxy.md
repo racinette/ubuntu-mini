@@ -41,7 +41,7 @@ The local HTTP/SOCKS listener binds only to `127.0.0.1:7890`. The dashboard and 
 
 Setup installs a checksum-pinned [MetaCubeXD static release](https://github.com/MetaCubeX/metacubexd), retaining its API identity on reruns. Installation does not start or restart the proxy. Restart an already configured service after upgrading to activate the dashboard. No second proxy engine is installed.
 
-## Belarusian website bypass
+## Belarusian website and IP bypass
 
 Default proxy configuration sends `.by` and `.бел` domains directly, including
 `hoster.by` and their subdomains. The two native Mihomo rules are:
@@ -58,6 +58,22 @@ or Belarusian services using other domain suffixes. Earlier personal rules keep
 priority. Existing installations retain their config on setup reruns; add these
 rules before `MATCH,PROXY` and restart the proxy when upgrading manually.
 See [Mihomo suffix rules](https://wiki.metacubex.one/en/config/rules/#domain-suffix).
+
+For numeric IP connections such as SSH, also enable Belarusian IP ranges:
+
+```bash
+sudo python3 setup/proxy/manage.py bypass-by on
+sudo systemctl restart minion-proxy.service
+```
+
+This downloads [MetaCubeX's Belarus IP list](https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geoip/by.list),
+validates and caches it, then adds `RULE-SET,minion-by-ips,DIRECT` before the
+proxy fallback. Mihomo refreshes it daily through the selected proxy and keeps
+its cached copy if refresh fails. It includes IPv4 and IPv6 prefixes; geographic
+classification may be incomplete. Earlier personal rules and Russian bypasses
+retain their priority. `bypass-by off` removes the IP bypass while keeping the
+`.by`/`.бел` suffix rules. Ordinary setup reruns preserve the configuration;
+fresh configuration can enable both regions with `configure --bypass-ru --bypass-by`.
 
 ## Russian website and IP bypass
 

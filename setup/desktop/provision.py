@@ -7,6 +7,7 @@ from pathlib import Path
 import pwd
 import shutil
 import subprocess
+import xml.etree.ElementTree as ET
 
 from audio import seed_microphone_level
 from comfort import install as install_comfort
@@ -101,6 +102,27 @@ if changed:
         associations.write(stream, space_around_delimiters=False)
     mimeapps.chmod(0o600)
     os.chown(mimeapps, user.pw_uid, user.pw_gid)
+# Add file-content copying without replacing personal Thunar custom actions.
+thunar_actions = Path(user.pw_dir) / '.config/Thunar/uca.xml'
+if thunar_actions.exists():
+    actions_tree = ET.parse(thunar_actions, parser=ET.XMLParser(
+        target=ET.TreeBuilder(insert_comments=True)))
+else:
+    actions_tree = ET.ElementTree(ET.Element('actions'))
+actions_root = actions_tree.getroot()
+if actions_root.tag != 'actions':
+    raise SystemExit(f'Unexpected Thunar custom actions format: {thunar_actions}')
+action_ids = {action.findtext('unique-id') for action in actions_root.findall('action')}
+changed = False
+for action in ET.parse(HERE / 'thunar-actions.xml').getroot().findall('action'):
+    if action.findtext('unique-id') not in action_ids:
+        actions_root.append(action)
+        changed = True
+if changed:
+    missing = [parent for parent in thunar_actions.parents if not parent.exists()]
+    write(thunar_actions, ET.tostring(actions_root, encoding='unicode') + '\n', 0o600)
+    for path in (thunar_actions, *missing):
+        os.chown(path, user.pw_uid, user.pw_gid)
 # Seed notification defaults without replacing the user's existing settings.
 mako_config = Path(user.pw_dir) / '.config/mako/config'
 if not mako_config.exists():

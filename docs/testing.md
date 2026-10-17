@@ -10,6 +10,32 @@ Firefox-first browser preferences were applied on the WIN Mini: `xdg-settings ge
 
 ## Recent device checks
 
+On 2026-10-17, a TCP/22 probe to the user's Belarusian server was observed
+matching the proxy fallback and using the selected German node; it timed out.
+MetaCubeX's downloaded Belarus list contained 772 prefixes and classified that
+address within `87.232.64.0/21`. The new optional `bypass-by` configuration
+adds a cached, daily refreshed IP rule while preserving existing suffix rules,
+Russian bypasses and personal settings. Isolated native Mihomo checks passed
+Belarusian and Russian IP routing, suffix/IDNA routing, unmatched proxy traffic,
+earlier personal exceptions, enable/disable idempotence, provider conflicts and
+failed-download preservation. Live installation verified the server connection
+matched `minion-by-ips` with a DIRECT chain and returned an SSH greeting;
+GitHub remained proxied and the selected node was preserved. No SSH login or
+remote command was attempted. Proxy supervision/dashboard, setup staging,
+Python syntax and diff checks also passed.
+[Private Belarus IP report](../.local/device-checks/belarus-ip-bypass/result.json).
+
+On 2026-10-17, setup gained a Thunar **Copy File Contents** custom action for
+one text or miscellaneous file. The installed action command copied exact
+UTF-8 text through the live Wayland clipboard, including Russian and a trailing
+newline; a filename with spaces, a quote and literal shell syntax remained
+literal. Isolated checks passed fresh configuration, private file mode,
+preservation of personal actions/edits, unchanged reruns and rejection of
+malformed XML without overwriting it. Setup staging (97 sources), Python syntax
+and diff checks passed. Existing Thunar windows were left open; restart Thunar
+to load the action before checking the context-menu interaction physically.
+[Private clipboard report](../.local/device-checks/file-contents/result.json).
+
 On 2026-10-17, Print Screen and the mapper's named screenshot action were routed
 through `minion-screenshot`. Captures now save uniquely named, mode-0600 PNGs
 under `~/Pictures/screenshots`, retain the clipboard copy and report success

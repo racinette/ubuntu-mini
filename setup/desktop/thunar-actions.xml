@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<actions>
+  <action>
+    <icon>edit-copy</icon>
+    <name>Copy File Contents</name>
+    <unique-id>minion-copy-file-contents</unique-id>
+    <command>sh -c 'if wl-copy --type text/plain &lt; "$1"; then notify-send -a minion -t 1000 "File contents copied."; else notify-send -a minion -t 4000 "Could not copy file contents."; exit 1; fi' sh %f</command>
+    <description>Copy the selected text file's contents to the clipboard</description>
+    <range>1</range>
+    <patterns>*</patterns>
+    <text-files/>
+    <other-files/>
+  </action>
+</actions>

@@ -51,6 +51,10 @@ def main():
         assert list(policy['parent_pids'](300, proc)) == [250, 100]
         (proc / '100/stat').write_text('100 (cycle) S 300 0 0')
         assert list(policy['parent_pids'](300, proc)) == [250, 100]
+        (proc / '250/cmdline').write_bytes(b'/opt/codex\0app-server\0--listen\0')
+        assert list(policy['parent_pids'](300, proc)) == []  # Shared daemon, not client origin.
+        (proc / '250/cmdline').write_bytes(b'/opt/codex\0resume\0')
+        assert list(policy['parent_pids'](300, proc)) == [250, 100]  # Ordinary CLI still works.
         (proc / '250/stat').write_text('malformed')
         assert list(policy['parent_pids'](300, proc)) == [250]
         assert list(policy['parent_pids']('../300', proc)) == []

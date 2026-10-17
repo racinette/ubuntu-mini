@@ -9,6 +9,10 @@ import pwd
 import shutil
 import subprocess
 import tempfile
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from agent_notifications import install as install_notifications
 
 HERE = Path(__file__).resolve().parent
 # These are the publishers' documented native installers, following their
@@ -171,6 +175,7 @@ def main():
     for installer in INSTALLERS:
         install_cli(user, env, *installer)
     install_cli_preferences(user)
+    install_notifications(user)
     print(f'Coding CLIs ready for {user.pw_name}. Open a new terminal; run codex, claude or agent to sign in.')
 
 

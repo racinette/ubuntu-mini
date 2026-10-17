@@ -76,6 +76,12 @@ def parent_pids(pid, proc=Path('/proc')):
             process = proc / str(pid)
             if process.stat().st_uid != os.getuid():
                 return
+            try:
+                args = (process / 'cmdline').read_bytes().split(b'\0')
+                if Path(os.fsdecode(args[0])).name == 'codex' and b'app-server' in args[1:4]:
+                    return  # The backend can serve terminals on many workspaces.
+            except OSError:
+                pass
             if depth:
                 yield pid
             # comm can contain spaces and parentheses; ppid follows its final ')'.

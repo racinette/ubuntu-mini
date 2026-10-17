@@ -247,6 +247,37 @@ Claude Code gets `env.CLAUDE_CODE_SCROLL_SPEED = "3"` in `~/.claude/settings.jso
 
 Cursor Agent 2026.10.01 uses the terminal's normal scrollback and exposes no wheel-speed setting. Minion's Foot defaults set `[scrollback] multiplier=9.0`, up from Foot 1.16.2's default `3.0`, to triple wheel scrolling in Cursor and ordinary terminal history. Applications handling mouse events in the alternate screen, including Codex and fullscreen Claude, keep their own wheel speed. Open a new terminal to load the Foot setting. Setup seeds `~/.config/foot/foot.ini` on fresh installations and preserves existing personal configuration on reruns.
 
+Coding agents alert you when a turn finishes in an unfocused terminal: a
+three-second popup appears, and Sway highlights
+the workspace until you focus that terminal. Focus stays where you left it.
+Codex uses its UI's native BEL notification in the actual terminal. Its shared
+`app-server` daemon may have been started from another workspace, so its external
+`notify` hook and process ancestry cannot identify the terminal displaying a
+particular conversation. Setup seeds `tui.notifications` for turn completion,
+approvals and questions, with `tui.notification_method = "bel"` in
+`~/.codex/config.toml`. Existing explicit settings and personal `notify` commands
+are retained. Foot displays a generic terminal attention popup for these signals.
+
+Claude and Cursor use `minion-agent-notify`, a one-shot command with no new
+service. It identifies the terminal from live process ancestry and its Sway
+container ID; their popup identifies the agent and current workspace without
+including prompts, responses or project paths. Setup adds Claude's `Stop` and
+permission/question `Notification` hooks in `~/.claude/settings.json`, and
+Cursor's `stop` hook in `~/.cursor/hooks.json`. Cursor alerts only for
+`status = completed`, excluding cancellation and errors. Claude completion
+alerts wait while its hook reports background tasks. Existing hooks and explicit
+preferences are retained; personal hooks that continue an agent after its stop
+event can cause an early alert. Detached processes, scratchpad windows, shared
+terminal servers and Codex shared-backend ancestry are skipped rather than guessed.
+
+Setup seeds Foot's `[bell] urgent=yes` and `notify=yes` and a three-second notification
+command, retaining explicit personal values. This also enables attention alerts
+for other terminal applications that ring the bell. Restart agent sessions to
+load the configuration; open a new terminal for Codex's Foot bell settings.
+See [Codex notifications](https://learn.chatgpt.com/docs/config-file/config-advanced#notifications),
+[Claude hooks](https://code.claude.com/docs/en/hooks#stop), and
+[Cursor hooks](https://cursor.com/docs/hooks).
+
 ## Development environment
 
 Ordinary `sudo ./setup.sh` preinstalls the following for your desktop account. Fresh installations resolve the **latest stable releases at setup time**, then install the actual runtimes and tools. There is no first-use compiler download. Node follows the current release rather than the older LTS branch; prereleases/nightlies are not requested.
@@ -425,6 +456,8 @@ including after moves or renumbering; later manual moves of the child window
 are retained. Ordinary Sway launches keep their native startup placement.
 Shared application processes or launches detached from their original process
 tree remain under Sway/application placement because their origin is ambiguous.
+The mapper also stops at Codex's shared `app-server` daemon: its original
+terminal can be unrelated to the CLI currently requesting the window.
 
 DejaVu Sans Mono is the terminal's main font. Noto Core provides fallback fonts
 for additional scripts, symbols and musical notation; Noto Color Emoji supplies

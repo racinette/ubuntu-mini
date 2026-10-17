@@ -10,6 +10,33 @@ Firefox-first browser preferences were applied on the WIN Mini: `xdg-settings ge
 
 ## Recent device checks
 
+On 2026-10-17, coding CLI setup gained completion popups and workspace urgency:
+Codex uses its UI's native BEL signal for completion/approval/questions, while
+Claude and Cursor use a one-shot hook. Claude permission/question hooks are also
+configured. Host checks passed event/status filtering, focused-terminal
+suppression, unambiguous origin selection, scratchpad/shared-server refusal,
+JSON/TOML/Foot preference preservation, hook idempotence and invalid-config
+refusal; CLI provisioning and 100-source setup staging passed too. The installed
+Codex accepts the configuration and installed Cursor source confirms `stop`
+dispatch. A live terminal fixture checks hook payloads and Foot's native BEL,
+workspace urgency, focus preservation, clearing urgency on focus, focused
+suppression and three-second popup expiry. These checks inject events; an actual
+completed turn in each restarted CLI remains a normal-use check. The corrected
+installed fixture passed Claude/Cursor completion and Claude permission hooks,
+Codex's native terminal signal, correct workspace urgency, three-second popup
+expiry, focus preservation and clearing on focus.
+[Private installed notification report](../.local/device-checks/agent-notifications/installed-result.json).
+
+The user identified an important live exception: this conversation was on
+workspace 4 although tool ancestry led through workspace 2. Inspection confirmed
+that Codex clients on multiple workspaces share an `app-server` daemon originally
+launched from workspace 2. The workspace mapper now stops before following that
+shared backend to its original terminal, leaving ambiguous launches to Sway's
+normal placement. Codex's completion hook was replaced with UI terminal signals
+for the same reason. Regression checks cover the shared-backend boundary and
+ordinary direct CLI ancestry. The installed mapper was updated/restarted without
+reloading Sway. [Private installation correction](../.local/device-checks/agent-notifications/shared-backend-result.json).
+
 On 2026-10-17, Bluetooth and night-light startup moved to the packaged
 `blueman-applet.service` and `gammastep.service` with session drop-ins. The
 Gammastep indicator is disabled/masked to avoid a second adjustment process.

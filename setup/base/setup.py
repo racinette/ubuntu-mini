@@ -122,7 +122,8 @@ def backup_configuration(path, user):
     paths.append(Path(user.pw_dir) / '.bashrc')
     paths.append(Path(user.pw_dir) / '.gnupg/gpg-agent.conf')
     paths.extend(Path(user.pw_dir) / '.ssh' / name for name in ('config', 'minion.conf'))
-    paths.extend(Path(user.pw_dir) / name for name in ('.claude/settings.json', '.cursor/cli-config.json'))
+    paths.extend(Path(user.pw_dir) / name for name in ('.claude/settings.json', '.cursor/cli-config.json',
+        '.codex/config.toml', '.cursor/hooks.json', '.config/foot/foot.ini'))
     paths.extend(Path(user.pw_dir) / name for name in ('.config/nvim',
         '.local/share/applications/minion-nvim.desktop', '.config/minion-view',
         '.local/bin/minion-projects', '.local/share/applications/minion-projects.desktop'))

@@ -1,0 +1,95 @@
+#!/usr/bin/python3
+"""One-shot CLI hook: notify and mark the originating terminal urgent."""
+import html
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+
+def event(client, payload):
+    if not isinstance(payload, dict):
+        return
+    if client == 'cursor' and payload.get('status') == 'completed':
+        return 'Cursor Agent finished.'
+    if client == 'claude':
+        if payload.get('hook_event_name') == 'Stop' and not payload.get('background_tasks'):
+            return 'Claude finished.'
+        if (payload.get('hook_event_name') == 'Notification' and
+                payload.get('notification_type') in ('permission_prompt', 'elicitation_dialog')):
+            return 'Claude needs your input.'
+
+
+def ancestors(pid, proc=Path('/proc')):
+    seen = set()
+    while type(pid) is int and pid > 1 and pid not in seen and len(seen) < 128:
+        seen.add(pid)
+        try:
+            process = proc / str(pid)
+            if process.stat().st_uid != os.getuid():
+                return
+            try:
+                args = (process / 'cmdline').read_bytes().split(b'\0')
+                if Path(os.fsdecode(args[0])).name == 'codex' and b'app-server' in args[1:4]:
+                    return  # Shared backend ancestry does not identify its client.
+            except OSError:
+                pass
+            yield pid
+            pid = int((process / 'stat').read_text().rsplit(')', 1)[1].split()[1])
+        except (OSError, ValueError, IndexError):
+            return
+
+
+def origin(tree, pids):
+    windows = {}
+
+    def collect(node, workspace=None):
+        if node.get('type') == 'workspace':
+            workspace = node
+        if workspace and workspace.get('name') != '__i3_scratch' and node.get('pid'):
+            windows.setdefault(node['pid'], []).append((node, workspace))
+        for child in node.get('nodes', []) + node.get('floating_nodes', []):
+            collect(child, workspace)
+
+    collect(tree)
+    for pid in pids:
+        candidates = windows.get(pid, [])
+        if candidates:
+            # Shared terminal servers cannot identify the individual window.
+            return candidates[0] if len(candidates) == 1 else None
+
+
+def alert(title, pids=None):
+    tree = json.loads(subprocess.check_output(['swaymsg', '-r', '-t', 'get_tree'], timeout=2))
+    found = origin(tree, ancestors(os.getppid()) if pids is None else pids)
+    if not found or found[0].get('focused'):
+        return
+    window, workspace = found
+    result = json.loads(subprocess.check_output(
+        ['swaymsg', '-r', f'[con_id={int(window["id"])}] urgent enable'], timeout=2))
+    if not all(item.get('success') for item in result):
+        return
+    subprocess.run(['notify-send', '-a', 'minion-agent', '-t', '3000', '--', title,
+                    'Workspace ' + html.escape(workspace['name']) + '.'],
+                   check=False, timeout=3, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def main():
+    if len(sys.argv) < 2 or sys.argv[1] not in ('claude', 'cursor'):
+        return
+    # Do not inspect transcripts, tokens, or message text. Only event metadata is used.
+    raw = sys.argv[2] if len(sys.argv) > 2 else sys.stdin.read(4 * 1024 * 1024 + 1)
+    if len(raw) > 4 * 1024 * 1024:
+        return
+    title = event(sys.argv[1], json.loads(raw))
+    if title:
+        alert(title)
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
+        # A missing desktop/session or failed notification must never fail a hook.
+        pass

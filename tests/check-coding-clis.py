@@ -181,6 +181,7 @@ with tempfile.TemporaryDirectory(prefix='minion-cli-check-') as temporary:
          patch.object(provision, 'target_user', return_value=user), \
          patch.object(provision, 'install_bubblewrap_profile', side_effect=AssertionError('Check changed AppArmor')), \
          patch.object(provision, 'install_cli_preferences', side_effect=AssertionError('Check changed preferences')), \
+         patch.object(provision, 'install_notifications', side_effect=AssertionError('Check changed notifications')), \
          patch.object(provision.subprocess, 'run', side_effect=AssertionError('Check ran a command')), \
          patch.object(sys, 'argv', ['provision.py', 'fixture', '--check']), \
          contextlib.redirect_stdout(io.StringIO()):
@@ -194,6 +195,7 @@ with tempfile.TemporaryDirectory(prefix='minion-cli-check-') as temporary:
          patch.object(provision, 'install_bubblewrap_profile') as apparmor, \
          patch.object(provision, 'install_codex_defaults'), \
          patch.object(provision, 'install_cli_preferences') as preferences, \
+         patch.object(provision, 'install_notifications') as notifications, \
          patch.object(provision, 'install_cli') as install, \
          patch.object(sys, 'argv', ['provision.py', 'fixture']), \
          contextlib.redirect_stdout(io.StringIO()):
@@ -202,5 +204,6 @@ with tempfile.TemporaryDirectory(prefix='minion-cli-check-') as temporary:
         apparmor.assert_called_once_with()
         assert install.call_count == len(provision.INSTALLERS)
         preferences.assert_called_once_with(user)
+        notifications.assert_called_once_with(user)
 
 print('Passed: user privilege/environment isolation, attribution merge/ownership/idempotence/invalid-file refusal, Claude scroll default/personal speed retention, existing command retention, partial/missing installation refusal, bubblewrap profile installation/retention/loading/failure handling, Bash PATH and read-only preflight.')

@@ -112,10 +112,18 @@ The same controls are available as `minion-night-light auto`,
 
 Edit `~/.config/gammastep/config.ini` to change temperatures, latitude/longitude
 when travelling, or set explicit `dawn-time` and `dusk-time` intervals instead
-of solar timing. Run `systemctl --user restart minion-night-light.service` after
+of solar timing. Run `systemctl --user restart gammastep.service` after
 editing. Setup seeds the configuration when absent and preserves it on reruns.
 The service follows the graphical session; Off releases the screen's color
 adjustment. Backlight brightness remains controlled by the brightness keys.
+
+Night light uses Ubuntu's packaged `gammastep.service` with a small session
+override to honor the saved mode. The separate `gammastep-indicator.service`
+is disabled and masked because it starts another color-adjustment process;
+the Night light launcher provides the mode picker. Bluetooth likewise uses
+the packaged `blueman-applet.service`, with a session/restart override. Setup
+removes the older `minion-night-light` and `minion-bluetooth-applet` service
+definitions while retaining the night-light command and your personal settings.
 
 ## Authentication caching
 

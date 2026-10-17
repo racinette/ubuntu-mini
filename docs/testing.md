@@ -10,6 +10,22 @@ Firefox-first browser preferences were applied on the WIN Mini: `xdg-settings ge
 
 ## Recent device checks
 
+On 2026-10-17, Bluetooth and night-light startup moved to the packaged
+`blueman-applet.service` and `gammastep.service` with session drop-ins. The
+Gammastep indicator is disabled/masked to avoid a second adjustment process.
+Isolated checks passed old-unit removal, retained personal overrides, unchanged
+reruns, all saved night-light modes and setup staging (98 sources). The existing
+mode picker remains; its service target now uses the packaged unit.
+Live installation verified the Blueman D-Bus owner belongs to the packaged
+service, exercised Automatic/Warm/Off with a single Gammastep process (none
+while Off), restored the original mode/configuration, and confirmed the old
+units are removed. The Warm-mode check was corrected to account for Gammastep
+splitting its temperature argument in the running process; unsuccessful checks
+restored the previous installation before retrying. Installed files match the
+repository. New Bluetooth pairing/audio and a logout/login cycle were not
+repeated.
+[Private desktop-service report](../.local/device-checks/packaged-desktop-services/result.json).
+
 On 2026-10-17, SSH setup switched from the custom agent service to Ubuntu's
 packaged `ssh-agent.service`, using its native launcher/socket and a drop-in
 for the one-hour lifetime and desktop-session teardown. Migration removes the

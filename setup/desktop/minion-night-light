@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import subprocess
 
-SERVICE = 'minion-night-light.service'
+SERVICE = 'gammastep.service'
 
 
 def paths():

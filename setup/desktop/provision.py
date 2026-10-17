@@ -154,7 +154,7 @@ run('udevadm', 'trigger', '--action=add', '--subsystem-match=backlight')
 run('udevadm', 'trigger', '--action=add', '--subsystem-match=misc', '--sysname-match=uinput')
 run('udevadm', 'trigger', '--action=change', '--subsystem-match=input')
 run('udevadm', 'settle')
-for name in ('minion-gamepad', 'minion-workspaces', 'minion-screen-lock', 'minion-display-wake', 'minion-rear-buttons', 'minion-night-light', 'minion-voice', 'minion-layout-popup', 'minion-battery-warnings'):
+for name in ('minion-gamepad', 'minion-workspaces', 'minion-screen-lock', 'minion-display-wake', 'minion-rear-buttons', 'minion-voice', 'minion-layout-popup', 'minion-battery-warnings'):
     write('/etc/systemd/user/' + name + '.service', HERE.joinpath(name + '.service').read_text())
 write('/etc/greetd/config.toml', '''[terminal]
 vt = 1
@@ -189,7 +189,7 @@ write('/etc/systemd/user/minion-session.target', '''[Unit]
 Description=Minion graphical session services
 BindsTo=graphical-session.target
 After=graphical-session.target
-Wants=mako.service minion-polkit.service minion-idle.service minion-display-wake.service minion-rear-buttons.service minion-network-applet.service minion-bluetooth-applet.service minion-gamepad.service minion-workspaces.service minion-night-light.service ssh-agent.service minion-voice.service minion-layout-popup.service
+Wants=mako.service minion-polkit.service minion-idle.service minion-display-wake.service minion-rear-buttons.service minion-network-applet.service blueman-applet.service minion-gamepad.service minion-workspaces.service gammastep.service ssh-agent.service minion-voice.service minion-layout-popup.service
 ''')
 # Extend older targets in /etc/xdg/systemd/user as well as fresh installations.
 write('/etc/systemd/user/minion-session.target.d/battery.conf', '''[Unit]
@@ -208,7 +208,6 @@ services = {
     'polkit': '/usr/libexec/polkit-mate-authentication-agent-1',
     'idle': '/usr/local/bin/minion-idle',
     'network-applet': '/usr/bin/nm-applet',
-    'bluetooth-applet': '/usr/bin/blueman-applet',
 }
 for name, command in services.items():
     write('/etc/systemd/user/minion-' + name + '.service', f'''[Unit]
@@ -220,6 +219,16 @@ ExecStart={command}
 Restart=on-failure
 RestartSec=3
 ''')
+# Prefer packaged applet/night-light units and remove their older replacements.
+for name in ('blueman-applet', 'gammastep'):
+    write('/etc/systemd/user/' + name + '.service.d/60-minion-session.conf',
+          HERE.joinpath(name + '-session.conf').read_text())
+for directory in ('/etc/systemd/user', '/etc/xdg/systemd/user'):
+    for name in ('minion-bluetooth-applet', 'minion-night-light'):
+        (Path(directory) / (name + '.service')).unlink(missing_ok=True)
+# The indicator starts its own Gammastep process; our launcher supplies the UI.
+run('systemctl', '--global', 'disable', 'gammastep-indicator.service')
+run('systemctl', '--global', 'mask', 'gammastep-indicator.service')
 # Merge the renderer through Netplan; retain existing interface matches/DHCP.
 write('/etc/netplan/90-minion-renderer.yaml', 'network:\n  version: 2\n  renderer: NetworkManager\n', 0o600)
 run('netplan', 'generate')

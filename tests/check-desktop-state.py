@@ -10,7 +10,7 @@ p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('directory')
 args = p.parse_args()
 directory = experiment.select_directory(args.directory)
-units = 'minion-session.target mako minion-polkit minion-idle minion-network-applet minion-bluetooth-applet pipewire pipewire-pulse wireplumber'
+units = 'minion-session.target mako minion-polkit minion-idle minion-network-applet blueman-applet pipewire pipewire-pulse wireplumber'
 states = graphical(directory, 'systemctl --user is-active ' + units)
 failed = ssh(directory, 'systemctl --user --failed --no-legend')
 report = {

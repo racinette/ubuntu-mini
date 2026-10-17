@@ -10,6 +10,20 @@ Firefox-first browser preferences were applied on the WIN Mini: `xdg-settings ge
 
 ## Recent device checks
 
+On 2026-10-17, the workspace service gained process-ancestry placement for newly
+opened child windows. A live terminal fixture reproduced the original bug with
+the installed service, then verified the new watcher kept agent-like child
+terminals with their source on a background workspace while preserving the
+viewed workspace and focused window. Moving the source changed the destination
+for the next child; manual child moves persisted, and independent Sway launches
+kept native placement. Temporary windows were closed and focus restored. Unit
+checks cover renaming, floating windows, shared-process ambiguity, scratchpad,
+malformed/disappearing processes, account boundaries and safe command quoting.
+The installed workspace script/unit match the tested sources and the service
+is active. This does not infer origins across detached/shared processes such
+as D-Bus application activation.
+[Private window-origin report](../.local/device-checks/window-origins/result.json).
+
 On 2026-10-17, a TCP/22 probe to the user's Belarusian server was observed
 matching the proxy fallback and using the selected German node; it timed out.
 MetaCubeX's downloaded Belarus list contained 772 prefixes and classified that
@@ -223,6 +237,7 @@ python3 tests/check-status-bar.py
 python3 tests/check-layout-popup.py
 python3 tests/check-night-light.py
 python3 tests/check-terminal-launch.py
+python3 tests/check-window-origins.py
 python3 tests/check-neovim-input.py
 python3 tests/check-idle-policy.py
 python3 tests/check-install-plan.py

@@ -1,5 +1,5 @@
 [Unit]
-Description=minion consecutive workspace numbering
+Description=minion window origins and consecutive workspace numbering
 PartOf=minion-session.target
 After=graphical-session.target
 

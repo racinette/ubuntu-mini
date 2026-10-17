@@ -1,7 +1,8 @@
 #!/usr/bin/python3
-"""Compact numbered workspaces after Sway removes an empty workspace."""
+"""Keep child windows with their origin and compact empty numbered workspaces."""
 import json
 import logging
+import os
 from pathlib import Path
 import re
 import signal
@@ -64,19 +65,89 @@ def workspace_target(current, step, last):
     return (current - 1 + step) % last + 1
 
 
+def parent_pids(pid, proc=Path('/proc')):
+    """Read live ancestry without shell parsing or crossing account boundaries."""
+    seen = set()
+    for depth in range(128):
+        if type(pid) is not int or pid <= 1 or pid in seen:
+            return
+        seen.add(pid)
+        try:
+            process = proc / str(pid)
+            if process.stat().st_uid != os.getuid():
+                return
+            if depth:
+                yield pid
+            # comm can contain spaces and parentheses; ppid follows its final ')'.
+            fields = (process / 'stat').read_text().rsplit(')', 1)[1].split()
+            pid = int(fields[1])
+        except (OSError, ValueError, IndexError):
+            return
+
+
+def window_origin(tree, window_id, ancestry=parent_pids):
+    windows = {}
+    target = None
+
+    def collect(node, workspace=None):
+        nonlocal target
+        if node.get('type') == 'workspace':
+            workspace = node
+        if node.get('pid') and workspace:
+            if node['id'] == window_id:
+                target = (node, workspace)
+            elif workspace.get('name') != '__i3_scratch':
+                windows.setdefault(node['pid'], []).append(workspace)
+        for child in node.get('nodes', []) + node.get('floating_nodes', []):
+            collect(child, workspace)
+
+    collect(tree)
+    if target is None or target[1].get('name') == '__i3_scratch':
+        return
+    node, current = target
+    # A shared application process gives no evidence of which window launched
+    # another one. Leave its placement to startup notification/the application.
+    if node['pid'] in windows:
+        return
+    for pid in ancestry(node['pid']):
+        candidates = windows.get(pid, [])
+        if candidates:
+            if len({workspace['id'] for workspace in candidates}) != 1:
+                return  # Shared-server ancestors on different workspaces.
+            origin = candidates[0]
+            return origin if origin['id'] != current['id'] else None
+
+
+def place_child_window(window_id):
+    if type(window_id) is not int or window_id <= 0:
+        return
+    tree = json.loads(subprocess.check_output(['swaymsg', '-r', '-t', 'get_tree']))
+    origin = window_origin(tree, window_id)
+    if origin:
+        command = f'[con_id={window_id}] move container to workspace {json.dumps(origin["name"])}'
+        result = json.loads(subprocess.check_output(['swaymsg', '-r', command]))
+        if not all(item.get('success') for item in result):
+            raise RuntimeError('Sway refused child window placement')
+
+
 def main():
     def stop(*_):
         raise SystemExit(0)
 
     signal.signal(signal.SIGTERM, stop)
-    # Keep watching Sway's workspace events; renaming does not move or focus windows.
-    process = subprocess.Popen(['swaymsg', '-m', '-r', '-t', 'subscribe', '["workspace"]'],
+    # Only place newly opened windows; subsequent user moves remain untouched.
+    process = subprocess.Popen(['swaymsg', '-m', '-r', '-t', 'subscribe', '["workspace","window"]'],
                                stdout=subprocess.PIPE, text=True)
     try:
         if enabled():
             normalize()
         for line in process.stdout:
             event = json.loads(line)
+            if event.get('change') == 'new':
+                try:
+                    place_child_window(event.get('container', {}).get('id'))
+                except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+                    logging.warning('Could not place child window: %s', error)
             if event.get('change') in ('init', 'empty', 'rename') and enabled():
                 normalize()
         raise RuntimeError('Sway workspace subscription ended')

@@ -396,6 +396,15 @@ directory cannot be determined, the new terminal starts in home. The shared
 Unicode. It supports the normal standalone Foot windows installed by setup;
 ambiguous shared-server clients fall back to home. Sway's focus policy is unchanged.
 
+When a terminal or coding agent spawns a separate application window, the
+workspace service places it with the nearest originating application in its
+process ancestry. You can keep viewing another workspace without receiving the
+agent's new terminal there. The source window's current workspace is used,
+including after moves or renumbering; later manual moves of the child window
+are retained. Ordinary Sway launches keep their native startup placement.
+Shared application processes or launches detached from their original process
+tree remain under Sway/application placement because their origin is ambiguous.
+
 DejaVu Sans Mono is the terminal's main font. Noto Core provides fallback fonts
 for additional scripts, symbols and musical notation; Noto Color Emoji supplies
 emoji. Foot and desktop applications use Fontconfig to select these fallbacks.

@@ -10,6 +10,16 @@ Firefox-first browser preferences were applied on the WIN Mini: `xdg-settings ge
 
 ## Recent device checks
 
+On 2026-10-22, lid-close also began disabling the WIN Mini's built-in keyboard
+through Sway. Lid-open restores the saved event setting, including a keyboard
+that was already disabled; the lid switch and other inputs remain active.
+Isolated checks passed repeated close events, setting preservation, missing
+hardware and retry after a failed restore. Live input readback confirmed only
+the built-in keyboard was disabled and restored. The installed Awake lid-close/
+open handler passed the same readback and matches the repository source.
+A physical close/open typing check remains unconfirmed.
+[Private keyboard report](../.local/device-checks/lid-keyboard/result.json).
+
 On 2026-10-22, lid handling became Awake-aware and explicit Fn+F3 blanking
 became persistent. The existing idle service holds a low-level logind lid
 inhibitor while Sway handles close/open events; outside the session, logind's

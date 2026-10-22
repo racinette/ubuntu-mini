@@ -42,6 +42,40 @@ def display_power(enabled, automatic=False):
         set_display_power(enabled)
 
 
+BUILTIN_KEYBOARD = '1:1:AT_Translated_Set_2_keyboard'
+
+
+def lid_keyboard(closed):
+    # Called under control.lock. Keep the independent lid switch active so
+    # reopening can restore typing without any keyboard input.
+    saved = state_directory() / 'lid-keyboard-events'
+    if closed:
+        if not saved.exists():
+            inputs = json.loads(subprocess.check_output(['swaymsg', '-r', '-t', 'get_inputs'],
+                                                       text=True, timeout=5))
+            keyboard = next((item for item in inputs if item.get('identifier') == BUILTIN_KEYBOARD), None)
+            if keyboard is None:
+                return
+            mode = keyboard.get('libinput', {}).get('send_events', 'enabled')
+            if mode not in ('enabled', 'disabled', 'disabled_on_external_mouse'):
+                raise RuntimeError('Unrecognized built-in keyboard event setting')
+            saved.write_text(mode)
+            saved.chmod(0o600)
+        mode = 'disabled'
+    else:
+        if not saved.exists():
+            return
+        mode = saved.read_text().strip()
+        if mode not in ('enabled', 'disabled', 'disabled_on_external_mouse'):
+            raise RuntimeError('Invalid saved built-in keyboard event setting')
+    response = json.loads(subprocess.check_output(
+        ['swaymsg', '-r', f'input "{BUILTIN_KEYBOARD}" events {mode}'], text=True, timeout=5))
+    if not response or not all(item.get('success') for item in response):
+        raise RuntimeError('Could not change built-in keyboard event handling')
+    if not closed:
+        saved.unlink()
+
+
 def lid_changed(closed):
     directory = state_directory()
     with (directory / 'control.lock').open('a') as lock:
@@ -49,12 +83,14 @@ def lid_changed(closed):
         marker = directory / 'lid-closed'
         if closed:
             marker.touch(mode=0o600)
+            lid_keyboard(True)
             set_display_power(False)
             try:
                 awake = (directory / 'keep-awake').read_text().strip() == '1'
             except OSError:
                 awake = False
         else:
+            lid_keyboard(False)
             marker.unlink(missing_ok=True)
             if not (directory / 'manual-display-off').exists():
                 set_display_power(True)

@@ -150,16 +150,20 @@ with tempfile.TemporaryDirectory() as temporary, \
 # Lid blanking is independent of manual blanking; no wake path defeats it.
 with tempfile.TemporaryDirectory() as temporary, patch.dict(os.environ, XDG_RUNTIME_DIR=temporary), \
         patch.object(subprocess, 'check_output', return_value='[{"power":false}]'), \
-        patch.object(subprocess, 'run') as run:
+        patch.object(subprocess, 'run') as run, \
+        patch.dict(controls['lid_changed'].__globals__, lid_keyboard=Mock()) as scope:
+    keyboard = controls['lid_changed'].__globals__['lid_keyboard']
     directory = controls['state_directory']()
     (directory / 'keep-awake').write_text('1')
     controls['lid_changed'](True)
+    keyboard.assert_called_once_with(True)
     assert [c.args[0] for c in run.call_args_list] == [['swaymsg', 'output', '*', 'power', 'off']]
     run.reset_mock()
     controls['display_power'](True, automatic=True)
     controls['display_power'](True)
     run.assert_not_called()
     controls['lid_changed'](False)
+    keyboard.assert_called_with(False)
     assert run.call_args.args[0] == ['swaymsg', 'output', '*', 'power', 'on']
     controls['display_power'](False)
     controls['lid_changed'](True)
@@ -192,6 +196,41 @@ with tempfile.TemporaryDirectory() as temporary, patch.dict(os.environ, XDG_RUNT
     else:
         raise AssertionError('Lid suspend ignored failed lock')
     assert run.call_count == 2
+
+# Disable only the built-in keyboard. Repeated close events preserve the
+# original setting, and an unsuccessful restore keeps it for a later retry.
+with tempfile.TemporaryDirectory() as temporary, patch.dict(os.environ, XDG_RUNTIME_DIR=temporary):
+    identifier = controls['BUILTIN_KEYBOARD']
+    for original in ('enabled', 'disabled'):
+        inputs = [dict(identifier=identifier, libinput=dict(send_events=original)),
+                  dict(identifier='external-keyboard', libinput=dict(send_events='enabled'))]
+        def keyboard_ipc(command, **_):
+            return json.dumps(inputs) if command[-1] == 'get_inputs' else '[{"success":true}]'
+        with patch.object(subprocess, 'check_output', side_effect=keyboard_ipc) as ipc:
+            controls['lid_keyboard'](True)
+            saved = controls['state_directory']() / 'lid-keyboard-events'
+            assert saved.read_text() == original and saved.stat().st_mode & 0o777 == 0o600
+            controls['lid_keyboard'](True)
+            assert saved.read_text() == original
+            assert sum(c.args[0][-1] == 'get_inputs' for c in ipc.call_args_list) == 1
+            with patch.object(subprocess, 'check_output', return_value='[{"success":false}]'):
+                try:
+                    controls['lid_keyboard'](False)
+                except RuntimeError:
+                    pass
+                else:
+                    raise AssertionError('Failed keyboard restore was accepted')
+            assert saved.exists()
+            controls['lid_keyboard'](False)
+            assert not saved.exists()
+            assert ipc.call_args.args[0][-1] == f'input "{identifier}" events {original}'
+            assert all('external-keyboard' not in c.args[0][-1] for c in ipc.call_args_list)
+            ipc.reset_mock()
+            controls['lid_keyboard'](False)
+            ipc.assert_not_called()
+    with patch.object(subprocess, 'check_output', return_value='[]') as ipc:
+        controls['lid_keyboard'](True)
+        ipc.assert_called_once()
 
 # Scope both press and release to the rear keyboard so Print on the physical
 # keyboard keeps its screenshot binding. No power-button policy is introduced.

@@ -10,6 +10,21 @@ Firefox-first browser preferences were applied on the WIN Mini: `xdg-settings ge
 
 ## Recent device checks
 
+On 2026-10-22, a real closed-lid check showed the physical keyboard blocked
+while the gamepad mapper remained ready and continued window/workspace actions.
+The mapper now observes the same lid marker, releases virtual keys and pending
+gestures, and consumes the physical controller while closed, including in
+passthrough. Reopening waits for neutral controls. The rear-button reader also
+suppresses dictation actions and drops gestures spanning lid transitions.
+Isolated chord and idle-policy checks passed closed-lid suppression, held-key
+release, sticks, workspace/window actions, passthrough grabbing, neutral
+recovery and rear-action refusal; setup staging and diff checks passed.
+Local installation passed source comparisons, active mapper/rear-reader checks,
+closed-lid grabbing with no keys or commands. During the user’s real lid-close
+test, ACPI reported closed and the mapper remained grabbed, not ready, with no
+held keys. Physical retest feedback and live neutral recovery are pending.
+[Private gamepad report](../.local/device-checks/lid-gamepad/result.json).
+
 On 2026-10-22, lid-close also began disabling the WIN Mini's built-in keyboard
 through Sway. Lid-open restores the saved event setting, including a keyboard
 that was already disabled; the lid switch and other inputs remain active.

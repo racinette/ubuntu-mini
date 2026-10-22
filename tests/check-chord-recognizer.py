@@ -745,6 +745,50 @@ def main():
             assert 3 <= sum(key == codes.KEY_LEFT for key in downs()) <= 7
             assert not state.keys and not command.called
 
+        # Lid-close consumes physical input instead of releasing it to apps,
+        # releases virtual keys/overlays, and suppresses all gesture paths.
+        reset()
+        device = Mock()
+        state.device = device
+        frame({'X'}, shift=True, ctrl=True)
+        assert state.keys
+        with patch.object(state, 'lid_closed', return_value=True), \
+                patch.object(state, 'dispatch') as dispatch, patch.object(state, 'workspace') as workspace, \
+                patch.object(state, 'command') as command, patch.object(state, 'toggle') as toggle:
+            state.tick(200, True)
+            assert not state.keys and state.grabbed and not state.ready and state.lid_blocked
+            device.ungrab.assert_not_called()
+            keyboard.events.clear()
+            for button in (310, 311, 314, 315, 316, 317, 318):
+                frame(buttons=(button,), at=201)
+                frame(at=203)
+            frame({'X', 'Y', 'UP'}, shift=True, ctrl=True)
+            state.raw_axes[config['left_stick'][1]] = 32767
+            state.raw_axes[config['right_stick'][0]] = 32767
+            state.tick(204, True)
+            frame(buttons=(314, 315), at=205); frame(at=207)
+            assert not keyboard.events
+            assert not dispatch.called and not workspace.called and not command.called and not toggle.called
+            # Even passthrough gets a temporary grab while the lid is closed.
+            state.mode = 'passthrough'
+            state.grabbed = False
+            state.tick(208, True)
+            device.grab.assert_called_once_with()
+            assert state.grabbed and state.mode == 'passthrough'
+            state.mode = 'desktop'
+        # A held control during reopening cannot generate a key or release action.
+        keyboard.events.clear()
+        frame({'X'})
+        state.tick(209, True)
+        assert not state.ready and not keyboard.events
+        for axis in config['left_stick'] + config['right_stick']:
+            state.raw_axes[axis] = 0
+        frame(); state.tick(210, True)
+        assert state.ready and not keyboard.events
+        frame({'X'}); assert codes.KEY_BACKSPACE in downs()
+        frame()
+        state.device = None
+
         for reason in ('reset', 'disconnect', 'inactive', 'paused', 'passthrough'):
             reset(); state.device = Device(); state.stick_modes = ['text', 'resize']; frame({'X'}, shift=True, ctrl=True)
             state.stick_pending = ['scroll', None]

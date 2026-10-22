@@ -1,6 +1,8 @@
 #!/usr/bin/python3
 """Read the WIN Mini rear keyboard and debounce its repeated firmware macros."""
 import logging
+import os
+from pathlib import Path
 import select
 import subprocess
 import time
@@ -8,6 +10,11 @@ import time
 log = logging.getLogger('minion-rear-buttons')
 RELEASE_GRACE = 0.075
 HOLD_TO_CANCEL = 0.75
+
+
+def lid_closed():
+    directory = os.environ.get('XDG_RUNTIME_DIR')
+    return bool(directory) and (Path(directory) / 'minion-idle/lid-closed').exists()
 
 
 def active_session():
@@ -65,7 +72,7 @@ class Buttons:
 
 
 def action(name):
-    if not active_session():
+    if lid_closed() or not active_session():
         return
     if subprocess.run(
             ['systemctl', '--user', 'is-active', '--quiet', 'minion-screen-lock.service']).returncode == 0:
@@ -94,20 +101,29 @@ def main():
         buttons = Buttons(action)
         # Ignore controls already held when the reader starts/reconnects.
         blocked = set(device.active_keys()) & {99, 119}
+        was_closed = False
         try:
             while True:
+                closed = lid_closed()
+                if closed != was_closed:
+                    # Drop gestures that straddle lid movement. Controls held
+                    # during reopening must be released before another action.
+                    buttons = Buttons(action)
+                    blocked = set(device.active_keys()) & {99, 119}
+                    was_closed = closed
                 if select.select([device.fd], [], [], .01)[0]:
                     for event in device.read():
                         if event.type == evdev.ecodes.EV_SYN and event.code == evdev.ecodes.SYN_DROPPED:
                             raise OSError('Rear keyboard event stream lost synchronization')
-                        if event.type != evdev.ecodes.EV_KEY:
+                        if closed or event.type != evdev.ecodes.EV_KEY:
                             continue
                         if event.code in blocked:
                             if event.value == 0:
                                 blocked.remove(event.code)
                             continue
                         buttons.event(event.code, event.value, time.monotonic())
-                buttons.tick(time.monotonic())
+                if not closed:
+                    buttons.tick(time.monotonic())
         except OSError as error:
             log.warning('Rear keyboard disconnected/reset: %s', error)
         finally:

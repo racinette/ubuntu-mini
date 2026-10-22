@@ -281,6 +281,7 @@ class Mapper:
         self.next_repeat = [0, 0]
         self.motion_time, self.motion_credit = [None, None], [0, 0]
         self.ready = False
+        self.lid_blocked = False
         self.running = True
         self.chord_since = None
         self.chord_consumed = False
@@ -323,6 +324,7 @@ class Mapper:
         self.next_repeat = [0, 0]
         self.motion_time, self.motion_credit = [None, None], [0, 0]
         self.ready = False
+        self.lid_blocked = False
         self.pending_buttons.clear()
         self.button_since.clear()
         self.text_gesture.clear()
@@ -641,12 +643,38 @@ class Mapper:
         command = 'move container to workspace number' if self.triggers[0] else 'workspace number'
         self.command(f'{command} {target}')
 
+    def lid_closed(self):
+        return (self.directory.parent / 'minion-idle/lid-closed').exists()
+
+    def block_lid_input(self, active):
+        if not self.lid_closed():
+            if self.lid_blocked:
+                # Wait for neutral before accepting controls held during reopen.
+                self.reset()
+            return False
+        if not self.lid_blocked:
+            self.reset()
+            self.lid_blocked = True
+        if not active:
+            if self.grabbed or self.keys:
+                self.ungrab()
+                self.lid_blocked = True
+        elif not self.grabbed and self.device:
+            try:
+                # Keep consuming the physical controller even in passthrough;
+                # simply ungrabbing would deliver its input to other clients.
+                self.device.grab()
+                self.grabbed = True
+            except OSError:
+                pass
+        return True
+
     def permitted(self, active):
-        return active and not (self.directory / 'paused').exists() and self.mode == 'desktop'
+        return active and not self.lid_closed() and not (self.directory / 'paused').exists() and self.mode == 'desktop'
 
     def button_gestures(self, pressed, released, now, active):
         """Defer individual actions to release; consume overlapping toggle buttons."""
-        if not active or (self.directory / 'paused').exists():
+        if not active or self.lid_closed() or (self.directory / 'paused').exists():
             self.pending_buttons.clear()
             self.button_since.clear()
             self.chord_since = None
@@ -705,6 +733,8 @@ class Mapper:
             self.button_since.pop(button, None)
 
     def frame(self, pressed, released, now, active):
+        if self.block_lid_input(active):
+            return
         if not self.permitted(active) or not self.grabbed or not self.ready:
             self.button_gestures(pressed, released, now, active)
             return
@@ -897,6 +927,8 @@ class Mapper:
     def tick(self, now, active):
         if not self.device:
             return
+        if self.block_lid_input(active):
+            return
         if not self.permitted(active):
             self.button_gestures(set(), set(), now, active)
             if self.grabbed or self.keys:
@@ -967,7 +999,7 @@ class Mapper:
                 self.command(f"resize {action} {dimension} {self.config['resize_step']} ppt")
 
     def status(self, active):
-        return {'mode': self.mode, 'session_active': active, 'paused': (self.directory / 'paused').exists(),
+        return {'mode': self.mode, 'session_active': active, 'lid_closed': self.lid_closed(), 'paused': (self.directory / 'paused').exists(),
                 'device': self.device.path if self.device else None,
                 'device_name': self.device.name if self.device else None,
                 'grabbed': self.grabbed, 'ready': self.ready, 'keys': sorted(self.keys),

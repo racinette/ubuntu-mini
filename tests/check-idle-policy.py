@@ -393,16 +393,29 @@ buttons.event(119, 1, 0); buttons.event(119, 0, .1)
 buttons.event(119, 1, .2); buttons.event(119, 0, .3); buttons.tick(.4)
 assert actions == ['toggle', 'toggle']  # Even when a new press precedes the next poll.
 
-with patch.dict(rear['action'].__globals__, active_session=Mock(return_value=False)), \
+with tempfile.TemporaryDirectory() as temporary, patch.dict(os.environ, XDG_RUNTIME_DIR=temporary):
+    marker = Path(temporary) / 'minion-idle/lid-closed'
+    marker.parent.mkdir()
+    assert not rear['lid_closed']()
+    marker.touch()
+    assert rear['lid_closed']()
+    with patch.dict(rear['action'].__globals__, active_session=Mock(return_value=True)), \
+            patch.object(subprocess, 'run') as run, patch.object(subprocess, 'Popen') as popen:
+        rear['action']('toggle')
+        rear['action']('cancel')
+        run.assert_not_called()
+        popen.assert_not_called()
+
+with patch.dict(rear['action'].__globals__, lid_closed=Mock(return_value=False), active_session=Mock(return_value=False)), \
         patch.object(subprocess, 'Popen') as popen:
     rear['action']('toggle')
     popen.assert_not_called()
-with patch.dict(rear['action'].__globals__, active_session=Mock(return_value=True)), \
+with patch.dict(rear['action'].__globals__, lid_closed=Mock(return_value=False), active_session=Mock(return_value=True)), \
         patch.object(subprocess, 'run', return_value=Mock(returncode=0)), \
         patch.object(subprocess, 'Popen') as popen:
     rear['action']('toggle')
     popen.assert_not_called()
-with patch.dict(rear['action'].__globals__, active_session=Mock(return_value=True)), \
+with patch.dict(rear['action'].__globals__, lid_closed=Mock(return_value=False), active_session=Mock(return_value=True)), \
         patch.object(subprocess, 'run', return_value=Mock(returncode=3)), \
         patch.object(subprocess, 'Popen') as popen:
     rear['action']('cancel')

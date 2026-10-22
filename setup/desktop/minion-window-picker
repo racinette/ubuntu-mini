@@ -3,6 +3,7 @@
 import fcntl
 import json
 import os
+import signal
 from pathlib import Path
 import subprocess
 
@@ -35,13 +36,29 @@ def main():
         entries = sorted(windows(tree), key=lambda entry: not entry[2])
         if not entries:
             return
-        result = subprocess.run(['fuzzel', '--dmenu', '--index', '--layer=overlay', '--prompt=Windows > ',
-                                 '--width=60', '--lines=' + str(min(10, len(entries)))],
-                                input='\n'.join(entry[1] for entry in entries) + '\n',
-                                text=True, capture_output=True)
-        if result.returncode:
+        # The mapper owns this process. Cancelling it must also dismiss Fuzzel,
+        # without accepting an entry or leaving an orphaned overlay behind.
+        def cancel(*_):
+            raise SystemExit(0)
+        previous = signal.signal(signal.SIGTERM, cancel)
+        picker = None
+        try:
+            picker = subprocess.Popen(['fuzzel', '--dmenu', '--index', '--layer=overlay', '--prompt=Windows > ',
+                                       '--width=60', '--lines=' + str(min(10, len(entries)))],
+                                      stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+            selection, _ = picker.communicate('\n'.join(entry[1] for entry in entries) + '\n')
+        finally:
+            if picker is not None and picker.poll() is None:
+                picker.terminate()
+                try:
+                    picker.wait(timeout=.5)
+                except subprocess.TimeoutExpired:
+                    picker.kill()
+                    picker.wait()
+            signal.signal(signal.SIGTERM, previous)
+        if picker.returncode:
             return  # Escape/cancel leaves the current window selected.
-        selection = result.stdout.strip()
+        selection = selection.strip()
         if not selection.isdecimal() or not 0 <= int(selection) < len(entries):
             raise SystemExit('Window picker returned an invalid selection')
         target = entries[int(selection)][0]

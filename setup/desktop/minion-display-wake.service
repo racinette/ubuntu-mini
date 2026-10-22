@@ -1,10 +1,10 @@
 [Unit]
-Description=minion display wake on input
+Description=minion automatic display wake
 PartOf=minion-session.target
 After=graphical-session.target
 
 [Service]
 # Keep input wake independent of the charger and keep-awake idle policies.
-ExecStart=/usr/bin/swayidle -w -C /dev/null timeout 1 true resume "minion-idle-controls on" after-resume "minion-idle-controls on"
+ExecStart=/usr/bin/swayidle -w -C /dev/null timeout 1 true resume "minion-idle-controls wake" after-resume "minion-idle-controls wake"
 Restart=on-failure
 RestartSec=1

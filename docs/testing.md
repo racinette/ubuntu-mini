@@ -10,6 +10,24 @@ Firefox-first browser preferences were applied on the WIN Mini: `xdg-settings ge
 
 ## Recent device checks
 
+On 2026-10-22, lid handling became Awake-aware and explicit Fn+F3 blanking
+became persistent. The existing idle service holds a low-level logind lid
+inhibitor while Sway handles close/open events; outside the session, logind's
+suspend fallback remains. Awake lid-close blanks without locking or sleeping;
+normal lid-close locks before suspend. Automatic wake paths respect manual
+blanking, while ordinary idle blanking still wakes on activity. Select now
+toggles its owned window picker, including child-overlay cleanup. Isolated
+idle-policy, chord, picker-process, status-bar and setup-layout checks passed,
+as did native Sway configuration validation. Local installation passed source
+comparisons, active service/inhibitor checks, manual blanking through synthetic
+Shift input, Fn+F3 command toggling, simulated Awake lid-close/open, preserved
+manual blanking after reopening, and automatic idle wake. A live Sway picker
+opened and closed without leaving its overlay. The user confirmed all three physical checks: Select opens/closes its picker,
+Fn+F3 blanking survives ordinary input until the next Fn+F3 press, and Awake
+lid-close/open stays running and returns without unlocking. No real suspend or
+reboot was performed for these changes.
+[Private installation report](../.local/device-checks/lid-display-picker/result.json).
+
 On 2026-10-17, coding CLI setup gained completion popups and workspace urgency:
 Codex uses its UI's native BEL signal for completion/approval/questions, while
 Claude and Cursor use a one-shot hook. Claude permission/question hooks are also
@@ -336,7 +354,7 @@ The proxy dashboard check covers safe asset extraction, the native selector, one
 
 `python3 tests/check-proxy-bypass.py --mihomo /PATH/TO/NATIVE/MIHOMO` also verifies Belarusian `.by` and IDNA `.бел` suffixes against a disposable local HTTP server: root domains/subdomains route directly, suffix lookalikes remain proxied, and earlier personal reject rules keep priority. The same fixture retains Russian domain/IP routing checks. No real subscription, host routing change or external network is used.
 
-The idle policy check verifies lid-close suspend on every power source and uses power-supply fixtures and isolated processes to verify charger detection, removal and restoration of battery timers, display wake on AC, child cleanup and unexpected exit handling. It covers Keep awake across charger changes, restoration of battery timers, runtime-state toggles, display-off without locking, and refusal to blank when the wake listener cannot be signaled. It feeds ordinary repeats and up to 100 repeated firmware macros through the rear-button reader, checks R4 tap/hold cancellation, release consumption, separate subsequent taps and ignored L4 input, and verifies the Fn+F3 display snapshot/wake behavior. It checks rear-device key consumption and unchanged Super+L/power-button policy. The status check covers the Keep awake indicator, click action and live refresh. These checks change no host settings. Physical rear-button, lid and idle behavior still require the device checklist.
+The idle policy check verifies logind's lid-suspend fallback outside the desktop session and the session's low-level lid inhibitor. It checks Awake-aware lid blanking versus lock-before-suspend, lock-failure refusal, lid reopening, and manual Fn+F3 blanking that survives activity, charger changes and reopening. Automatic idle blanking still wakes on input. Power-supply fixtures and isolated processes cover charger detection, battery timers, child cleanup and unexpected exit handling. Rear-button checks cover R4 tap/hold cancellation, separate subsequent taps and ignored L4 input, and Fn+F3 press/release snapshots. The status check covers the Keep awake indicator and live refresh. These checks change no host settings; physical lid and key behavior still require the device checklist. The chord check also covers Select toggling its owned window picker and cleaning it up during mapper resets; `tests/check-window-picker.py` verifies that cancellation dismisses its child overlay without selecting a window.
 
 `python3 tests/check-proxy-bypass.py --mihomo /PATH/TO/NATIVE/MIHOMO` also checks Russian bypass precedence, repeated enable/disable, retained personal settings and failed-download preservation. Its native checks use local HTTP fixtures to prove domain and IP rules connect directly while unmatched traffic follows the proxy fallback, without changing host routes or services.
 

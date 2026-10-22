@@ -8,7 +8,7 @@ from pathlib import Path
 import re
 import tempfile
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 PROJECT = Path(__file__).resolve().parents[1]
 # xpad reports Xbox A/B/X/Y as BTN_A/B/X/Y. The historical Linux aliases
@@ -375,6 +375,25 @@ def main():
                 frame(buttons=(button,)); frame(buttons=(button,))
                 assert not dispatch.called
                 frame(); dispatch.assert_called_once_with(action)
+        # Select toggles the owned picker; completed/cancelled pickers reopen,
+        # and mapper lifecycle changes clean up a visible picker.
+        reset()
+        picker = Mock()
+        picker.poll.return_value = None
+        with patch.object(mapper.subprocess, 'Popen', return_value=picker) as popen:
+            frame(buttons=(314,)); frame()
+            popen.assert_called_once_with(['minion-window-picker'])
+            assert state.picker is picker
+            frame(buttons=(314,)); frame()
+            picker.terminate.assert_called_once_with()
+            assert state.picker is None and popen.call_count == 1
+            picker.poll.return_value = 0
+            frame(buttons=(314,)); frame()
+            frame(buttons=(314,)); frame()
+            assert popen.call_count == 3
+            picker.poll.return_value = None
+            state.reset()
+            assert picker.terminate.call_count == 2 and state.picker is None
         # Start waits for release even on a long hold; a late Select overlap
         # must still suppress both launches and retain passthrough priority.
         for duration, action in ((.74, 'terminal'), (.75, 'file_manager'), (5, 'file_manager')):

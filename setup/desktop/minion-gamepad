@@ -270,6 +270,7 @@ class Mapper:
         self.keys = set()
         self.legend = None
         self.launcher = None
+        self.picker = None
         self.stick_modes, self.stick_pending = ['scroll', 'windows'], [None, None]
         self.publish_stick_mode()
         self.raw_keys = set()
@@ -314,6 +315,7 @@ class Mapper:
         self.write_keys(set())
         self.close_legend()
         self.close_overlay('launcher')
+        self.close_overlay('picker')
         self.stick_modes, self.stick_pending = ['scroll', 'windows'], [None, None]
         self.publish_stick_mode()
         self.triggers = [False, False]
@@ -350,7 +352,18 @@ class Mapper:
     def close_legend(self):
         self.close_overlay('legend')
 
+    def toggle_picker(self):
+        if self.picker and self.picker.poll() is None:
+            self.close_overlay('picker')
+        else:
+            self.close_overlay('launcher')
+            try:
+                self.picker = subprocess.Popen(['minion-window-picker'])
+            except OSError as error:
+                self.notify('Cannot show window picker: ' + str(error))
+
     def toggle_launcher(self):
+        self.close_overlay('picker')
         if self.legend_open():
             self.close_legend()
         elif self.launcher and self.launcher.poll() is None:
@@ -396,6 +409,7 @@ class Mapper:
             self.close_legend()
             return
         self.close_overlay('launcher')
+        self.close_overlay('picker')
         self.text_gesture.clear()
         try:
             self.legend = subprocess.Popen(
@@ -462,6 +476,8 @@ class Mapper:
             self.toggle_legend()
         elif action == 'launcher':
             self.toggle_launcher()
+        elif action == 'window_picker':
+            self.toggle_picker()
         elif action in ('left_stick_context', 'right_stick_context',
                         'stick_context', 'text_navigation', 'selection'):
             indices = (0,) if action == 'left_stick_context' else (1,) if action == 'right_stick_context' else (0, 1)

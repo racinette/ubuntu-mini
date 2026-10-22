@@ -32,8 +32,8 @@ def idle_command(on_ac, awake=False):
     command = ['/usr/bin/swayidle', '-w']
     if not (on_ac or awake):
         command += ['timeout', '300', 'minion-lock',
-                    'timeout', '600', 'swaymsg "output * power off"',
-                    'resume', 'swaymsg "output * power on"']
+                    'timeout', '600', 'minion-idle-controls idle-off',
+                    'resume', 'minion-idle-controls wake']
     # Explicit suspend still waits for the authenticated lock on either source.
     return command + ['before-sleep', 'minion-lock']
 
@@ -63,7 +63,7 @@ def supervise(stopping):
                 stop_child(process)
                 process = None
                 if on_ac and (current is None or not current[0]):
-                    subprocess.run(['swaymsg', 'output', '*', 'power', 'on'],
+                    subprocess.run(['minion-idle-controls', 'wake'],
                                    check=True, timeout=5)
                 print('Keep awake: idle timers disabled.' if awake else
                       'External power: idle timers disabled.' if on_ac else

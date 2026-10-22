@@ -16,21 +16,63 @@ def state_directory():
     return directory
 
 
-def display_power(enabled):
+def set_display_power(enabled):
     if enabled:
         output = subprocess.check_output(['swaymsg', '-r', '-t', 'get_outputs'], text=True, timeout=5)
         if any(item.get('power') is False for item in json.loads(output)):
-            # Record before powering on, to let the display key recognize that its own
-            # input woke a dark panel before its release action is evaluated.
+            # Fn+F3 may be pressed while an automatically blanked screen wakes.
             (state_directory() / 'last-display-wake').write_text(str(time.monotonic()))
-    if not enabled:
-        # Arm the independent activity listener, including before its first
-        # one-second idle timeout. Do not signal the battery lock timer.
-        subprocess.run(['systemctl', '--user', 'kill', '--kill-who=main',
-                        '--signal=SIGUSR1', 'minion-display-wake.service'],
-                       check=True, timeout=5)
     subprocess.run(['swaymsg', 'output', '*', 'power', 'on' if enabled else 'off'],
                    check=True, timeout=5, stdout=subprocess.DEVNULL)
+
+
+def display_power(enabled, automatic=False):
+    directory = state_directory()
+    with (directory / 'control.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        manual = directory / 'manual-display-off'
+        if not automatic:
+            if enabled:
+                manual.unlink(missing_ok=True)
+            else:
+                manual.touch(mode=0o600)
+        # Activity, charger changes and lid opening must respect manual blanking.
+        if enabled and (manual.exists() or (directory / 'lid-closed').exists()):
+            return
+        set_display_power(enabled)
+
+
+def lid_changed(closed):
+    directory = state_directory()
+    with (directory / 'control.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        marker = directory / 'lid-closed'
+        if closed:
+            marker.touch(mode=0o600)
+            set_display_power(False)
+            try:
+                awake = (directory / 'keep-awake').read_text().strip() == '1'
+            except OSError:
+                awake = False
+        else:
+            marker.unlink(missing_ok=True)
+            if not (directory / 'manual-display-off').exists():
+                set_display_power(True)
+            return
+    if not awake:
+        # The session owns lid handling through a low-level logind inhibitor.
+        # Lock synchronously before explicitly requesting normal suspend.
+        subprocess.run(['minion-lock'], check=True, timeout=15)
+        # Opening the lid or enabling Awake during lock startup cancels sleep.
+        with (directory / 'control.lock').open('a') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            try:
+                awake = (directory / 'keep-awake').read_text().strip() == '1'
+            except OSError:
+                awake = False
+            should_suspend = marker.exists() and not awake
+        if should_suspend:
+            subprocess.run(['systemctl', 'suspend'], check=True, timeout=15)
 
 
 def display_toggle(phase):
@@ -155,10 +197,14 @@ def toggle_refresh(preference=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('off', 'on', 'display-press', 'display-release', 'toggle-awake', 'toggle-refresh', 'status'))
+    parser.add_argument('action', choices=('off', 'on', 'wake', 'idle-off', 'lid-close', 'lid-open', 'display-press', 'display-release', 'toggle-awake', 'toggle-refresh', 'status'))
     action = parser.parse_args().action
     if action in ('off', 'on'):
         display_power(action == 'on')
+    elif action in ('wake', 'idle-off'):
+        display_power(action == 'wake', automatic=True)
+    elif action in ('lid-close', 'lid-open'):
+        lid_changed(action == 'lid-close')
     elif action in ('display-press', 'display-release'):
         display_toggle(action.removeprefix('display-'))
     elif action == 'toggle-awake':

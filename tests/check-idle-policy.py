@@ -17,7 +17,8 @@ project = Path(__file__).resolve().parents[1]
 policy = runpy.run_path(str(project / 'setup/desktop/minion-idle'))
 supervise = policy['supervise']
 
-# AC disables inactivity timers; it must never disable lid-close suspend.
+# logind remains a safe fallback outside the desktop session.
+# The running idle service owns lid handling so Awake can suppress lid sleep.
 tree = ast.parse((project / 'setup/desktop/provision.py').read_text())
 lid_policy = [ast.literal_eval(node.args[1]) for node in ast.walk(tree)
               if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
@@ -62,25 +63,15 @@ assert policy['idle_command'](False, True) == ac_command
 assert policy['idle_command'](True, True) == ac_command
 assert battery_command == ['/usr/bin/swayidle', '-w',
                            'timeout', '300', 'minion-lock',
-                           'timeout', '600', 'swaymsg "output * power off"',
-                           'resume', 'swaymsg "output * power on"',
+                           'timeout', '600', 'minion-idle-controls idle-off',
+                           'resume', 'minion-idle-controls wake',
                            'before-sleep', 'minion-lock']
 
-# swayidle executes commands through /bin/sh. Preserve the output wildcard
-# even when its working directory contains filenames (as a real home does).
-with tempfile.TemporaryDirectory() as temporary:
-    directory = Path(temporary)
-    (directory / 'Documents').mkdir()
-    (directory / 'Downloads').mkdir()
-    stub = directory / 'swaymsg'
-    stub.write_text('#!/usr/bin/python3\nimport json, sys\nprint(json.dumps(sys.argv[1:]))\n')
-    stub.chmod(0o755)
-    environment = dict(os.environ, PATH=str(directory) + os.pathsep + os.environ.get('PATH', ''))
-    for command, expected in ((battery_command[7], 'output * power off'),
-                              (battery_command[9], 'output * power on')):
-        result = subprocess.run(['/bin/sh', '-c', command], cwd=directory,
-                                env=environment, capture_output=True, text=True, check=True)
-        assert json.loads(result.stdout) == [expected]
+# Every automatic display-on path must use the guarded control, not raw IPC.
+wake_service = (project / 'setup/desktop/minion-display-wake.service').read_text()
+assert 'resume "minion-idle-controls wake"' in wake_service
+assert 'after-resume "minion-idle-controls wake"' in wake_service
+assert '--what=handle-lid-switch --mode=block' in (project / 'setup/desktop/provision.py').read_text()
 
 
 class StopAfter:
@@ -103,7 +94,7 @@ with patch.dict(supervise.__globals__, external_power=Mock(side_effect=[False, F
         patch.object(subprocess, 'run') as run, contextlib.redirect_stdout(io.StringIO()):
     supervise(StopAfter(5))
 assert [call.args[0] for call in popen.call_args_list] == [battery_command, ac_command, battery_command]
-run.assert_called_once_with(['swaymsg', 'output', '*', 'power', 'on'], check=True, timeout=5)
+run.assert_called_once_with(['minion-idle-controls', 'wake'], check=True, timeout=5)
 for child in children:
     child.terminate.assert_called_once_with()
     child.wait.assert_called_once_with(timeout=3)
@@ -120,7 +111,7 @@ with patch.dict(supervise.__globals__,
         patch.object(subprocess, 'run') as run, contextlib.redirect_stdout(io.StringIO()):
     supervise(StopAfter(5))
 assert [call.args[0] for call in popen.call_args_list] == [battery_command, ac_command, ac_command, ac_command, battery_command]
-run.assert_called_once_with(['swaymsg', 'output', '*', 'power', 'on'], check=True, timeout=5)
+run.assert_called_once_with(['minion-idle-controls', 'wake'], check=True, timeout=5)
 for child in children:
     child.terminate.assert_called_once_with()
     child.wait.assert_called_once_with(timeout=3)
@@ -140,22 +131,67 @@ with tempfile.TemporaryDirectory() as temporary, \
     assert all(call.args[0][0] == 'notify-send' for call in run.call_args_list)
     run.reset_mock()
     controls['display_power'](False)
-    assert run.call_args_list[0].args[0] == ['systemctl', '--user', 'kill', '--kill-who=main',
-                                           '--signal=SIGUSR1', 'minion-display-wake.service']
-    assert run.call_args_list[1].args[0] == ['swaymsg', 'output', '*', 'power', 'off']
+    assert run.call_count == 1
+    assert run.call_args.args[0] == ['swaymsg', 'output', '*', 'power', 'off']
+    directory = Path(temporary) / 'minion-idle'
+    assert (directory / 'manual-display-off').exists()
     run.reset_mock()
+    controls['display_power'](True, automatic=True)
+    run.assert_not_called()  # Activity, AC, resume cannot undo manual blanking.
     controls['display_power'](True)
-    assert run.call_count == 1 and run.call_args.args[0] == ['swaymsg', 'output', '*', 'power', 'on']
-    # Fail before powering off if no independent input-wake listener is running.
+    assert run.call_args.args[0] == ['swaymsg', 'output', '*', 'power', 'on']
+    assert not (directory / 'manual-display-off').exists()
     run.reset_mock()
-    run.side_effect = subprocess.CalledProcessError(1, 'systemctl')
+    controls['display_power'](False, automatic=True)
+    assert not (directory / 'manual-display-off').exists()
+    controls['display_power'](True, automatic=True)
+    assert run.call_count == 2  # Ordinary idle blanking still wakes on activity.
+
+# Lid blanking is independent of manual blanking; no wake path defeats it.
+with tempfile.TemporaryDirectory() as temporary, patch.dict(os.environ, XDG_RUNTIME_DIR=temporary), \
+        patch.object(subprocess, 'check_output', return_value='[{"power":false}]'), \
+        patch.object(subprocess, 'run') as run:
+    directory = controls['state_directory']()
+    (directory / 'keep-awake').write_text('1')
+    controls['lid_changed'](True)
+    assert [c.args[0] for c in run.call_args_list] == [['swaymsg', 'output', '*', 'power', 'off']]
+    run.reset_mock()
+    controls['display_power'](True, automatic=True)
+    controls['display_power'](True)
+    run.assert_not_called()
+    controls['lid_changed'](False)
+    assert run.call_args.args[0] == ['swaymsg', 'output', '*', 'power', 'on']
+    controls['display_power'](False)
+    controls['lid_changed'](True)
+    run.reset_mock()
+    controls['lid_changed'](False)
+    controls['display_power'](True, automatic=True)
+    run.assert_not_called()  # Opening the lid preserves explicit Fn+F3 blanking.
+    controls['display_power'](True)
+    assert not (directory / 'manual-display-off').exists()
+    (directory / 'keep-awake').write_text('0')
+    run.reset_mock()
+    controls['lid_changed'](True)
+    assert [c.args[0] for c in run.call_args_list] == [
+        ['swaymsg', 'output', '*', 'power', 'off'], ['minion-lock'], ['systemctl', 'suspend']]
+    # A quick reopening while lock starts must not cause a delayed suspend.
+    run.reset_mock()
+    def reopen_during_lock(command, **_):
+        if command == ['minion-lock']:
+            (directory / 'lid-closed').unlink()
+    run.side_effect = reopen_during_lock
+    controls['lid_changed'](True)
+    assert all(c.args[0] != ['systemctl', 'suspend'] for c in run.call_args_list)
+    # Refuse to suspend if authentication lock fails.
+    run.reset_mock()
+    run.side_effect = [None, subprocess.CalledProcessError(1, 'minion-lock')]
     try:
-        controls['display_power'](False)
+        controls['lid_changed'](True)
     except subprocess.CalledProcessError:
         pass
     else:
-        raise AssertionError('Display-off ignored a missing wake listener')
-    assert run.call_count == 1
+        raise AssertionError('Lid suspend ignored failed lock')
+    assert run.call_count == 2
 
 # Scope both press and release to the rear keyboard so Print on the physical
 # keyboard keeps its screenshot binding. No power-button policy is introduced.
@@ -169,6 +205,8 @@ for key, command in [('Print', 'off'), ('Pause', 'toggle-awake')]:
     assert any(line.endswith(f'{key} nop') for line in matches)
     assert all(line.endswith(f'{key} nop') for line in matches)
     assert any('--release' in line for line in matches)
+assert 'bindswitch --locked lid:on exec minion-idle-controls lid-close' in sway_config
+assert 'bindswitch --locked lid:off exec minion-idle-controls lid-open' in sway_config
 assert 'XF86PowerOff' not in sway_config
 assert not config.has_option('Login', 'HandlePowerKey')
 physical = 'bindsym --input-device=1:1:AT_Translated_Set_2_keyboard'
@@ -353,4 +391,4 @@ child.terminate.assert_called_once_with()
 child.kill.assert_called_once_with()
 assert child.wait.call_count == 2
 
-print('Idle policy checks passed: lid suspend on every power source, charger detection, AC/battery transitions, cleanup and failure handling.')
+print('Idle policy checks passed: Awake-aware lid handling, persistent manual blanking, charger detection, AC/battery transitions, cleanup and failure handling.')

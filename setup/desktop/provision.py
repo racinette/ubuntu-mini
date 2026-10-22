@@ -135,7 +135,7 @@ install_notifications(user)
 if seed_microphone_level(user):
     print('Seeded WIN Mini internal microphone at 10% (0 dB capture/boost).')
 write('/etc/systemd/logind.conf.d/60-minion-power.conf', '''[Login]
-# Lid close suspends on every power source, including when docked.
+# Fallback outside the graphical session; Sway owns lid handling while active.
 HandleLidSwitch=suspend
 HandleLidSwitchExternalPower=suspend
 HandleLidSwitchDocked=suspend
@@ -206,7 +206,7 @@ After=graphical-session.target
 ''')
 services = {
     'polkit': '/usr/libexec/polkit-mate-authentication-agent-1',
-    'idle': '/usr/local/bin/minion-idle',
+    'idle': '/usr/bin/systemd-inhibit --what=handle-lid-switch --mode=block --who=minion-idle --why=Session-lid-policy /usr/local/bin/minion-idle',
     'network-applet': '/usr/bin/nm-applet',
 }
 for name, command in services.items():

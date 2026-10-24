@@ -122,4 +122,21 @@ with tempfile.TemporaryDirectory(prefix='minion-development-check-') as temporar
          contextlib.redirect_stdout(io.StringIO()):
         provision.main()
 
+    # The normal setup must run the DAW installer through the same desktop-user
+    # boundary as the other audio tools, never as the root coordinator.
+    with patch.object(provision.platform, 'freedesktop_os_release', return_value={'ID': 'ubuntu', 'VERSION_ID': '24.04'}), \
+         patch.object(provision.platform, 'machine', return_value='x86_64'), \
+         patch.object(provision, 'target_user', return_value=user), \
+         patch.object(provision, 'check_docker_repository'), \
+         patch.object(provision.os, 'geteuid', return_value=0), \
+         patch.object(provision.subprocess, 'run'), \
+         patch.object(provision, 'install_blender'), \
+         patch.object(provision, 'install_toolchains'), \
+         patch.object(provision, 'install_docker'), \
+         patch.object(provision, 'run_as_user') as run, \
+         patch.object(sys, 'argv', ['provision.py', 'fixture']), \
+         contextlib.redirect_stdout(io.StringIO()):
+        provision.main()
+    run.assert_any_call(user, provision.user_environment(user), '/usr/bin/python3', provision.HERE / 'reaper.py')
+
 print('Passed: development user isolation, immediate latest installation, retained selections, container-runtime/repository conflict refusal and read-only preflight.')

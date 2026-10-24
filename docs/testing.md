@@ -10,6 +10,20 @@ Firefox-first browser preferences were applied on the WIN Mini: `xdg-settings ge
 
 ## Recent device checks
 
+On 2026-10-24, REAPER 7.83 was added to the development setup using Cockos's
+official Linux x86_64 archive and published SHA-256 checksum. An isolated fresh
+installation through the upstream installer created the executable, application
+launcher, icons, MIME registrations, uninstaller and user-local `reaper` command.
+The installed executable matched the archive and had no missing linked
+libraries. A second run required no archive and retained personal settings and
+all installed files. The live user's existing `~/opt/REAPER` installation was
+detected and retained without modification. `tests/check-reaper.py` passed
+checksum/size checks, unsafe archive refusal, fresh installation, existing and
+incomplete installation handling, settings retention, user-only installation
+and read-only preflight. Development integration, setup staging/hash and diff
+checks passed. No full setup, GUI/audio validation or theme change was performed.
+[Private REAPER report](../.local/device-checks/reaper/result.json).
+
 On 2026-10-22, a real closed-lid check showed the physical keyboard blocked
 while the gamepad mapper remained ready and continued window/workspace actions.
 The mapper now observes the same lid marker, releases virtual keys and pending

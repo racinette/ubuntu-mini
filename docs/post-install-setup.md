@@ -299,6 +299,7 @@ Ordinary `sudo ./setup.sh` preinstalls the following for your desktop account. F
 | Neovim | File tree, fuzzy file/text search, code navigation and normal editing | Pinned nvim-tree, mini.nvim and nvim-lspconfig plugins; Ubuntu ripgrep |
 | Audio development | SuperCollider language/server, VST3 hosting extension, JUCE SDK and editable synth example | Ubuntu SuperCollider/PipeWire JACK; pinned user-owned source builds |
 | Guitar effects | LSP effects, Dragonfly Reverb, BYOD pedals and AIDA-X neural amp/cabinet modeling | Native VST3; Ubuntu packages and checksum-pinned upstream releases |
+| DAW | REAPER 7.83, application launcher and `reaper` terminal command | Checksum-pinned official Linux x86_64 release; user-owned installation |
 | 3D creation | Blender, embedded Python API and background rendering | Official Blender Foundation Snap; `5.2lts/stable` |
 | Additional language servers | Bash, JSON/HTML/CSS, YAML, TOML and C/C++ | mise for bash-language-server, vscode-langservers-extracted, yaml-language-server and Taplo; Ubuntu for clangd |
 | Containers | Docker Engine/CLI, containerd, Buildx, Compose plugin | Docker's signed Ubuntu stable repository |
@@ -322,6 +323,20 @@ to existing text. History stays available in both directions; unrelated errors
 remain visible. This also handles files emptied by an external edit.
 
 Language servers cover Go, Rust, JavaScript/TypeScript, Python, shell, JSON, YAML, TOML and C/C++. JavaScript/TypeScript uses TypeScript 7's native language server (`tsc --lsp`). Native syntax highlighting also works for other Neovim-supported file types. Servers attach according to their project/filetype rules; Rust projects need `Cargo.toml`, and accurate C/C++ navigation benefits from the project's `compile_commands.json`. Plugins and language servers are downloaded during setup rather than first launch. The plugin manifest records exact revisions. Personal `~/.config/nvim/init.lua` settings survive setup reruns. To update only the pinned plugins and seed the default configuration after the language tools are installed, run `/usr/bin/python3 setup/development/nvim.py` as your normal user.
+
+REAPER 7.83 is installed from [Cockos's official Linux release](https://www.reaper.fm/download.php)
+after verification against the published SHA-256 checksum in the
+[release manifest](../setup/development/reaper-release.json). Cockos's installer
+runs as the desktop user and installs the program under `~/opt/REAPER`, with
+its application launcher, icons, file types and uninstaller. Fresh installations
+also get `~/.local/bin/reaper`, so projects can be opened with `reaper song.rpp`
+or from Super+D. An existing `reaper` command or usable `~/opt/REAPER` installation
+is retained without downloading or reinstalling. Setup does not change personal
+settings, themes, projects or license files under `~/.config/REAPER`, and does not
+activate a license. Cockos provides a 60-day evaluation; continued use requires
+your own license. To install just REAPER after the desktop dependencies are
+present, run `/usr/bin/python3 setup/development/reaper.py` as your normal user.
+Theme, screen layout and audio-device tuning are separate from installation.
 
 Audio development uses SuperCollider 3.13 from Ubuntu, the VSTPlugin 0.6.2 extension for native Linux VST3 instruments/effects, and JUCE 9.0.4 for building your own plugins with CMake/Ninja. [The manifest](../setup/development/audio-sources.json) pins the user-owned SDK sources and VST3 interfaces by commit. Setup builds the extension under `~/.local/share/SuperCollider/Extensions/VSTPlugin` and puts JUCE under `~/.local/share/minion/audio`. Downloads and builds run as the desktop user. The graphical SuperCollider IDE and Wine plugin bridge are not installed.
 

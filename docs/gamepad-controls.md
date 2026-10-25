@@ -87,9 +87,11 @@ the current `RP:` page; REAPER's docked control display shows the
 selected track, current controls and relevant values. Start+Left/Up/Right chooses
 the overall Desktop / REAPER / Gamepad profile.
 
-The controller display normally stays docked inside REAPER. Its undocked window
-and the ReaLearn monitoring-FX settings window follow Sway tiling, including on
-the built-in screen.
+The controller display normally stays docked inside REAPER. Native FX chains,
+plugin windows, ReaLearn settings and undocked controller panels follow Sway
+tiling. An FX window with an explicit parent stays on that parent's workspace.
+Opening it from the active project focuses it; opening it in the background
+does not switch workspaces or take focus. Later manual window moves remain yours.
 
 | Control | Arrange | Mixer | FX |
 | --- | --- | --- | --- |

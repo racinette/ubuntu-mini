@@ -71,6 +71,37 @@ def main():
         command = ipc.call_args.args[0][-1]
         assert command == '[con_id=22] move container to workspace ' + json.dumps(tree['nodes'][0]['name'])
         assert 'focus' not in command
+    fx=policy['reaper_fx_placement']
+    project={'id':31,'pid':400,'window':500,'name':'Song - REAPER v7.83','focused':True}
+    tool={'id':32,'pid':400,'window':501,'name':'FX: Track 1 "Guitar"',
+          'window_properties':{'class':'REAPER','transient_for':500}}
+    foreground={'nodes':[{'type':'workspace','id':30,'name':'4','nodes':[project], 'floating_nodes':[tool]}]}
+    assert fx(foreground,32)=='[con_id=32] floating disable, focus'
+    background=copy.deepcopy(foreground)
+    background['nodes'][0]['nodes'][0]['focused']=False
+    background['nodes'].append({'type':'workspace','id':40,'name':'6: other','nodes':[{'id':41,'pid':600,'focused':True}]})
+    assert fx(background,32)=='[con_id=32] floating disable'
+    # Even if Sway initially focuses a newly mapped FX on the wrong workspace,
+    # move it to its parent without following it away from the current work.
+    foreign=copy.deepcopy(background)
+    moved=foreign['nodes'][0]['floating_nodes'].pop();moved['focused']=True
+    foreign['nodes'][1]['nodes'][0]['focused']=False
+    foreign['nodes'][1]['floating_nodes']=[moved]
+    assert fx(foreign,32)=='[con_id=32] move container to workspace "4", floating disable'
+    for title in ('VST: ReaEQ (Cockos)','VSTi: ReaSynth (Cockos)','VST3: Effect','JS: Utility','FX: Monitoring'):
+        fixture=copy.deepcopy(foreground);fixture['nodes'][0]['floating_nodes'][0]['name']=title
+        assert fx(fixture,32).endswith(', focus')
+    for change in ({'name':'Time signature at edit cursor'}, {'pid':999},
+                   {'window_properties':{'class':'Other','transient_for':500}},
+                   {'window_properties':{'class':'REAPER','transient_for':12345}}):
+        fixture=copy.deepcopy(foreground);fixture['nodes'][0]['floating_nodes'][0].update(change)
+        assert fx(fixture,32) is None
+    assert fx(foreground,999) is None
+    fixture=copy.deepcopy(foreground);fixture['nodes'][0]['name']='__i3_scratch'
+    assert fx(fixture,32) is None
+    with patch.object(function_globals['subprocess'],'check_output',side_effect=[json.dumps(foreground),'[{"success":true}]']) as ipc:
+        policy['place_child_window'](32)
+        assert ipc.call_args.args[0][-1]=='[con_id=32] floating disable, focus'
     print('Passed: agent ancestry, current/renamed/floating workspaces, independent launches, shared-process ambiguity, scratchpad, safe IPC and disappearing processes.')
 
 

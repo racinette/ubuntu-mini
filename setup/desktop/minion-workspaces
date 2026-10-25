@@ -124,13 +124,52 @@ def window_origin(tree, window_id, ancestry=parent_pids):
             return origin if origin['id'] != current['id'] else None
 
 
+def reaper_fx_placement(tree, window_id):
+    """Tile native FX tools and follow an active, explicit transient parent.
+
+    REAPER shares a PID between project and FX windows. WM_TRANSIENT_FOR gives
+    the exact parent where process ancestry cannot identify a workspace.
+    """
+    windows,by_xid={},{}
+    focused_workspace=None
+    def collect(node,workspace=None):
+        nonlocal focused_workspace
+        if node.get('type')=='workspace':workspace=node
+        if workspace and node.get('focused'):focused_workspace=workspace
+        if workspace and node.get('pid'):
+            windows[node['id']]=(node,workspace)
+            if node.get('window'):by_xid[node['window']]=(node,workspace)
+        for child in node.get('nodes',[])+node.get('floating_nodes',[]):collect(child,workspace)
+    collect(tree)
+    if window_id not in windows:return
+    node,current=windows[window_id]
+    props=node.get('window_properties') or {}
+    if props.get('class')!='REAPER' or not re.match(r'^(FX:|VSTi?:|VST3:|JS:)',node.get('name') or ''):
+        return
+    parent=by_xid.get(props.get('transient_for'))
+    if not parent:return
+    owner,workspace=parent
+    if owner['pid']!=node['pid'] or workspace.get('name')=='__i3_scratch':return
+    commands=[]
+    if workspace['id']!=current['id']:
+        commands.append('move container to workspace '+json.dumps(workspace['name']))
+    commands.append('floating disable')
+    if (focused_workspace and focused_workspace['id']==workspace['id']
+            and (owner.get('focused') or node.get('focused'))):
+        commands.append('focus')
+    return '[con_id='+str(window_id)+'] '+', '.join(commands)
+
+
 def place_child_window(window_id):
     if type(window_id) is not int or window_id <= 0:
         return
     tree = json.loads(subprocess.check_output(['swaymsg', '-r', '-t', 'get_tree']))
-    origin = window_origin(tree, window_id)
-    if origin:
-        command = f'[con_id={window_id}] move container to workspace {json.dumps(origin["name"])}'
+    command=reaper_fx_placement(tree,window_id)
+    if command is None:
+        origin = window_origin(tree, window_id)
+        if origin:
+            command = f'[con_id={window_id}] move container to workspace {json.dumps(origin["name"])}'
+    if command:
         result = json.loads(subprocess.check_output(['swaymsg', '-r', command]))
         if not all(item.get('success') for item in result):
             raise RuntimeError('Sway refused child window placement')

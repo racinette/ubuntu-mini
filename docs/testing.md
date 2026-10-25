@@ -10,6 +10,22 @@ Firefox-first browser preferences were applied on the WIN Mini: `xdg-settings ge
 
 ## Recent device checks
 
+On 2026-10-25, channel FX window investigation found a stale local floating rule
+and a distro tiling rule limited to monitoring FX/controller panels. The distro
+rule now includes native FX chains and plugins. The existing workspace service
+uses their explicit X11 transient parent, even within REAPER's shared process,
+to place them with the project and focus them only on the active parent workspace.
+Host placement fixtures passed missing/foreign parents, background launches,
+native FX title variants and scratchpad guards. The full Sway configuration
+validated, and an isolated headless Sway/Xwayland session passed foreground FX
+tiling/focus, background parent placement without focus theft and the real
+new-window subscription. Live installation completed without restarting REAPER;
+the installed files match the repository, the workspace service is active and
+the existing floating channel FX window was repaired. Physical reopening/focus
+retesting remains pending.
+[Private compositor report](../.local/device-checks/reaper-fx/result.json),
+[private installation report](../.local/device-checks/reaper-fx/install-result.json).
+
 On 2026-10-25, standard REAPER dialogs gained a shared keyboard-control layer,
 selected by native dialog/transient metadata and the real REAPER executable.
 The left stick and bumpers traverse Tab order; A/B send Enter/Escape, X/Y provide

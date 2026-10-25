@@ -54,6 +54,11 @@ def preset():
         add(name, cc, parameter(3), page, menu,
             dict(minTargetValue=value / (REQUEST_COUNT - 1), maxTargetValue=value / (REQUEST_COUNT - 1)))
 
+    def absolute(name, target, page):
+        add(name, 20, target, page)
+        mappings[-1]['source']['is14Bit'] = True
+        mappings[-1]['mode'] = {} # Every value, including zero; never press-only.
+
     for page in range(3):
         value = ((page + 1) % 3) / 2
         add('Next control page', 12, parameter(0), page=page, menu=None,
@@ -93,13 +98,11 @@ def preset():
     for cc, direction in ((4, 'left'), (5, 'right'), (6, 'up'), (7, 'down')):
         request('Navigate track controls ' + direction, cc, 11 + cc - 4, 1)
     for cc, reverse in ((8, True), (9, False), (10, False), (11, True)):
-        for field, kind in ((0, 2), (1, 4)):
-            for fine, step in ((False, .01), (True, .002)):
-                increment('Adjust selected track control', cc, dict(type=kind, trackGUID='selected'),
-                          reverse, 1, step=step, fine=fine)
-                mappings[-1]['eelCondition'] += f' && p[8] == {field}'
         request('Set selected track switch', cc, 9 if reverse else 10, 1)
         mappings[-1]['eelCondition'] += ' && p[8] >= 2 && p[8] <= 5'
+    for field, kind in ((0, 2), (1, 4)):
+        absolute('Set selected knob position', dict(type=kind, trackGUID='selected'), 1)
+        mappings[-1]['eelCondition'] += f' && p[8] == {field}'
     request('Mute track', 15, 3, 1)
     request('Solo track', 14, 4, 1)
     # FX: indices belong to this controller, so opening a plugin UI never
@@ -110,9 +113,7 @@ def preset():
         action('Select FX track', cc, command, 2)
     target = dict(type=1, trackGUID='selected', fxAnchor='dynamic', fxExpression='p[1]',
                   paramType='dynamic', paramExpression='p[2]')
-    for cc, reverse in ((8, True), (9, False), (10, False), (11, True)):
-        for fine, step in ((False, .01), (True, .001)):
-            increment('Adjust FX parameter', cc, target, reverse, 2, step=step, fine=fine)
+    absolute('Set FX knob position', target, 2)
     request('Bypass FX', 15, 3, 2)
     request('Show/hide FX window', 14, 4, 2)
     for cc, name, command in ((32, 'Copy items', 40698), (33, 'Paste', 40058),

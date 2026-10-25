@@ -96,7 +96,7 @@ the built-in screen.
 | D-pad left/right | Previous/next item; hold R2 for cursor by grid | Previous/next visible track control | Previous/next parameter |
 | D-pad up/down | Previous/next track | Previous/next track | Previous/next FX |
 | Left stick | Scroll viewport | Move outline spatially within track | Previous/next track |
-| Right stick | Timeline zoom / track height | Adjust outlined control | Adjust selected parameter |
+| Right stick | Timeline zoom / track height | Angle sets outlined knob; directions set switches | Angle sets selected parameter |
 | X | Split selected items at cursor | Mute/unmute track | Bypass/enable selected FX |
 | R3 | Toggle loop | Solo/unsolo track | Show/hide FX window |
 | L3 | Open/close the page's action menu | Same | Same |
@@ -131,8 +131,14 @@ moves to a control on that side. It prefers aligned controls and skips hidden
 ones; at an edge the selection stays put. D-pad up/down still selects tracks,
 and D-pad left/right retains ordered control selection. A nudge moves once; holding repeats after 350 ms
 at about six moves per second, independently of the scrolling speed.
-Right-stick up/right increases a value or enables a
-switch; down/left decreases or disables it. A toggles a selected switch; on FX,
+For Volume and Pan, the right stick's angle sets the knob position directly:
+lower-left is minimum, up is midpoint, lower-right is maximum, following a
+270-degree clockwise sweep. Deflection distance does not set speed. Centering
+the stick retains the value; the bottom gap is inactive. A new knob selection
+requires returning the right stick to center before engaging it again.
+Values use 14-bit MIDI. The FX page uses the same angle control for parameters.
+On switches, right-stick up/right enables and down/left disables.
+A toggles a selected switch; on FX,
 A enters the FX page and opens the track's effects. Volume and Pan need only
 the stick. X and R3 retain their direct mute/solo actions.
 
@@ -150,9 +156,10 @@ mute/solo, insert track, recording, level reset and pan centering. FX includes
 inserting stock ReaEQ, ReaComp, ReaGate, ReaDelay and ReaVerbate. Plugin-specific
 custom interfaces and dialogs are outside this layout's scope.
 
-Y plays/stops once on release; holding never repeats. Start saves. Either
-trigger makes level/pan/FX adjustments finer; triggers still emit Shift/Ctrl for
-physical typing and ordinary keyboard shortcuts. L1/R1 navigate workspaces;
+Y plays/stops once on release; holding never repeats. Start saves. Triggers
+still emit Shift/Ctrl for physical typing and ordinary keyboard shortcuts;
+absolute angle control covers the full range with either trigger state.
+L1/R1 navigate workspaces;
 L2+bumper sends the window. Menu taps open the launcher and holding Menu shows
 the full legend. Select+face layout toggles remain.
 X is a discrete context action in REAPER; it remains holdable Backspace on Desktop.

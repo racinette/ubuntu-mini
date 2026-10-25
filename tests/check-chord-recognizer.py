@@ -925,6 +925,40 @@ def main():
             controls = [c.args[0] for c in midi.call_args_list]
             assert controls.count(5) == 1 and controls.count(9) >= 3
         (directory / 'reaper-page').unlink()
+        # Rotary knobs use absolute angle, not direction/deflection repeats.
+        rotary_path = directory / 'reaper-rotary-target'
+        rotary_path.write_text('track:pan')
+        reaper_reset()
+        xaxis, yaxis = config['right_stick']
+        with patch.object(state, 'focused_reaper', return_value=True), patch.object(state, 'reaper_control') as midi:
+            state.tick(0, True) # Arm at neutral.
+            for at, x, y, angle_value in ((.1,-32768,32767,0),(.2,-32768,0,2730),(.3,0,-32768,8192),(.4,32767,0,13653),(.5,32767,32767,16383)):
+                state.raw_axes[xaxis],state.raw_axes[yaxis]=x,y
+                state.tick(at,True)
+                assert midi.call_args.args[0]==20 and abs(midi.call_args.args[1]-angle_value)<=1,midi.call_args
+            count=midi.call_count
+            state.tick(.6,True);state.tick(1,True)
+            assert midi.call_count==count,'Stationary angle repeated'
+            state.raw_axes[xaxis]=0;state.raw_axes[yaxis]=32767
+            state.tick(1.1,True);assert midi.call_count==count,'Bottom gap changed knob'
+            state.raw_axes[xaxis]=state.raw_axes[yaxis]=0
+            state.tick(1.2,True);assert midi.call_count==count,'Center reset knob'
+            state.raw_axes[xaxis]=32767;state.tick(1.3,True)
+            assert midi.call_count==count+1
+            rotary_path.write_text('track:volume')
+            state.tick(1.4,True);state.tick(1.6,True)
+            assert midi.call_count==count+1,'Held stick changed a new target'
+            state.raw_axes[xaxis]=0;state.tick(1.7,True)
+            state.raw_axes[yaxis]=-32768;state.tick(1.8,True)
+            assert midi.call_args==call(20,8192)
+            with patch.object(state,'focused_reaper',return_value=False):
+                state.tick(2,True)
+            count=midi.call_count
+            state.raw_axes[xaxis]=32767;state.tick(2.1,True)
+            assert midi.call_count==count,'Focus return failed neutral gate'
+            state.reset();assert not state.rotary_ready and state.rotary_value is None
+        assert not keyboard.events
+        rotary_path.unlink()
         reaper_reset()
         connection=Mock()
         with patch.object(state,'focused_reaper',return_value=True), patch.object(state,'focused_window',return_value=project), patch.object(mapper,'ReaperMidi',return_value=connection):

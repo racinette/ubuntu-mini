@@ -48,4 +48,11 @@ with patch.object(mapper.os,'getpid',return_value=789), patch.object(mapper.subp
     command.reset_mock()
     assert connection.connect_jack(456,graph)
     assert [call.args[0] for call in command.call_args_list] == [['pw-link','-d','9','3'],['pw-link','9','6']]
-print('Passed: JACK routing by authenticated PID, duplicate client names, controller input selection, retained links, reset recovery and explicit rerouting.')
+connection.pid, connection.connected_at, connection.backend = 123, 0, 'jack'
+connection.fine_value = None
+with patch.object(mapper.time,'monotonic',return_value=0):
+    for value in (0,8192,16383):
+        connection.jack_output.send_message.reset_mock()
+        connection.pulse(123,20,value)
+        assert [c.args[0] for c in connection.jack_output.send_message.call_args_list]==[[0xBF,20,value>>7],[0xBF,52,value&127]]
+print('Passed: JACK routing by authenticated PID, duplicate client names, controller input selection, retained links, reset recovery, explicit rerouting and absolute 14-bit values without release pulses.')

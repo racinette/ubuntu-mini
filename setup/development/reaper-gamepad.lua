@@ -297,6 +297,15 @@ local function loop()
     if now < message_until then detail = message end
   end
   write(directory .. 'reaper-page', pages[page + 1])
+  local rotary_target = ''
+  if not menu and track then
+    if page == 1 and control <= 1 then
+      rotary_target = pid .. ':' .. guid .. ':control:' .. control
+    elseif page == 2 and fx_count > 0 then
+      rotary_target = pid .. ':' .. guid .. ':' .. reaper.TrackFX_GetFXGUID(track,fx_index) .. ':' .. param_index
+    end
+  end
+  write(directory .. 'reaper-rotary-target', rotary_target)
   write(directory .. 'reaper-context', (menu and 'menu' or 'page') .. '\n' .. summary .. '\n' .. detail)
   if visible then
     local key = gfx.getchar()
@@ -312,11 +321,11 @@ local function loop()
         if key == 13 then set(master,controller,3,REQUEST_COUNT,2) elseif key==27 then menu=false end
       else
         local controls = {'D: item/track   R2+D: cursor   L: scroll   R: zoom',
-                          'L: move outline in 2D  D up/down: track  R: adjust  A: activate',
-                          'D: FX/parameter   L: track   R: value'}
+                          'L: outline in 2D  D up/down: track  R angle: knob  A: activate',
+                          'D: FX/parameter   L: track   R angle: knob position'}
         local buttons = {'X: split  R3: loop', 'X: mute  R3: solo', 'X: bypass  R3: FX window'}
         line(detail ~= '' and detail or controls[page + 1], 4 + row)
-        line(detail ~= '' and controls[page + 1] or 'Y: play/stop   Start: save   Triggers: fine', 4 + 2*row)
+        line(detail ~= '' and controls[page + 1] or 'Y: play/stop   Start: save   R center: retain knob value', 4 + 2*row)
         line(buttons[page + 1] .. ' | Select: page  L3: actions', 4 + 3*row)
       end
       gfx.update()
@@ -324,5 +333,5 @@ local function loop()
   end
   reaper.defer(loop)
 end
-reaper.atexit(function() gfx.quit(); write(directory .. 'reaper-page', ''); os.remove(outline_path) end)
+reaper.atexit(function() gfx.quit(); write(directory .. 'reaper-page', ''); os.remove(directory .. 'reaper-rotary-target'); os.remove(outline_path) end)
 reaper.defer(loop)

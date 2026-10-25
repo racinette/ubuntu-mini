@@ -10,6 +10,18 @@ Firefox-first browser preferences were applied on the WIN Mini: `xdg-settings ge
 
 ## Recent device checks
 
+On 2026-10-25, numeric Mixer controls and FX parameters gained absolute
+right-stick angle control over a clockwise 270-degree sweep. Centering retains
+the value; the bottom gap is inactive. A new target requires neutral before
+engagement. Mapper checks passed angle values, stationary hold, release, focus
+return and target-change gating. MIDI tests verified full 14-bit MSB/LSB pairs,
+including zero, without a release reset. A private muted JACK project confirmed
+pan endpoints/intermediate values, volume ordering, FX values, release/gap hold,
+neutral gating, retained switch controls and no pointer events. Installation
+completed with the existing project open.
+[Private workflow report](../.local/device-checks/realearn/rotary-result.json),
+[private installation report](../.local/device-checks/realearn/rotary-install-result.json).
+
 On 2026-10-25, Mixer left-stick navigation became spatial within the current
 track. It uses native control rectangles to choose a neighbor in each direction,
 prefers aligned controls, skips hidden controls and stays put at edges. D-pad

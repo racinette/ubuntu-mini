@@ -6,6 +6,7 @@ import ctypes
 import fcntl
 import json
 import logging
+import math
 import os
 from pathlib import Path
 import runpy
@@ -239,6 +240,12 @@ class ReaperMidi:
                 self.fine_value = None
             self.pid, self.connected_at = pid, now
         output = self.jack_output if self.backend == 'jack' else self.output
+        if control == 20:
+            # Absolute 14-bit CC: send MSB and LSB together, including zero.
+            # There is no button-release pulse for a retained knob position.
+            output.send_message([0xBF, 20, value >> 7])
+            output.send_message([0xBF, 52, value & 127])
+            return
         if control == 22:
             if self.fine_value == value:
                 return
@@ -495,6 +502,8 @@ class Mapper:
         self.reason = 'Waiting for a controller'
         self.reaper_midi = None
         self.reaper_error_at = 0
+        self.rotary_target, self.rotary_ready = '', False
+        self.rotary_value, self.rotary_time = None, float('-inf')
 
     @property
     def config(self):
@@ -518,6 +527,8 @@ class Mapper:
         self.keys = set(desired)
 
     def reset(self):
+        self.rotary_target, self.rotary_ready = '', False
+        self.rotary_value, self.rotary_time = None, float('-inf')
         if self.reaper_midi:
             self.reaper_midi.close()
             self.reaper_midi = None
@@ -632,10 +643,11 @@ class Mapper:
                           'Arrange — D-pad: items/tracks; R2 + D-pad: cursor',
                           'Arrange — A: select item at cursor; L: scroll; R: zoom',
                           'Mixer — D-pad up/down: tracks; left/right: outlined control',
-                          'Mixer — L: move outline spatially within track; R: adjust; A: activate',
-                          'FX — D-pad: FX/parameter; L: tracks; R: value',
+                          'Mixer — L: outline in 2D; R angle: knob position; A: activate',
+                          'FX — D-pad: FX/parameter; L: tracks; R angle: knob position',
+                          'Knobs — lower-left: min; up: midpoint; lower-right: max; center: hold',
                           'X: split / mute / bypass; R3: loop / solo / FX window',
-                          'Triggers: fine adjustment; R2: Arrange cursor; L1/R1: workspaces',
+                          'Triggers: Shift/Ctrl; R2: Arrange cursor; L1/R1: workspaces',
                           'ReaLearn uses direct MIDI actions, without mouse events',
                           'REAPER dialogs: ordinary arrows; sticks suppressed']
         return '\n'.join(lines) + '\n'
@@ -665,7 +677,11 @@ class Mapper:
         except (OSError, subprocess.TimeoutExpired) as error:
             log.warning('Gamepad notification failed: %s', error)
 
-    def reaper_control(self, control):
+    def reaper_control(self, control, value=None):
+        if control in (*range(8), 12, 18, 19, 24, 25, 40):
+            # Gate immediately on controller navigation, before the display's
+            # next context publication, so a held angle cannot hit a new knob.
+            self.rotary_ready = False
         if not self.focused_reaper():
             return
         try:
@@ -675,7 +691,10 @@ class Mapper:
             fine = 127 if any(self.triggers) else 0
             self.reaper_midi.pulse(node['pid'], 22, fine)
             if control != 22:
-                self.reaper_midi.pulse(node['pid'], control)
+                if value is None:
+                    self.reaper_midi.pulse(node['pid'], control)
+                else:
+                    self.reaper_midi.pulse(node['pid'], control, value)
         except (ImportError, OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
             if time.monotonic() - self.reaper_error_at > 5:
                 self.reaper_error_at = time.monotonic()
@@ -1216,6 +1235,36 @@ class Mapper:
         finally:
             self.write_keys(held)
 
+    def rotary_frame(self, x, y, now):
+        try:
+            path = self.directory / 'reaper-rotary-target'
+            target = path.read_text().strip() if time.time() - path.stat().st_mtime < 1 else ''
+        except OSError:
+            target = ''
+        magnitude = max(abs(x), abs(y))
+        if target != self.rotary_target:
+            self.rotary_target, self.rotary_ready = target, magnitude <= self.config['stick_release']
+            self.rotary_value, self.rotary_time = None, float('-inf')
+        if not target:
+            return False
+        if magnitude <= self.config['stick_release']:
+            self.rotary_ready, self.rotary_value = True, None
+            return True
+        if not self.rotary_ready or magnitude < self.config['stick_press']:
+            return True
+        if not self.focused_reaper():
+            self.rotary_ready = False
+            return True
+        angle = math.atan2(x, -y)
+        limit = 3 * math.pi / 4
+        if abs(angle) > limit + math.radians(3):  # Inactive bottom arc.
+            return True
+        value = max(0, min(16383, round((angle + limit) / (2 * limit) * 16383)))
+        if value != self.rotary_value and now - self.rotary_time >= .02:
+            self.reaper_control(20, value)
+            self.rotary_value, self.rotary_time = value, now
+        return True
+
     def tick(self, now, active):
         if not self.device:
             return
@@ -1250,6 +1299,11 @@ class Mapper:
                     if self.legend_open():
                         self.close_legend()
                         self.toggle_legend()
+                continue
+            if (index == 1 and self.mode == 'reaper' and self.stick_modes[index] == 'zoom'
+                    and self.rotary_frame(x, y, now)):
+                self.sticks[index] = None
+                self.motion_time[index], self.motion_credit[index] = None, 0
                 continue
             if magnitude <= self.config['stick_release']:
                 self.sticks[index] = None

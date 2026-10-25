@@ -8,7 +8,7 @@ local directory = runtime .. '/minion-gamepad/'
 local choose_control = dofile(reaper.GetResourcePath() .. '/Scripts/Device/reaper-control-navigation.lua')
 local ui = dofile(reaper.GetResourcePath() .. '/Scripts/Device/reaper-ui.lua')
 local REQUEST_COUNT, PAGE_COUNT = 23, 5
-local choosing_area, area_choice, lower_area, opened_area_fx = false, 0, 1, nil
+local choosing_area, area_choice, area_held, opened_area_fx = false, 0, false, nil
 local area_names = {'Timeline','Tracks','Toolbar','Transport'}
 local area_pages = {0,1,3,4}
 local visible, previous_mode, previous_page, menu, menu_index = false, '', -1, false, 0
@@ -174,8 +174,9 @@ local function loop()
   local page = math.min(PAGE_COUNT-1, parameter(master, controller, 0, PAGE_COUNT))
   local mode = read(directory .. 'mode')
   if mode ~= 'reaper' then
-    choosing_area, menu = false, false
+    choosing_area, menu, area_held = false, false, false
     set(master, controller, 9, 2, 0)
+    set(master, controller, 12, 3, 0)
     write(directory .. 'reaper-area', '')
     write(directory .. 'reaper-rotary-target', '')
     if outline_started then show_outline(nil) end
@@ -241,6 +242,14 @@ local function loop()
       if page <= 1 then reaper.SetCursorContext(page == 1 and 0 or 1, nil) end
     end
   end
+  local hold_state = parameter(master,controller,12,3)
+  if hold_state == 2 and not area_held then
+    choosing_area, menu = true, false
+    area_choice = page == 0 and 0 or page == 3 and 2 or page == 4 and 3 or 1
+  elseif hold_state == 1 then
+    choosing_area = false
+    set(master,controller,12,3,0) -- Acknowledge cancellation without committing.
+  end
   local request = parameter(master, controller, 3, REQUEST_COUNT)
   if request ~= 0 then
     set(master, controller, 3, REQUEST_COUNT, 0)
@@ -301,7 +310,7 @@ local function loop()
       control = choose_control(rectangles, control, ({'left','right','up','down'})[request - 10])
       old_control = control
       set(master, controller, 8, #controls, control)
-    elseif page == 1 and request >= 8 then
+    elseif page == 1 and request >= 8 and request <= 10 then
       local entry = controls[control + 1]
       if track and entry.key then
         local current = reaper.GetMediaTrackInfo_Value(track, entry.key)
@@ -318,6 +327,9 @@ local function loop()
       end
     end
   end
+  -- Process the last spatial move before a release commits the selection.
+  if hold_state == 0 and area_held and choosing_area then enter_area() end
+  area_held = hold_state == 2
   if page ~= previous_page then menu = false; previous_page = page end
   set(master, controller, 6, 2, menu and 1 or 0)
   set(master, controller, 9, 2, choosing_area and 1 or 0)
@@ -353,7 +365,7 @@ local function loop()
     local _, param_name = reaper.TrackFX_GetParamName(track, fx_index, param_index, '')
     local _, value = reaper.TrackFX_GetFormattedParamValue(track, fx_index, param_index, '')
     detail = string.format('%s%s | %s: %s', reaper.TrackFX_GetEnabled(track,fx_index) and '' or '[Bypassed] ',fx_name,param_name,value)
-  elseif page == 2 then detail = 'No effects — hold L3: actions → Insert ReaEQ / ReaComp'
+  elseif page == 2 then detail = 'No effects — L3: actions → Insert ReaEQ / ReaComp'
   elseif page == 0 then
     local count = reaper.CountSelectedMediaItems(0)
     local item = reaper.GetSelectedMediaItem(0, 0)
@@ -384,7 +396,7 @@ local function loop()
       line(choosing_area and ('Choose area: ' .. area_names[area_choice + 1]) or ('[' .. pages[page + 1] .. ']  ' .. summary), 4, true)
       if choosing_area then
         line('Stick / D-pad: move between visible regions',4+row)
-        line('A / L3: enter     B: cancel     Right stick: inactive',4+2*row)
+        line('Release L2 / A: enter     B: cancel     Right stick: inactive',4+2*row)
         line('Toolbar / Tracks / Timeline / Transport',4+3*row)
         if key == 13 then set(master,controller,3,REQUEST_COUNT,16)
         elseif key == 27 then set(master,controller,3,REQUEST_COUNT,17) end
@@ -401,7 +413,7 @@ local function loop()
         local buttons = {'X: split  R3: loop', 'X: mute  R3: solo', 'X: bypass  R3: FX window','',''}
         line(detail ~= '' and detail or controls[page + 1], 4 + row)
         line(detail ~= '' and controls[page + 1] or 'Y: play/stop   Start: save   R center: retain knob value', 4 + 2*row)
-        line(buttons[page + 1] .. ' | Select: page  L3: areas / hold: actions', 4 + 3*row)
+        line(buttons[page + 1] .. ' | L2: areas  L3: actions  L1/R1: track', 4 + 3*row)
       end
       gfx.update()
     end

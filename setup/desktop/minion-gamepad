@@ -170,6 +170,8 @@ class ReaperMidi:
         for output in (self.output, self.jack_output):
             if output:
                 if output.is_port_open():
+                    output.send_message([0xBF, 31, 127])
+                    output.send_message([0xBF, 31, 0])
                     output.send_message([0xBF, 22, 0])
                 output.close_port()
                 output.delete()
@@ -252,7 +254,7 @@ class ReaperMidi:
                 return
             self.fine_value = value
         output.send_message([0xBF, control, value])
-        if control != 22:
+        if control not in (22,26):
             output.send_message([0xBF, control, 0])
 
 # Xbox/xpad uses Linux's historical BTN_X=BTN_NORTH, BTN_Y=BTN_WEST
@@ -503,6 +505,7 @@ class Mapper:
         self.reason = 'Waiting for a controller'
         self.reaper_midi = None
         self.reaper_error_at = 0
+        self.reaper_area_held = self.reaper_area_cancelled = False
         self.rotary_target, self.rotary_ready = '', False
         self.rotary_value, self.rotary_time = None, float('-inf')
 
@@ -528,6 +531,7 @@ class Mapper:
         self.keys = set(desired)
 
     def reset(self):
+        self.reaper_area_held = self.reaper_area_cancelled = False
         self.rotary_target, self.rotary_ready = '', False
         self.rotary_value, self.rotary_time = None, float('-inf')
         if self.reaper_midi:
@@ -632,16 +636,16 @@ class Mapper:
         lines += ['Menu tap/hold or B/Escape: dismiss this legend']
         if self.mode == 'reaper':
             lines = [line for line in lines if not line.startswith((
-                'X: hold', 'D-pad:', 'L3:', 'R3:', 'Text:', 'Windows:', 'Layout:'))]
+                'X: hold', 'D-pad:', 'L3:', 'R3:', 'Text:', 'Windows:', 'Layout:', 'L2:', 'L1 / R1:'))]
             try:
                 page = (self.directory / 'reaper-page').read_text().strip()
             except OSError:
                 page = ''
             lines[1] = 'Page: ' + (page if page in ('Arrange', 'Mixer', 'FX','Toolbar','Transport') else 'Waiting for REAPER')
             lines[2:2] = ['Select: cycle controls (page shown in the bar)',
-                          'L3 tap: choose / enter area; hold: actions',
+                          'Hold L2: choose area; release L2: enter; L3: actions',
                           'Areas — move spatially between Toolbar, Tracks, Timeline and Transport',
-                          'Areas — A/L3: enter; B: cancel',
+                          'Areas — B: cancel; right stick and editing controls: inactive',
                           'Toolbar / Transport — L / D-pad: choose visible button; A: activate',
                           'A: select / enter; B: cancel / back / stop',
                           'Y: Play / stop once; Start: save',
@@ -652,7 +656,7 @@ class Mapper:
                           'FX — D-pad: FX/parameter; L: tracks; R angle: knob position',
                           'Knobs — lower-left: min; up: midpoint; lower-right: max; center: hold',
                           'X: split / mute / bypass; R3: loop / solo / FX window',
-                          'Triggers: Shift/Ctrl; R2: Arrange cursor; L1/R1: workspaces',
+                          'R2: Ctrl / Arrange cursor; L1/R1: previous / next track in REAPER',
                           'ReaLearn uses direct MIDI actions, without mouse events',
                           'REAPER dialogs: ordinary arrows; sticks suppressed']
         return '\n'.join(lines) + '\n'
@@ -682,11 +686,18 @@ class Mapper:
         except (OSError, subprocess.TimeoutExpired) as error:
             log.warning('Gamepad notification failed: %s', error)
 
-    def reaper_control(self, control, value=None):
-        if control in (*range(8), 12, 18, 19, 23, 24, 25, 40):
+    def reaper_control(self, control, value=None, *, cleanup=False):
+        if control in (*range(8), 12, 18, 19, 23, 24, 25, 26, 31, 40, 48, 49):
             # Gate immediately on controller navigation, before the display's
             # next context publication, so a held angle cannot hit a new knob.
             self.rotary_ready = False
+        if cleanup:
+            if self.reaper_midi and self.reaper_midi.pid is not None:
+                try:
+                    self.reaper_midi.pulse(self.reaper_midi.pid,control)
+                except (OSError,RuntimeError,ValueError,subprocess.SubprocessError) as error:
+                    log.warning('Cannot cancel REAPER area selection: %s',error)
+            return
         if not self.focused_reaper():
             return
         try:
@@ -1005,10 +1016,12 @@ class Mapper:
                     'legend', 'launcher', 'left_stick_context', 'right_stick_context',
                     'stick_context', 'text_navigation', 'selection'):
                 continue
-            if button == self.config['previous_bumper']:
-                self.workspace(-1)
-            elif button == self.config['next_bumper']:
-                self.workspace(1)
+            if button in (self.config['previous_bumper'],self.config['next_bumper']):
+                step = -1 if button == self.config['previous_bumper'] else 1
+                if self.mode == 'reaper' and self.focused_reaper():
+                    self.reaper_control(48 if step < 0 else 49)
+                else:
+                    self.workspace(step)
             elif button in self.config['actions']:
                 self.dispatch(self.config['actions'][button])
         self.pending_buttons.difference_update(released)
@@ -1043,6 +1056,9 @@ class Mapper:
                 gesture.invalid = True
         if len(held - {'START'}) > 1 or 'OTHER' in held:
             gesture.invalid = True
+        if self.reaper_area_held:
+            self.reaper_control(31,cleanup=True)
+            self.reaper_area_held = False
         # Clear pending desktop/DAW gestures before any normal input can fire.
         self.pending_buttons.clear()
         self.button_since.clear()
@@ -1066,6 +1082,53 @@ class Mapper:
                 self.set_mode(target)
         return True
 
+    def reaper_area_frame(self, pressed, previous_triggers, now):
+        """L2 borrows navigation until release; losing focus cancels it."""
+        if self.mode != 'reaper':
+            return False
+        focused = self.focused_reaper() if self.triggers[0] or self.reaper_area_held else False
+        if self.triggers[0] and not previous_triggers[0] and focused:
+            self.reaper_area_held, self.reaper_area_cancelled = True, False
+            self.pending_buttons.clear()
+            self.button_since.clear()
+            self.text_gesture.clear()
+            self.select_gesture.clear()
+            self.clear_dpad_navigation()
+            self.rotary_ready = False
+            self.sticks, self.next_repeat = [None,None],[0,0]
+            self.motion_time, self.motion_credit = [None,None],[0,0]
+            self.reaper_control(26,127)
+        if not self.reaper_area_held:
+            return False
+        self.write_keys(set())
+        if not focused or not self.triggers[0]:
+            if not focused or self.reaper_area_cancelled:
+                self.reaper_control(31,cleanup=True)
+            else:
+                self.reaper_control(26,0)
+            self.reaper_area_held = False
+            self.triggers = [False,False]
+            self.sticks, self.next_repeat = [None,None],[0,0]
+            self.motion_time, self.motion_credit = [None,None],[0,0]
+            self.clear_dpad_navigation()
+            # Deflected sticks/held buttons must not operate the new target.
+            self.ready = False
+            return True
+        if self.e.BTN_EAST in pressed:
+            self.reaper_area_cancelled = True
+            self.reaper_control(31)
+        if not self.reaper_area_cancelled:
+            horizontal,vertical=self.config['chord_axes']
+            directions=set()
+            for axis,negative,positive in ((horizontal,'LEFT','RIGHT'),(vertical,'UP','DOWN')):
+                value=self.raw_axes.get(axis,0)
+                if value: directions.add(negative if value<0 else positive)
+            if directions:
+                self.navigate_dpad(directions,now)
+            else:
+                self.clear_dpad_navigation()
+        return True
+
     def frame(self, pressed, released, now, active):
         if self.block_lid_input(active):
             return
@@ -1079,6 +1142,8 @@ class Mapper:
             value = self.axis(self.config[name], True)
             threshold = self.config['trigger_release' if self.triggers[index] else 'trigger_press']
             self.triggers[index] = value > threshold
+        if self.reaper_area_frame(pressed,previous_triggers,now):
+            return
         if self.mode == 'reaper' and tuple(self.triggers) != previous_triggers:
             self.reaper_control(22)
         selecting = self.select_shortcut_frame()
@@ -1175,7 +1240,9 @@ class Mapper:
                 extra = {self.e.KEY_LEFTCTRL, self.e.KEY_LEFTALT} if reaper and direction in ('UP', 'DOWN') else set()
                 if reaper:
                     control = {'LEFT': 0, 'RIGHT': 1, 'UP': 2, 'DOWN': 3}[direction]
-                    if self.triggers[1] and direction in ('LEFT', 'RIGHT'):
+                    if self.reaper_area_held:
+                        control += 27
+                    elif self.triggers[1] and direction in ('LEFT', 'RIGHT'):
                         control += 24
                     self.reaper_control(control)
                 else:
@@ -1325,6 +1392,8 @@ class Mapper:
         if not self.ready or self.mode_gesture.previous:
             return
         for index, name in enumerate(('left_stick', 'right_stick')):
+            if self.reaper_area_held and (index == 1 or self.reaper_area_cancelled):
+                continue
             x, y = (self.axis(code) for code in self.config[name])
             magnitude = max(abs(x), abs(y))
             if self.stick_pending[index]:
@@ -1369,7 +1438,7 @@ class Mapper:
                 rates = self.config['zoom_rate'] if mode == 'zoom' else self.config['scroll_rate'] if mode == 'scroll' else self.config[
                     'selection_line_rate' if direction in ('up', 'down') else 'selection_rate']
                 try:
-                    mixer_navigation = reaper and index == 0 and (
+                    mixer_navigation = reaper and index == 0 and (self.reaper_area_held or
                         (self.directory / 'reaper-page').read_text().strip() in ('Mixer','Toolbar','Transport')
                         or (self.directory / 'reaper-area').exists() and (self.directory / 'reaper-area').read_text().strip())
                 except OSError:
@@ -1385,7 +1454,7 @@ class Mapper:
                 else:
                     steps = self.motion_steps(index, now, magnitude, fresh, rates)
                 if reaper:
-                    offset = 4 if index == 0 else 8
+                    offset = 27 if self.reaper_area_held else 4 if index == 0 else 8
                     for _ in range(steps):
                         self.reaper_control(offset + {'left': 0, 'right': 1, 'up': 2, 'down': 3}[direction])
                     continue

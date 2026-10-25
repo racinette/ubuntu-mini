@@ -99,17 +99,25 @@ the built-in screen.
 | Right stick | Timeline zoom / track height | Angle sets outlined knob; directions set switches | Angle sets selected parameter |
 | X | Split selected items at cursor | Mute/unmute track | Bypass/enable selected FX |
 | R3 | Toggle loop | Solo/unsolo track | Show/hide FX window |
-| L3 | Tap: choose/enter area; hold: actions | Same | Same |
+| L3 | Toggle action menu | Same | Same |
 | A | Select item at cursor on selected track | Toggle outlined switch / enter FX | Show/hide selected FX |
 | B | Stop transport | Return to Arrange | Return to Arrange |
 
-Tap L3 to choose an area. The controller panel shows **Choose area** and the
+Hold L2 to choose an area. The controller panel shows **Choose area**, and the
 outline expands to a visible native panel: **Toolbar, Tracks, Timeline or
 Transport**. The left stick and D-pad move between their actual screen positions.
-A or L3 enters the chosen area; B cancels without changing the previous page
-or selection. The right stick, transport and editing actions are inactive while
-choosing. FX remains a button within the track controls, rather than a separate
-area. Hold L3 for the page's action menu; a short L3 press closes that menu.
+Release L2 to enter the highlighted area; there is no timed hold. B cancels
+without changing the previous page. The right stick, transport, bumpers and
+editing actions are inactive during the hold. Return the controls to neutral
+after releasing L2 before operating the new target. Losing focus or resetting the
+mapper cancels the selection. FX stays within track controls. L3 opens/closes the
+current page's action menu with a single press.
+
+L1/R1 select the previous/next track while a supported REAPER window is focused,
+across all five pages. They preserve the current page and selected track-control
+type, so the next track's same control remains available. A changed knob still
+requires the right stick to return to center. In other applications the bumpers
+retain Linux workspace switching.
 
 Inside Toolbar or Transport, the left stick and D-pad select a visible button,
 the cyan outline identifies it, and A invokes its native REAPER action. B returns
@@ -182,10 +190,11 @@ inserting stock ReaEQ, ReaComp, ReaGate, ReaDelay and ReaVerbate. Plugin-specifi
 custom interfaces and dialogs are outside this layout's scope.
 
 Y plays/stops once on release; holding never repeats. Start saves. Triggers
-still emit Shift/Ctrl for physical typing and ordinary keyboard shortcuts;
-absolute angle control covers the full range with either trigger state.
-L1/R1 navigate workspaces;
-L2+bumper sends the window. Menu taps open the launcher and holding Menu shows
+use L2 for area selection and R2 for Ctrl / Arrange cursor movement while REAPER
+is focused. Outside supported REAPER windows, L2/R2 retain Shift/Ctrl for ordinary
+typing and dialogs. Absolute-angle knobs cover the full range without a trigger
+modifier. L1/R1 select tracks in REAPER; elsewhere they switch workspaces, with
+L2+bumper moving the window. Menu taps open the launcher and holding Menu shows
 the full legend. Select+face layout toggles remain.
 X is a discrete context action in REAPER; it remains holdable Backspace on Desktop.
 
@@ -193,7 +202,7 @@ MIDI controls require the genuine REAPER project, stock FX-chain/plugin window o
 controller display to be focused. Native dialogs retain ordinary D-pad arrows,
 Enter and Escape; sticks are suppressed. Input to another application is never
 routed to a background DAW. Disconnecting, changing profiles, locking or closing
-the lid clears keyboard state and MIDI fine adjustment. Neutral controls are
+the lid clears keyboard state and cancels held area selection. Neutral controls are
 required before mapping resumes.
 
 The installer preserves existing REAPER audio/theme/license settings, other MIDI

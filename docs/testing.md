@@ -10,6 +10,23 @@ Firefox-first browser preferences were applied on the WIN Mini: `xdg-settings ge
 
 ## Recent device checks
 
+On 2026-10-25, the REAPER profile gained momentary L2 area selection: hold to
+choose spatially, release to enter, or B to cancel. L3 toggles the action menu
+with a single press, and L1/R1 select tracks across all five pages while REAPER
+is focused. R2 retains edit-cursor navigation. The mapper suppresses editing and
+right-stick adjustment during the hold, requires neutral after release, and
+cancels on focus loss or lifecycle reset. Desktop modifiers, workspace bumpers
+outside REAPER and Start+D-pad mode selection remain available. Host mapper,
+MIDI routing, preset-preservation and setup-layout checks passed. A muted native
+REAPER project on an isolated display passed hold/release selection, cancellation
+and reopening, bumper track selection on all five pages, retained R2 grid-cursor
+movement, single-press L3 actions, final-direction ordering, focus-loss/reset
+cancellation and absence of mouse/Shift events in REAPER. Live installation
+completed and the user confirmed the new workflow mostly works; missing native
+toolbar/transport targets are being investigated separately.
+[Private workflow report](../.local/device-checks/realearn/area-hold-result.json),
+[private installation report](../.local/device-checks/realearn/area-hold-install-result.json).
+
 On 2026-10-25, Start-first D-pad shortcuts replaced Start+Select mode cycling:
 Left selects Desktop, Up REAPER and Right passthrough after both controls are
 released. Down is unassigned. Host mapper checks passed all nine source/target

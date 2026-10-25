@@ -114,6 +114,15 @@ with tempfile.TemporaryDirectory(prefix='realearn-install-check-') as temporary:
                 raise AssertionError('Running REAPER configuration rewritten')
 
 state = realearn.preset()
+mappings=state['mainUnit']['mappings']
+hold=next(m for m in mappings if m['name']=='Hold area chooser')
+assert hold['source']['number']==26 and hold['mode']=={} and hold['target']['paramIndex']==12
+cancel=next(m for m in mappings if m['name']=='Cancel held area chooser')
+assert cancel['source']['number']==31 and cancel['mode']['minTargetValue']==.5
+assert state['mainUnit']['parameters']['12']['valueLabels']==['Released','Cancelled','Held']
+assert {(m['source']['number'],m['target'].get('commandName')) for m in mappings
+        if m['name']=='Previous / next track'}=={(48,'40286'),(49,'40285')}
+assert {m['source']['number'] for m in mappings if m['name']=='Navigate held area chooser'}=={27,28,29,30}
 chain = realearn.monitoring_fx(state)
 lines = chain.splitlines()
 start = next(i for i, line in enumerate(lines) if line.startswith('<VST '))

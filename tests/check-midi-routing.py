@@ -55,4 +55,19 @@ with patch.object(mapper.time,'monotonic',return_value=0):
         connection.jack_output.send_message.reset_mock()
         connection.pulse(123,20,value)
         assert [c.args[0] for c in connection.jack_output.send_message.call_args_list]==[[0xBF,20,value>>7],[0xBF,52,value&127]]
+    # Area hold is a level: never append an automatic release pulse.
+    for value in (127,0):
+        connection.jack_output.send_message.reset_mock()
+        connection.pulse(123,26,value)
+        assert [c.args[0] for c in connection.jack_output.send_message.call_args_list]==[[0xBF,26,value]]
+    # Cancellation remains an ordinary press pulse, not an area commit.
+    connection.jack_output.send_message.reset_mock()
+    connection.pulse(123,31)
+    assert [c.args[0] for c in connection.jack_output.send_message.call_args_list]==[[0xBF,31,127],[0xBF,31,0]]
+connection.output=None
+connection.alsa=Mock();connection.sequence=object();connection.info=object()
+connection.jack_output.send_message.reset_mock()
+with patch.object(connection,'disconnect_jack'):
+    connection.close()
+assert [c.args[0] for c in connection.jack_output.send_message.call_args_list]==[[0xBF,31,127],[0xBF,31,0],[0xBF,22,0]]
 print('Passed: JACK routing by authenticated PID, duplicate client names, controller input selection, retained links, reset recovery, explicit rerouting and absolute 14-bit values without release pulses.')

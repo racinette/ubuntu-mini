@@ -934,7 +934,7 @@ def main():
             midi.assert_called_once_with(16)
             assert state.keys == {codes.KEY_LEFTSHIFT, codes.KEY_LEFTCTRL}
             assert not any(key == codes.KEY_SPACE for kind,key,value in keyboard.events)
-        for button, control in ((315, 17), (314, 12), (317, 23), (318, 14), (307, 15)):
+        for button, control in ((315, 17), (314, 12), (317, 13), (318, 14), (307, 15)):
             reaper_reset()
             with patch.object(state, 'reaper_control') as midi:
                 frame(buttons=(button,)); assert not midi.called
@@ -947,7 +947,60 @@ def main():
             frame(buttons=(317,),at=0)
             frame(buttons=(317,),at=.8)
             frame(at=.9)
-            midi.assert_called_once_with(13) # Hold consumes the short area action.
+            midi.assert_called_once_with(13) # A held L3 still opens actions only once, on release.
+
+        # L2 is a momentary area chooser only while REAPER has focus. It
+        # never types Shift there, never leaks other buttons and waits for
+        # neutral after release before operating the new target.
+        for direction,control in (('LEFT',27),('RIGHT',28),('UP',29),('DOWN',30)):
+            reaper_reset()
+            with patch.object(state,'focused_reaper',return_value=True), patch.object(state,'reaper_control') as midi:
+                frame(shift=True,at=0); midi.assert_called_once_with(26,127)
+                frame({direction},shift=True,ctrl=True,at=.1)
+                assert midi.call_args==call(control) and not keyboard.events
+                frame({'Y'},shift=True,at=.2);frame({'X'},shift=True,at=.3)
+                frame(buttons=(310,311,314,317),shift=True,at=.4)
+                assert midi.call_count==2 and not keyboard.events
+                frame(at=.5);assert midi.call_args==call(26,0) and not state.ready
+                frame({'RIGHT'},at=.6);assert midi.call_count==3
+                frame();state.tick(.7,True);assert state.ready and not state.keys
+        # B cancels once; releasing immediately afterwards cannot commit.
+        reaper_reset()
+        with patch.object(state,'focused_reaper',return_value=True), patch.object(state,'reaper_control') as midi:
+            frame(shift=True);frame({'B'},shift=True);frame(shift=True);frame()
+            assert midi.call_args_list==[call(26,127),call(31),call(31,cleanup=True)]
+            assert not state.reaper_area_held and not keyboard.events
+        # Focus loss cancels through the existing MIDI connection, even though
+        # the new focused window is not a REAPER target.
+        reaper_reset()
+        with patch.object(state,'focused_reaper',return_value=True), patch.object(state,'reaper_control') as midi:
+            frame(shift=True)
+            with patch.object(state,'focused_reaper',return_value=False): frame(shift=True)
+            assert midi.call_args_list==[call(26,127),call(31,cleanup=True)]
+            assert not state.reaper_area_held and not state.ready
+            frame();state.tick(1,True);frame(shift=True)
+            assert midi.call_args==call(26,127) and state.reaper_area_held
+        # L1/R1 target tracks across pages; they retain workspace commands in
+        # other apps and preserve their normal Desktop behavior.
+        for focused in (False,True):
+            for button,step,control in ((310,-1,48),(311,1,49)):
+                reaper_reset()
+                with patch.object(state,'focused_reaper',return_value=focused), \
+                        patch.object(state,'reaper_control') as midi, patch.object(state,'workspace') as workspace:
+                    frame(buttons=(button,));frame()
+                    if focused: midi.assert_called_once_with(control);workspace.assert_not_called()
+                    else: workspace.assert_called_once_with(step);midi.assert_not_called()
+        # Held chooser navigation uses bounded left-stick repeats, ignoring the
+        # right stick, even before the display publishes its updated context.
+        reaper_reset()
+        with patch.object(state,'focused_reaper',return_value=True), patch.object(state,'reaper_control') as midi:
+            frame(shift=True,at=0)
+            state.raw_axes[config['left_stick'][0]]=32767
+            state.raw_axes[config['right_stick'][0]]=32767
+            for now in (0,.1,.349,.35): state.tick(now,True)
+            assert midi.call_args_list==[call(26,127),call(28),call(28)]
+            assert not keyboard.events
+            state.reset();assert not state.reaper_area_held
 
         # Select+face consumes transport/save/mixer singles in either release
         # order. The existing layout chords remain available in both profiles.
@@ -970,18 +1023,18 @@ def main():
             reaper_reset()
             with patch.object(state,'focused_reaper',return_value=focused), patch.object(state,'reaper_control') as midi:
                 frame({'UP'},shift=True,at=0)
-                assert [c.args[0] for c in midi.call_args_list if c.args[0]!=22] == ([2] if focused else [])
-            assert set(downs()) == ({codes.KEY_LEFTSHIFT} if focused else {codes.KEY_UP,codes.KEY_LEFTSHIFT})
+                assert [c.args[0] for c in midi.call_args_list if c.args[0]!=22] == ([26,29] if focused else [])
+            assert set(downs()) == (set() if focused else {codes.KEY_UP,codes.KEY_LEFTSHIFT})
         for index, control in ((0,4),(1,8)):
             for direction,axis,value,offset in (('left',0,-32768,0),('right',0,32767,1),('up',1,-32768,2),('down',1,32767,3)):
                 reaper_reset()
-                frame(shift=True,ctrl=True);keyboard.events.clear()
+                frame(ctrl=True);keyboard.events.clear()
                 state.raw_axes[config['left_stick' if index==0 else 'right_stick'][axis]]=value
                 with patch.object(state,'focused_reaper',return_value=True), patch.object(state,'reaper_control') as midi:
                     state.tick(0,True)
                     midi.assert_called_once_with(control+offset)
                 assert not keyboard.events
-                assert state.keys == {codes.KEY_LEFTSHIFT,codes.KEY_LEFTCTRL}
+                assert state.keys == {codes.KEY_LEFTCTRL}
         # Mixer object navigation moves once on a nudge, pauses, then repeats
         # at a bounded rate. Other pages and the adjustment stick keep their
         # continuous response.

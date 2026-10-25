@@ -68,7 +68,14 @@ def preset():
         add('Next control page', 12, parameter(0), page=page, menu=None,
             mode=dict(minTargetValue=value, maxTargetValue=value))
     request('Open/close actions', 13, 1, menu=None, areas=None)
-    request('Choose/enter area', 23, 15, menu=None, areas=None)
+    add('Hold area chooser',26,parameter(12),menu=None,mode={},areas=None)
+    mappings[-1]['mode'] = {} # Keep both held (127) and released (0) values.
+    add('Cancel held area chooser',31,parameter(12),menu=None,
+        mode=dict(minTargetValue=.5,maxTargetValue=.5),areas=None)
+    for cc,value in ((27,18),(28,19),(29,20),(30,21)):
+        request('Navigate held area chooser',cc,value,menu=None,areas=None)
+    for cc,command in ((48,40286),(49,40285)):
+        action('Previous / next track',cc,command)
     request('Enter chosen area', 18, 16, areas=True)
     request('Cancel area choice', 19, 17, areas=True)
     for controls, value in (((0,24,4),18),((1,25,5),19),((2,6),20),((3,7),21)):
@@ -157,7 +164,8 @@ def preset():
                                       (8, 'Track control', 7, ['Volume', 'Pan', 'Mute', 'Solo', 'Arm', 'Monitoring', 'FX']),
                                       (9, 'Choosing area', 2, []),
                                       (10, 'Chosen area', 4, ['Timeline','Tracks','Toolbar','Transport']),
-                                      (11, 'Native button action', 65536, [])):
+                                      (11, 'Native button action', 65536, []),
+                                      (12, 'Area hold', 3, ['Released','Cancelled','Held'])):
         parameters[str(index)] = dict(name=name, valueCount=count, valueLabels=labels, value=0)
     return dict(mainUnit=dict(version=RELEASE['version'], name='Device gamepad',
                              controlDeviceId='0', letMatchedEventsThrough=False,

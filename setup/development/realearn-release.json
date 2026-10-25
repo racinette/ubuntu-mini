@@ -12,6 +12,13 @@
       "filename": "reaper_helgobox-linux-x86_64.so",
       "url": "https://github.com/helgoboss/helgobox/releases/download/v2.18.4/reaper_helgobox-linux-x86_64.so",
       "sha256": "91642088ca26a964a9fce1983a333506a28d3b7ec5092739cd778bd9267181e9"
+    },
+    {
+      "file": "reaper_js_ReaScriptAPI64.so",
+      "filename": "reaper_js_ReaScriptAPI64.so",
+      "version": "1.310",
+      "url": "https://raw.githubusercontent.com/juliansader/ReaExtensions/master/js_ReaScriptAPI/v1.310/reaper_js_ReaScriptAPI64.so",
+      "sha256": "5b06fd605ebcfed82cea39dabec180fa9905edc58a0d08c629d0672eba5f49ae"
     }
   ]
 }

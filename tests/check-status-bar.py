@@ -253,7 +253,7 @@ print(value)
                     mode.write_text(f'REAPER L:{left} R:{right}\n')
                     assert status.stick_mode()['full_text'] == f'RP L:{left[0]} R:{right[0]}'
             mode.write_text('REAPER controls\n')
-            for page in ('Arrange','Mixer','FX'):
+            for page in ('Arrange','Mixer','FX','Toolbar','Transport'):
                 (mode.parent/'reaper-page').write_text(page+'\n')
                 assert status.stick_mode()['full_text']=='RP:'+page
             (mode.parent/'reaper-page').write_text('invalid')

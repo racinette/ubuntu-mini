@@ -118,13 +118,14 @@
         "BTN_START": "reaper_save",
         "BTN_SELECT": "reaper_page",
         "BTN_MODE": "launcher",
-        "BTN_THUMBL": "reaper_actions",
+        "BTN_THUMBL": "reaper_areas",
         "BTN_THUMBR": "reaper_secondary",
         "BTN_WEST": "reaper_play_stop",
         "BTN_NORTH": "reaper_primary"
       },
       "hold_actions": {
-        "BTN_MODE": "legend"
+        "BTN_MODE": "legend",
+        "BTN_THUMBL": "reaper_actions"
       },
       "chords": {
         "UP+A": "reaper_copy",

@@ -45,6 +45,8 @@ with tempfile.TemporaryDirectory(prefix='realearn-install-check-') as temporary:
         state = json.loads((resource / 'Data/device-gamepad.json').read_text())
         assert (resource / 'Scripts/Device/reaper-control-outline.py').read_bytes() == (PROJECT / 'setup/development/reaper-control-outline.py').read_bytes()
         assert (resource / 'Scripts/Device/reaper-control-navigation.lua').read_bytes() == (PROJECT / 'setup/development/reaper-control-navigation.lua').read_bytes()
+        for name in ('reaper-ui.lua', 'reaper-ui.py'):
+            assert (resource / 'Scripts/Device' / name).read_bytes() == (PROJECT / 'setup/development' / name).read_bytes()
         assert state['mainUnit']['controlDeviceId'] == '1'
         chain = resource / 'reaper-hwoutfx.ini'
         before = chain.read_bytes()

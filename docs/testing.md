@@ -10,6 +10,24 @@ Firefox-first browser preferences were applied on the WIN Mini: `xdg-settings ge
 
 ## Recent device checks
 
+On 2026-10-25, L3 area selection gained actual Toolbar, Tracks, Timeline and
+Transport panels. The left stick/D-pad choose spatial neighbors; A/L3 enters,
+B cancels, and holding L3 retains the action menu. FX stays within track controls.
+The pinned js_ReaScriptAPI extension discovers native panels; exact theme-image
+matching locates visible buttons without generating mouse input. Host checks
+cover image decoding, missing/ambiguous matches, generations, customized-toolbar
+refusal and preservation of personal REAPER settings. A private muted JACK
+project on an isolated Xvfb display found 13 toolbar and seven transport buttons
+with Reapertips. Mapper-to-native-action tests passed New, Open/Cancel, Save,
+Play/Pause/Stop, start/end, spatial navigation, menu/cancel isolation and no mouse
+events. The controller resumes after a native file dialog remains open, and panel
+resizing refreshes the discovered button positions. Xvfb is only a temporary test
+tool, not an installed product dependency. Live installation completed with REAPER
+closed; installed mapper, profile, bar command and scripts match the repository.
+Physical navigation comfort remains pending.
+[Private workflow report](../.local/device-checks/realearn/native-buttons-result.json),
+[private installation report](../.local/device-checks/realearn/native-buttons-install-result.json).
+
 On 2026-10-25, numeric Mixer controls and FX parameters gained absolute
 right-stick angle control over a clockwise 270-degree sweep. Centering retains
 the value; the bottom gap is inactive. A new target requires neutral before

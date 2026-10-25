@@ -6,6 +6,7 @@ build-essential
 pkg-config
 libssl-dev
 libffi-dev
+libpng16-16t64
 zlib1g-dev
 libbz2-dev
 libreadline-dev

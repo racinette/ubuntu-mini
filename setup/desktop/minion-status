@@ -299,7 +299,7 @@ def stick_mode():
     labels['Gamepad'] = 'Pad'
     if mode == 'REAPER controls':
         page = read(Path(directory) / 'minion-gamepad/reaper-page')
-        return block('stick', 'RP:' + (page if page in ('Arrange', 'Mixer', 'FX') else 'Waiting'))
+        return block('stick', 'RP:' + (page if page in ('Arrange', 'Mixer', 'FX','Toolbar','Transport') else 'Waiting'))
     return block('stick', labels.get(mode, 'L:S R:W'))
 
 

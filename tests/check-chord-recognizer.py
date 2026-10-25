@@ -852,13 +852,20 @@ def main():
             midi.assert_called_once_with(16)
             assert state.keys == {codes.KEY_LEFTSHIFT, codes.KEY_LEFTCTRL}
             assert not any(key == codes.KEY_SPACE for kind,key,value in keyboard.events)
-        for button, control in ((315, 17), (314, 12), (317, 13), (318, 14), (307, 15)):
+        for button, control in ((315, 17), (314, 12), (317, 23), (318, 14), (307, 15)):
             reaper_reset()
             with patch.object(state, 'reaper_control') as midi:
                 frame(buttons=(button,)); assert not midi.called
                 frame()
                 midi.assert_called_once_with(control)
             assert not keyboard.events
+
+        reaper_reset()
+        with patch.object(state,'reaper_control') as midi:
+            frame(buttons=(317,),at=0)
+            frame(buttons=(317,),at=.8)
+            frame(at=.9)
+            midi.assert_called_once_with(13) # Hold consumes the short area action.
 
         # Select+face consumes transport/save/mixer singles in either release
         # order. The existing layout chords remain available in both profiles.

@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import re
+import runpy
 from pathlib import Path
 import struct
 import tempfile
@@ -16,19 +17,22 @@ HERE = Path(__file__).resolve().parent
 RELEASE = json.loads((HERE / 'realearn-release.json').read_text())
 ACTION_ID = 'RS' + hashlib.sha1(b'ubuntu-mini/reaper-gamepad.lua').hexdigest()
 PLUGIN_NAME = 'VSTi: Helgobox - ReaLearn & Playtime (Helgoboss)'
-REQUEST_COUNT = 15
+REQUEST_COUNT = 23
+PAGE_COUNT = 5
 
 
 def preset():
     """ReaLearn's documented, backward-compatible JSON state format."""
     mappings = []
 
-    def add(name, cc, target, page=None, menu=False, mode=None, fine=None):
+    def add(name, cc, target, page=None, menu=False, mode=None, fine=None, areas=False):
         entry = dict(id='device-' + str(len(mappings)), name=name,
                      source=dict(type=0, channel=15, number=cc),
                      mode=dict(buttonUsage='press-only', **(mode or {})),
                      target=target, feedbackIsEnabled=False)
         conditions = []
+        if areas is not None:
+            conditions.append(f'p[9] == {int(areas)}')
         if page is not None:
             conditions.append(f'p[0] == {page}')
         if menu is not None:
@@ -50,25 +54,40 @@ def preset():
     def parameter(index):
         return dict(type=63, paramIndex=index)
 
-    def request(name, cc, value, page=None, menu=False):
+    def request(name, cc, value, page=None, menu=False, areas=False):
         add(name, cc, parameter(3), page, menu,
-            dict(minTargetValue=value / (REQUEST_COUNT - 1), maxTargetValue=value / (REQUEST_COUNT - 1)))
+            dict(minTargetValue=value / (REQUEST_COUNT - 1), maxTargetValue=value / (REQUEST_COUNT - 1)), areas=areas)
 
     def absolute(name, target, page):
         add(name, 20, target, page)
         mappings[-1]['source']['is14Bit'] = True
         mappings[-1]['mode'] = {} # Every value, including zero; never press-only.
 
-    for page in range(3):
-        value = ((page + 1) % 3) / 2
+    for page in range(PAGE_COUNT):
+        value = ((page + 1) % PAGE_COUNT) / (PAGE_COUNT - 1)
         add('Next control page', 12, parameter(0), page=page, menu=None,
             mode=dict(minTargetValue=value, maxTargetValue=value))
-    request('Open/close actions', 13, 1, menu=None)
+    request('Open/close actions', 13, 1, menu=None, areas=None)
+    request('Choose/enter area', 23, 15, menu=None, areas=None)
+    request('Enter chosen area', 18, 16, areas=True)
+    request('Cancel area choice', 19, 17, areas=True)
+    for controls, value in (((0,24,4),18),((1,25,5),19),((2,6),20),((3,7),21)):
+        for cc in controls:
+            request('Choose area direction', cc, value, areas=True)
     request('Confirm action', 18, 2, menu=True)
     request('Cancel actions', 19, 5, menu=True)
     request('Select item at cursor', 18, 6, 0)
     request('Activate selected track control', 18, 8, 1)
     request('Open/close selected effect', 18, 4, 2)
+    for page in (3,4):
+        ui_buttons=runpy.run_path(str(HERE/'reaper-ui.py'))['BUTTONS']['Toolbar' if page==3 else 'Transport']
+        for command,label,_ in ui_buttons:
+            action('Native button: '+label,18,command,page,menu=None)
+            mappings[-1]['eelCondition'] += f' && p[11] == {command}'
+        request('Leave native panel',19,15,page)
+        for controls,value in (((0,24,4),11),((1,25,5),12),((2,6),13),((3,7),14)):
+            for cc in controls:
+                request('Navigate native panel buttons',cc,value,page)
     action('Stop', 19, 1016, 0)
     for page in (1, 2):
         add('Return to Arrange', 19, parameter(0), page, mode=dict(minTargetValue=0, maxTargetValue=0))
@@ -76,7 +95,7 @@ def preset():
     action('Save project', 17, 40026, menu=None)
     # A held trigger selects fine adjustment; unlike action buttons this mapping
     # deliberately accepts both 127 and 0, including reset/release.
-    add('Fine adjustment', 22, parameter(5), menu=None)
+    add('Fine adjustment', 22, parameter(5), menu=None, areas=None)
     mappings[-1]['mode'] = {}
     for cc, reverse in ((2, True), (3, False), (6, True), (7, False)):
         increment('Choose menu action', cc, parameter(4), reverse, menu=True)
@@ -130,12 +149,15 @@ def preset():
                          source=dict(category='reaper', reaperSourceType='timer', timerMillis=1000),
                          mode={}, target=dict(type=0, commandName=ACTION_ID, invocationType=0)))
     parameters = {}
-    for index, name, count, labels in ((0, 'Page', 3, ['Arrange', 'Mixer', 'FX']),
+    for index, name, count, labels in ((0, 'Page', PAGE_COUNT, ['Arrange', 'Mixer', 'FX','Toolbar','Transport']),
                                       (1, 'FX', 128, []), (2, 'Parameter', 256, []),
                                       (3, 'Request', REQUEST_COUNT, []), (4, 'Menu action', 32, []),
                                       (5, 'Fine', 2, []), (6, 'Actions open', 2, []),
                                       (7, 'Send', 128, []),
-                                      (8, 'Track control', 7, ['Volume', 'Pan', 'Mute', 'Solo', 'Arm', 'Monitoring', 'FX'])):
+                                      (8, 'Track control', 7, ['Volume', 'Pan', 'Mute', 'Solo', 'Arm', 'Monitoring', 'FX']),
+                                      (9, 'Choosing area', 2, []),
+                                      (10, 'Chosen area', 4, ['Timeline','Tracks','Toolbar','Transport']),
+                                      (11, 'Native button action', 65536, [])):
         parameters[str(index)] = dict(name=name, valueCount=count, valueLabels=labels, value=0)
     return dict(mainUnit=dict(version=RELEASE['version'], name='Device gamepad',
                              controlDeviceId='0', letMatchedEventsThrough=False,
@@ -238,6 +260,8 @@ def install(resource=None, asset_dir=None, update_controller=False):
     atomic(resource / 'Scripts/Device/reaper-gamepad.lua', (HERE / 'reaper-gamepad.lua').read_bytes())
     atomic(resource / 'Scripts/Device/reaper-control-outline.py', (HERE / 'reaper-control-outline.py').read_bytes())
     atomic(resource / 'Scripts/Device/reaper-control-navigation.lua', (HERE / 'reaper-control-navigation.lua').read_bytes())
+    for name in ('reaper-ui.lua','reaper-ui.py'):
+        atomic(resource / 'Scripts/Device'/name,(HERE/name).read_bytes())
     keys = resource / 'reaper-kb.ini'
     current = keys.read_text() if keys.exists() else ''
     if ACTION_ID not in current:
@@ -333,6 +357,6 @@ if __name__ == '__main__':
                         help='Replace the device controller mappings with the current repository layout')
     args = parser.parse_args()
     if args.check:
-        print('ReaLearn ' + RELEASE['version'] + ': Arrange, Mixer and FX pages')
+        print('ReaLearn ' + RELEASE['version'] + ': Arrange, Mixer, FX, Toolbar and Transport pages')
     else:
         install(asset_dir=args.asset_dir, update_controller=args.update_controller)

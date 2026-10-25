@@ -80,7 +80,7 @@ REAPER_ZOOM = {'left': 'KEY_KPMINUS', 'right': 'KEY_KPPLUS',
                'up': 'KEY_PAGEUP', 'down': 'KEY_PAGEDOWN'}
 REAPER_CONTROLS = {'reaper_page': 12, 'reaper_actions': 13,
                    'reaper_secondary': 14, 'reaper_primary': 15,
-                   'reaper_play_stop': 16, 'reaper_save': 17}
+                   'reaper_play_stop': 16, 'reaper_save': 17, 'reaper_areas': 23}
 REAPER_EDITS = ('copy', 'paste', 'undo', 'redo', 'cut', 'select_all', 'zoom_items', 'save_project',
                 'insert_track', 'arm', 'previous_marker', 'next_marker',
                 'record', 'monitor', 'duplicate', 'delete_items')
@@ -89,7 +89,8 @@ ACTION_LABELS.update({'reaper_' + name: 'REAPER: ' + label for name, label in zi
     'Copy items', 'Paste items', 'Undo', 'Redo', 'Cut items', 'Select all items on selected tracks',
     'Zoom to selected items', 'Save project', 'Insert track', 'Arm / disarm selected tracks',
     'Previous marker', 'Next marker', 'Record', 'Input monitoring on / off', 'Duplicate items', 'Delete items'))})
-ACTION_LABELS.update({'reaper_page': 'REAPER: Arrange / Mixer / FX',
+ACTION_LABELS.update({'reaper_page': 'REAPER: Arrange / Mixer / FX / Toolbar / Transport',
+                      'reaper_areas': 'REAPER: Choose / enter area',
                       'reaper_actions': 'REAPER: Action menu',
                       'reaper_primary': 'REAPER: Split / mute / bypass',
                       'reaper_secondary': 'REAPER: Loop / solo / FX window'})
@@ -636,9 +637,13 @@ class Mapper:
                 page = (self.directory / 'reaper-page').read_text().strip()
             except OSError:
                 page = ''
-            lines[1] = 'Page: ' + (page if page in ('Arrange', 'Mixer', 'FX') else 'Waiting for REAPER')
-            lines[2:2] = ['Select: Arrange / Mixer / FX (page shown in the bar)',
-                          'L3: actions; A: select / enter; B: cancel / back / stop',
+            lines[1] = 'Page: ' + (page if page in ('Arrange', 'Mixer', 'FX','Toolbar','Transport') else 'Waiting for REAPER')
+            lines[2:2] = ['Select: cycle controls (page shown in the bar)',
+                          'L3 tap: choose / enter area; hold: actions',
+                          'Areas — move spatially between Toolbar, Tracks, Timeline and Transport',
+                          'Areas — A/L3: enter; B: cancel',
+                          'Toolbar / Transport — L / D-pad: choose visible button; A: activate',
+                          'A: select / enter; B: cancel / back / stop',
                           'Y: Play / stop once; Start: save',
                           'Arrange — D-pad: items/tracks; R2 + D-pad: cursor',
                           'Arrange — A: select item at cursor; L: scroll; R: zoom',
@@ -678,7 +683,7 @@ class Mapper:
             log.warning('Gamepad notification failed: %s', error)
 
     def reaper_control(self, control, value=None):
-        if control in (*range(8), 12, 18, 19, 24, 25, 40):
+        if control in (*range(8), 12, 18, 19, 23, 24, 25, 40):
             # Gate immediately on controller navigation, before the display's
             # next context publication, so a held angle cannot hit a new knob.
             self.rotary_ready = False
@@ -1331,7 +1336,9 @@ class Mapper:
                 rates = self.config['zoom_rate'] if mode == 'zoom' else self.config['scroll_rate'] if mode == 'scroll' else self.config[
                     'selection_line_rate' if direction in ('up', 'down') else 'selection_rate']
                 try:
-                    mixer_navigation = reaper and index == 0 and (self.directory / 'reaper-page').read_text().strip() == 'Mixer'
+                    mixer_navigation = reaper and index == 0 and (
+                        (self.directory / 'reaper-page').read_text().strip() in ('Mixer','Toolbar','Transport')
+                        or (self.directory / 'reaper-area').exists() and (self.directory / 'reaper-area').read_text().strip())
                 except OSError:
                     mixer_navigation = False
                 if mixer_navigation:

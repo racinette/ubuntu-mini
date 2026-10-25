@@ -10,9 +10,25 @@ import fcntl
 import json
 import os
 from pathlib import Path
+import runpy
 import socket
 import struct
 import time
+
+class XImage(C.Structure):
+    _fields_ = [(name,kind) for name,kind in (
+        ('width',C.c_int),('height',C.c_int),('xoffset',C.c_int),('format',C.c_int),('data',C.c_void_p),
+        ('byte_order',C.c_int),('bitmap_unit',C.c_int),('bitmap_bit_order',C.c_int),('bitmap_pad',C.c_int),
+        ('depth',C.c_int),('bytes_per_line',C.c_int),('bits_per_pixel',C.c_int),
+        ('red_mask',C.c_ulong),('green_mask',C.c_ulong),('blue_mask',C.c_ulong))]
+
+class WindowAttributes(C.Structure):
+    _fields_ = [(name,kind) for name,kind in (
+        ('x',C.c_int),('y',C.c_int),('width',C.c_int),('height',C.c_int),('border_width',C.c_int),('depth',C.c_int),
+        ('visual',C.c_void_p),('root',C.c_ulong),('class_',C.c_int),('bit_gravity',C.c_int),('win_gravity',C.c_int),('backing_store',C.c_int),
+        ('backing_planes',C.c_ulong),('backing_pixel',C.c_ulong),('save_under',C.c_int),('colormap',C.c_ulong),('map_installed',C.c_int),
+        ('map_state',C.c_int),('all_event_masks',C.c_long),('your_event_mask',C.c_long),('do_not_propagate_mask',C.c_long),
+        ('override_redirect',C.c_int),('screen',C.c_void_p))]
 
 
 def focused_pid():
@@ -64,6 +80,8 @@ class Outline:
             'XMoveResizeWindow': ([ptr, xid, integer, integer, C.c_uint, C.c_uint], integer),
             'XMapRaised': ([ptr, xid], integer), 'XUnmapWindow': ([ptr, xid], integer),
             'XStoreName': ([ptr, xid, C.c_char_p], integer),
+            'XFetchName': ([ptr, xid, C.POINTER(ptr)], integer),
+            'XGetWindowAttributes': ([ptr, xid, C.POINTER(WindowAttributes)], integer),
             'XDestroyWindow': ([ptr, xid], integer), 'XFlush': ([ptr], integer),
             'XSync': ([ptr, integer], integer), 'XFree': ([ptr], integer),
             'XCloseDisplay': ([ptr], integer),
@@ -113,8 +131,12 @@ class Outline:
     def locate(self, rect):
         # TCP rectangles belong to the main project window. Pick the owning
         # top-level whose client rectangle contains the control, not an FX dialog.
-        for window in self.children(self.root):
-            if self.owner(window) != self.pid:
+        windows = self.children(self.root)
+        # Monitoring/FX windows may cover the project and share its PID. Native
+        # track/toolbar coordinates belong to the project, even underneath one.
+        windows.sort(key=lambda window: 'REAPER v' not in self.title(window))
+        for window in windows:
+            if self.owner(window) != self.pid or not self.viewable(window):
                 continue
             x, y = self.origin(window)
             # Query geometry without relying on theme titles or translated names.
@@ -124,16 +146,94 @@ class Outline:
                 if x <= rect[0] and y <= rect[1] and rect[0] + rect[2] <= x + width.value and rect[1] + rect[3] <= y + height.value:
                     return window
 
+    def title(self, window):
+        value = C.c_void_p()
+        self.x.XFetchName(self.display,window,C.byref(value))
+        title = C.string_at(value).decode(errors='replace') if value else ''
+        if value:
+            self.x.XFree(value)
+        return title
+
+    def snapshot(self, rect):
+        parent = self.locate(rect)
+        if parent is None:
+            raise OSError('Panel is not visible')
+        px,py = self.origin(parent)
+        sx,sy,w,h = rect
+        self.x.XGetImage.argtypes = [C.c_void_p,C.c_ulong,C.c_int,C.c_int,C.c_uint,C.c_uint,C.c_ulong,C.c_int]
+        self.x.XGetImage.restype = C.POINTER(XImage)
+        self.x.XDestroyImage.argtypes = [C.POINTER(XImage)]
+        image = self.x.XGetImage(self.display,parent,sx-px,sy-py,w,h,0xffffffff,2)
+        if not image:
+            raise OSError('Cannot read panel')
+        try:
+            data = image.contents
+            if data.bits_per_pixel != 32 or data.byte_order != 0 or data.red_mask != 0xff0000:
+                raise ValueError('Unsupported X image format')
+            raw = C.string_at(data.data,data.bytes_per_line*h)
+            raw = b''.join(raw[y*data.bytes_per_line:y*data.bytes_per_line+w*4] for y in range(h))
+            rgba = bytearray(w*h*4)
+            rgba[0::4],rgba[1::4],rgba[2::4] = raw[2::4],raw[1::4],raw[0::4]
+            rgba[3::4] = b'\xff'*(w*h)
+            return w,h,bytes(rgba)
+        finally:
+            self.x.XDestroyImage(image)
+
+    def viewable(self, window):
+        attributes = WindowAttributes()
+        return self.x.XGetWindowAttributes(self.display,window,C.byref(attributes)) and attributes.map_state == 2
+
+    def geometry(self, window):
+        root, gx, gy, width, height, border, depth = C.c_ulong(), C.c_int(), C.c_int(), C.c_uint(), C.c_uint(), C.c_uint(), C.c_uint()
+        self.x.XGetGeometry.argtypes = [C.c_void_p, C.c_ulong, C.POINTER(C.c_ulong), C.POINTER(C.c_int), C.POINTER(C.c_int), *([C.POINTER(C.c_uint)] * 4)]
+        if not self.x.XGetGeometry(self.display, window, C.byref(root), C.byref(gx), C.byref(gy), C.byref(width), C.byref(height), C.byref(border), C.byref(depth)):
+            raise OSError('Window disappeared')
+        return (*self.origin(window), width.value, height.value)
+
+    def area_rectangle(self, rect, name, track):
+        parent = self.locate(rect)
+        if parent is None:
+            raise OSError('Area anchor is not visible')
+        if name == 'FX':
+            prefix = 'FX: Track ' + track
+            for window in self.children(self.root):
+                if self.owner(window) != self.pid or not self.viewable(window):
+                    continue
+                value = C.c_void_p()
+                self.x.XFetchName(self.display, window, C.byref(value))
+                title = C.string_at(value).decode(errors='replace') if value else ''
+                if value:
+                    self.x.XFree(value)
+                if title.startswith(prefix) and not title[len(prefix):len(prefix)+1].isdigit():
+                    parent, rect = window, self.geometry(window)
+                    break
+        bounds = self.geometry(parent)
+        x,y,w,h = rect
+        if name == 'Timeline':
+            x, w = x + w, bounds[0] + bounds[2] - (x + w)
+        # Draw inside the native window, including when the whole FX chain is
+        # selected. Child borders outside their parent's bounds would be clipped.
+        right, bottom = min(x+w,bounds[0]+bounds[2]-3), min(y+h,bounds[1]+bounds[3]-3)
+        x,y = max(x,bounds[0]+3), max(y,bounds[1]+3)
+        if right <= x or bottom <= y:
+            raise OSError('Area is hidden')
+        return (x,y,right-x,bottom-y), parent
+
     def hide(self):
         for window in self.windows:
             self.x.XUnmapWindow(self.display, window)
         self.x.XFlush(self.display)
 
-    def show(self, rect):
-        if self.parent is None:
-            self.parent = self.locate(rect)
-            if self.parent is None:
-                return False
+    def show(self, rect, parent=None):
+        self.error = False
+        parent = parent or self.locate(rect)
+        if parent is None:
+            return False
+        if parent != self.parent:
+            for window in self.windows:
+                self.x.XDestroyWindow(self.display, window)
+            self.windows = []
+            self.parent = parent
             for _ in range(4):
                 window = self.x.XCreateSimpleWindow(self.display, self.parent, 0, 0, 1, 1, 0, 0, 0x55DDFF)
                 # ShapeInput=2, ShapeSet=0; an empty input region passes every
@@ -167,22 +267,32 @@ def main():
         except BlockingIOError:
             return
         outline = Outline(args.pid)
+        ui = runpy.run_path(str(Path(__file__).with_name('reaper-ui.py')))
+        generation = None
         previous = None
         try:
             while Path(f'/proc/{args.pid}').exists():
                 try:
                     if time.time() - args.state.stat().st_mtime > 2:
-                        break
+                        # Native file dialogs pause deferred Lua scripts. Keep
+                        # the drawing helper alive, with its outline hidden.
+                        outline.hide()
+                        time.sleep(.1)
+                        continue
+                    generation = ui['update'](outline,Path(str(args.state)+'.request'),Path(str(args.state)+'.buttons'),generation)
                     values = args.state.read_text().split()
-                    rect = tuple(map(int, values)) if len(values) == 4 else None
+                    rect = tuple(map(int, values[:4])) if len(values) in (4,7) else None
+                    parent = None
                     if rect and (min(rect[2:]) <= 0 or max(rect[2:]) > 32768):
                         rect = None
                     if rect and focused_pid() != args.pid:
                         rect = None
+                    if rect and len(values) == 7 and values[4] == 'area':
+                        rect, parent = outline.area_rectangle(rect, values[5], values[6])
                     if rect:
                         # Even unchanged screen coordinates need translating
                         # again when the parent window moves.
-                        if not outline.show(rect):
+                        if not outline.show(rect, parent):
                             break
                     elif previous:
                         outline.hide()

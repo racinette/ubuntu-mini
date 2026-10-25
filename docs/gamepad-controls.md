@@ -82,8 +82,8 @@ the focused application's PID; identical JACK client names cannot redirect input
 It generates no mouse movement, clicks or wheel events. The physical keyboard
 keeps REAPER's ordinary shortcuts.
 
-Select cycles **Arrange → Mixer → FX → Arrange**. The bottom bar shows
-`RP:Arrange`, `RP:Mixer` or `RP:FX`; REAPER's docked control display shows the
+Select cycles **Arrange → Mixer → FX → Toolbar → Transport → Arrange**. The bottom bar shows
+the current `RP:` page; REAPER's docked control display shows the
 selected track, current controls and relevant values. Start+Select still changes
 the overall Desktop / REAPER / Gamepad profile.
 
@@ -99,9 +99,32 @@ the built-in screen.
 | Right stick | Timeline zoom / track height | Angle sets outlined knob; directions set switches | Angle sets selected parameter |
 | X | Split selected items at cursor | Mute/unmute track | Bypass/enable selected FX |
 | R3 | Toggle loop | Solo/unsolo track | Show/hide FX window |
-| L3 | Open/close the page's action menu | Same | Same |
+| L3 | Tap: choose/enter area; hold: actions | Same | Same |
 | A | Select item at cursor on selected track | Toggle outlined switch / enter FX | Show/hide selected FX |
 | B | Stop transport | Return to Arrange | Return to Arrange |
+
+Tap L3 to choose an area. The controller panel shows **Choose area** and the
+outline expands to a visible native panel: **Toolbar, Tracks, Timeline or
+Transport**. The left stick and D-pad move between their actual screen positions.
+A or L3 enters the chosen area; B cancels without changing the previous page
+or selection. The right stick, transport and editing actions are inactive while
+choosing. FX remains a button within the track controls, rather than a separate
+area. Hold L3 for the page's action menu; a short L3 press closes that menu.
+
+Inside Toolbar or Transport, the left stick and D-pad select a visible button,
+the cyan outline identifies it, and A invokes its native REAPER action. B returns
+to area selection. Supported buttons include New/Open/Save, project settings,
+Undo/Redo, metronome, grid, snapping, locking, grouping, ripple and crossfade;
+transport includes start/end, Stop, Play, Pause, Record and Repeat. Only buttons
+actually found on screen are offered. File dialogs retain ordinary keyboard
+navigation, Enter and Escape; use the physical keyboard to enter paths.
+
+The pinned js_ReaScriptAPI extension supplies native panel bounds. A local helper
+matches those panels against the active theme's button images, follows resizing
+and skips missing or ambiguous matches. This was tested with the installed
+Reapertips theme. Customized main toolbars are omitted rather than assuming their
+actions. Arbitrary plugin interfaces and every possible theme are outside this
+layout's coverage. No pointer movement or simulated mouse clicks are generated.
 
 Hold A or B first, add a D-pad direction, then release both. These combos invoke
 REAPER actions directly, including while a stock FX window has focus:
@@ -146,8 +169,10 @@ The outline is a click-through X11 child of the REAPER project window. It uses
 REAPER's reported control positions, follows resizing/scrolling and hides when
 another application has focus, the action menu opens or the page/profile changes.
 Its drawing process belongs to the controller script, exits when that script or
-REAPER stops and requires no session service. This prototype covers native track
-controls; sends and arbitrary plugin widgets do not have outline navigation.
+REAPER stops and requires no session service. Native modal dialogs temporarily
+hide the outline; closing a dialog resumes it. Track controls and the supported
+toolbar/transport buttons have outline navigation; sends and arbitrary plugin
+widgets do not.
 
 In the action menu, use D-pad up/down, then A to run or B/L3 to cancel. Arrange
 includes recording, insert track, copy/paste/cut, undo/redo, split/trim, markers,

@@ -30,7 +30,14 @@ function ui.scan(now,path)
       end
     end
     local theme=reaper.GetLastColorThemeFile()
-    local parts={theme}
+    local _,flags=reaper.get_config_var_string('transflags')
+    local _,layout=reaper.ThemeLayout_GetLayout('trans',-1)
+    local parts={theme,flags or '',layout or '',tostring(reaper.GetToggleCommandStateEx(0,40680)),tostring(reaper.GetToggleCommandStateEx(0,40531))}
+    for index=0,255 do
+      local cfg,desc,value=reaper.ThemeLayout_GetParameter(index)
+      if not cfg or cfg=='' then break end
+      if desc and desc:lower():find('transport',1,true) then parts[#parts+1]=cfg..':'..tostring(value) end
+    end
     for _,name in ipairs({'Toolbar','Tracks','Timeline','Transport'}) do
       parts[#parts+1]=name..':'..table.concat(panels[name] or {},',')
     end

@@ -45,7 +45,7 @@ with tempfile.TemporaryDirectory(prefix='realearn-install-check-') as temporary:
         state = json.loads((resource / 'Data/device-gamepad.json').read_text())
         assert (resource / 'Scripts/Device/reaper-control-outline.py').read_bytes() == (PROJECT / 'setup/development/reaper-control-outline.py').read_bytes()
         assert (resource / 'Scripts/Device/reaper-control-navigation.lua').read_bytes() == (PROJECT / 'setup/development/reaper-control-navigation.lua').read_bytes()
-        for name in ('reaper-ui.lua', 'reaper-ui.py'):
+        for name in ('reaper-ui.lua', 'reaper-ui.py','reaper-transport.lua'):
             assert (resource / 'Scripts/Device' / name).read_bytes() == (PROJECT / 'setup/development' / name).read_bytes()
         assert state['mainUnit']['controlDeviceId'] == '1'
         chain = resource / 'reaper-hwoutfx.ini'
@@ -120,6 +120,8 @@ assert hold['source']['number']==26 and hold['mode']=={} and hold['target']['par
 cancel=next(m for m in mappings if m['name']=='Cancel held area chooser')
 assert cancel['source']['number']==31 and cancel['mode']['minTargetValue']==.5
 assert state['mainUnit']['parameters']['12']['valueLabels']==['Released','Cancelled','Held']
+assert state['mainUnit']['parameters']['14']['valueCount']==65536
+assert not any(int(m['target'].get('commandName','0'))>=60000 for m in mappings if m['target']['type']==0 and m['target'].get('commandName','0').isdecimal())
 assert {(m['source']['number'],m['target'].get('commandName')) for m in mappings
         if m['name']=='Previous / next track'}=={(48,'40286'),(49,'40285')}
 assert {m['source']['number'] for m in mappings if m['name']=='Navigate held area chooser'}=={27,28,29,30}

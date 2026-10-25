@@ -10,6 +10,46 @@ Firefox-first browser preferences were applied on the WIN Mini: `xdg-settings ge
 
 ## Recent device checks
 
+On 2026-10-25, standard REAPER dialogs gained a shared keyboard-control layer,
+selected by native dialog/transient metadata and the real REAPER executable.
+The left stick and bumpers traverse Tab order; A/B send Enter/Escape, X/Y provide
+held Backspace/Space and the D-pad remains arrows. Shift/Ctrl remain available.
+Tab is declared on the virtual keyboard. Entering/leaving dialogs gates held
+controls and suppresses DAW MIDI/adjustment commands. Host fixtures passed unknown
+dialog titles, foreign-process rejection, navigation, editing keys and lifecycle
+cleanup. A separate muted REAPER instance on Xvfb passed actual time-signature
+field traversal using stick/bumpers, arrows/Backspace, accepting two fields, tempo
+cancel and Space/accept with keyboard events delivered only on that isolated
+display. No DAW commands or mouse events leaked from the dialog layer. Live
+installation completed without restarting REAPER; the mapper returned ready,
+matches the repository and exposes Tab on its virtual keyboard. Physical comfort
+remains pending.
+[Private workflow report](../.local/device-checks/realearn/dialog-controls-result.json),
+[private installation report](../.local/device-checks/realearn/dialog-controls-install-result.json).
+
+On 2026-10-25, investigation of unreachable REAPER controls found an incomplete
+button registry: marquee selection, razor editing and moving envelope points
+with items were absent, while transport values were not represented. The three
+toolbar IDs were verified against native button clicks and REAPER toggle states
+on the isolated display. The registry now includes them, and painted transport
+fields gain native value handling for automation, tempo, signature, timebase and
+playback rate, plus Tap tempo. Reapertips field bounds use visible exact image
+anchors and validated WALTER cells; unknown layouts are omitted. Visibility
+changes invalidate discovery. Host geometry covers 100/150/200% scales and hidden
+controls; Lua fixtures cover values, choices, editor cancellation/validation and
+cursor-local signature updates. The muted native project passed all 16 toolbar
+targets, automation choices and stick changes, tempo steps/fine steps/editor and
+cancel, signature changes/editor and preservation of earlier markers, timebase
+choices, playback-rate angles/editor and reapplying an identical angle after an
+external edit. Target changes require neutral. Visibility toggles remove and
+restore fields. Native 740/960-pixel layouts retained all five value fields, and
+all eight automation modes were read back successfully. The mapper emitted no
+mouse events. Live installation completed; the mapper returned active and ready,
+and its profile and all six REAPER scripts match the repository. Physical
+navigation comfort remains pending.
+[Private workflow report](../.local/device-checks/realearn/transport-fields-result.json),
+[private installation report](../.local/device-checks/realearn/transport-fields-install-result.json).
+
 On 2026-10-25, the REAPER profile gained momentary L2 area selection: hold to
 choose spatially, release to enter, or B to cancel. L3 toggles the action menu
 with a single press, and L1/R1 select tracks across all five pages while REAPER

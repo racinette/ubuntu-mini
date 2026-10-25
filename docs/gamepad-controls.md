@@ -122,9 +122,23 @@ retain Linux workspace switching.
 Inside Toolbar or Transport, the left stick and D-pad select a visible button,
 the cyan outline identifies it, and A invokes its native REAPER action. B returns
 to area selection. Supported buttons include New/Open/Save, project settings,
-Undo/Redo, metronome, grid, snapping, locking, grouping, ripple and crossfade;
+Undo/Redo, metronome, grid, snapping, locking, grouping, ripple, crossfade,
+marquee selection, razor editing and moving envelope points with items;
 transport includes start/end, Stop, Play, Pause, Record and Repeat. Only buttons
-actually found on screen are offered. File dialogs retain ordinary keyboard
+actually found on screen are offered.
+
+Transport also includes **Global automation override, Tap tempo, Tempo, Time
+signature, Project timebase and Playback rate** when visible in the installed
+Reapertips layout. The left stick selects the actual field and its cyan outline.
+The controller panel shows its current value. On Tempo, right-stick directions
+adjust 1 BPM per step; R2 makes this 0.1 BPM. On Time signature, up/down changes
+the numerator and left/right changes the denominator, at the edit cursor.
+Automation and timebase step through their choices. On Playback rate, the right
+stick's angle sets 0.25× at lower-left, 1× at the top and 4× at lower-right;
+centering retains the value. A opens choices for automation/timebase and a native
+value editor for tempo, time signature or rate. B cancels choices/dialogs. Return
+the right stick to center after selecting another field. Hidden rate/signature
+fields are omitted and restored when shown again. File dialogs retain ordinary keyboard
 navigation, Enter and Escape; use the physical keyboard to enter paths.
 
 The pinned js_ReaScriptAPI extension supplies native panel bounds. A local helper
@@ -132,7 +146,11 @@ matches those panels against the active theme's button images, follows resizing
 and skips missing or ambiguous matches. This was tested with the installed
 Reapertips theme. Customized main toolbars are omitted rather than assuming their
 actions. Arbitrary plugin interfaces and every possible theme are outside this
-layout's coverage. No pointer movement or simulated mouse clicks are generated.
+layout's coverage. Painted transport-field geometry uses the installed Reapertips
+WALTER cell layout, validated against visible automation/timebase image anchors;
+playback-rate field discovery currently covers its single-row layout. Other
+themes retain their exactly matched buttons and anchors. No pointer movement or
+simulated mouse clicks are generated.
 
 Hold A or B first, add a D-pad direction, then release both. These combos invoke
 REAPER actions directly, including while a stock FX window has focus:
@@ -199,8 +217,17 @@ the full legend. Select+face layout toggles remain.
 X is a discrete context action in REAPER; it remains holdable Backspace on Desktop.
 
 MIDI controls require the genuine REAPER project, stock FX-chain/plugin window or the
-controller display to be focused. Native dialogs retain ordinary D-pad arrows,
-Enter and Escape; sticks are suppressed. Input to another application is never
+controller display to be focused. Standard REAPER dialogs switch to a shared
+keyboard layer, detected from their dialog/transient-window role and owning
+process rather than a list of titles. Left-stick up/left selects the previous
+field (Shift+Tab), down/right the next (Tab); L1/R1 do the same. D-pad sends ordinary
+arrows, A accepts (Enter), B cancels (Escape), X is held Backspace and Y held Space.
+L2/R2 provide Shift/Ctrl. Center the sticks and release buttons on entry/exit;
+held controls cannot leak into a new field or the project. DAW editing actions
+and right-stick adjustment are suppressed while a dialog is focused. Use the
+physical keyboard for text/numbers, or adjust values with the right stick before
+opening their editor. Custom plugin surfaces can have their own navigation rules.
+Input to another application is never
 routed to a background DAW. Disconnecting, changing profiles, locking or closing
 the lid clears keyboard state and cancels held area selection. Neutral controls are
 required before mapping resumes.

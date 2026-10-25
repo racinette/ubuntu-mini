@@ -7,6 +7,7 @@ import collections
 import configparser
 import ctypes as C
 import json
+import re
 from pathlib import Path
 import time
 import zipfile
@@ -23,14 +24,74 @@ BUTTONS = {
         (40145,'Grid',('toolbar_grid_on','toolbar_grid_off')),
         (1157,'Snapping',('toolbar_snap_on','toolbar_snap_off')),
         (1135,'Locking',('toolbar_lock_on','toolbar_lock_off')),
+        (42616,'Marquee selection',('toolbar_marquee_cursor_selection','toolbar_marquee_cursor_selection_on','toolbar_marquee_cursor_selection_off')),
+        (42618,'Razor editing',('toolbar_razor_on','toolbar_razor_off')),
+        (40070,'Move envelope points with items',('toolbar_envitem_on','toolbar_envitem_off','toolbar_v3_envitem')),
     ),
     'Transport': (
         (40042,'Go to start',('transport_home',)), (40043,'Go to end',('transport_end',)),
         (1016,'Stop',('transport_stop',)), (1007,'Play',('transport_play','transport_play_on','transport_play_sync','transport_play_sync_on')),
         (1008,'Pause',('transport_pause','transport_pause_on')), (1013,'Record',('transport_record','transport_record_on')),
         (1068,'Repeat',('transport_repeat_off','transport_repeat_on')),
+        (1134,'Tap tempo',()),
     ),
 }
+
+
+# Field identifiers occupy a reserved range; they are never dispatched as native
+# REAPER command IDs. These anchors remain exact rendered theme images.
+FIELD_ANCHORS = {
+    60001: ('Global automation override',tuple('global_'+name for name in
+            ('off','trim','read','touch','latch','write','preview','bypass'))),
+    60005: ('Project timebase',('transport_timebase_beat','transport_timebase_time')),
+}
+
+def transport_fields(request, anchors):
+    """Resolve the installed Reapertips value fields from two visible anchors.
+
+    Reapertips paints these fields inside one owner-drawn window, without native
+    child HWNDs. Validate its WALTER cell sizes before using relative geometry.
+    Other themes still retain exact matched buttons/anchors.
+    """
+    automation=anchors.get(60001); timebase=anchors.get(60005)
+    if not automation or not timebase:
+        return []
+    with zipfile.ZipFile(request['theme']) as archive:
+        configs=[n for n in archive.namelist() if n.endswith('/rtconfig.txt') and n.count('/')==1]
+        if len(configs)!=1 or not configs[0].startswith('ReaperTips_'):
+            return []
+        walter=archive.read(configs[0]).decode(errors='replace')
+    cells={name:tuple(map(int,(px,py,w,h))) for name,px,py,w,h in
+           re.findall(r'^\s*size\s+(automode|bpm_tap|bpm_edit|timesig|timebase)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)',walter,re.M)}
+    if cells!={'automode':(0,6,60,26),'bpm_tap':(0,7,33,24),'bpm_edit':(0,8,32,22),
+               'timesig':(0,8,33,22),'timebase':(0,8,33,22)}:
+        return []
+    ax,ay,aw,ah=automation; tx,ty,tw,th=timebase
+    scale=ah/26
+    if scale not in (1,1.5,2) or abs(aw-60*scale)>1 or abs(tw-33*scale)>1 or abs(th-22*scale)>1:
+        return []
+    if abs(ty-(ay+2*scale))>2*scale:
+        return []
+    tap_x=ax+aw+12*scale; tempo_x=tap_x+33*scale
+    gap=tx-(tempo_x+32*scale)
+    if abs(gap)>scale and abs(gap-33*scale)>scale:
+        return []
+    result=[(1134,'Tap tempo',(tap_x,ay+scale,33*scale,24*scale)),
+            (60002,'Tempo',(tempo_x,ay+2*scale,32*scale,22*scale))]
+    if abs(gap-33*scale)<=scale:
+        result.append((60003,'Time signature',(tempo_x+32*scale,ay+2*scale,33*scale,22*scale)))
+    # In the single-row layout, this is the last cell before the panel margin.
+    panel=request['panels']['Transport']; rate_x=tx+tw+12*scale
+    rate_width=panel[0]+panel[2]-6*scale-rate_x
+    if abs(panel[3]-36*scale)<=scale and 59*scale<=rate_width<=161*scale:
+        rect=(rate_x-4*scale,ay-scale,rate_width+4*scale,28*scale) if rate_width<80*scale else (rate_x,ay+2*scale,rate_width,22*scale)
+        result.append((60004,'Playback rate',rect))
+    output=[]
+    for command,label,rect in result:
+        x,y,w,h=map(round,rect)
+        if panel[0]<=x and panel[1]<=y and x+w<=panel[0]+panel[2] and y+h<=panel[1]+panel[3]:
+            output.append(('Transport',command,label,x,y,w,h))
+    return output
 
 
 class PNGImage(C.Structure):
@@ -97,6 +158,7 @@ def detect(outline, request):
     if stamp not in _templates:
         with zipfile.ZipFile(theme) as archive:
             wanted = {icon for entries in BUTTONS.values() for _,_,icons in entries for icon in icons}
+            wanted.update(icon for _,icons in FIELD_ANCHORS.values() for icon in icons)
             templates = {}
             for name in archive.namelist():
                 icon = Path(name).stem
@@ -123,14 +185,21 @@ def detect(outline, request):
         if region not in BUTTONS or (region == 'Toolbar' and customized):
             continue
         image = outline.snapshot(tuple(rect))
-        for command,label,icons in BUTTONS[region]:
+        entries=list(BUTTONS[region])
+        if region=='Transport':
+            entries += [(command,label,icons) for command,(label,icons) in FIELD_ANCHORS.items()]
+        anchors={}
+        for command,label,icons in entries:
             matches = set()
             for icon in icons:
                 for template in templates.get(icon,[]):
                     matches.update(find_image(image,template))
             if len(matches) == 1:
                 x,y,w,h = matches.pop()
-                buttons.append((region,command,label,x+rect[0],y+rect[1],w,h))
+                absolute=(x+rect[0],y+rect[1],w,h)
+                buttons.append((region,command,label,*absolute))
+                if command in FIELD_ANCHORS: anchors[command]=absolute
+        if region=='Transport': buttons.extend(transport_fields(request,anchors))
     counts = collections.Counter((row[0],*row[3:]) for row in buttons)
     return [row for row in buttons if counts[(row[0],*row[3:])] == 1]
 

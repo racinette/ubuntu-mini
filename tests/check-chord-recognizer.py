@@ -57,6 +57,7 @@ def main():
             return PROJECT / 'setup/desktop/gamepad.json' if str(value) == '/etc/minion/gamepad.json' else Path(value)
         with patch.object(mapper, 'Path', side_effect=path):
             config = mapper.configuration(directory / 'no-profile.json', codes)
+        assert codes.KEY_TAB in mapper.output_capabilities(config,codes)[codes.EV_KEY]
         keyboard = Keyboard()
         state = mapper.Mapper(config, keyboard, codes, directory)
         state.ranges = {axis: (-1, 1) for axis in config['dpad']}
@@ -942,6 +943,64 @@ def main():
                 midi.assert_called_once_with(control)
             assert not keyboard.events
 
+        # Standard dialog roles/ownership, rather than a title list, select
+        # keyboard navigation. Foreign executables cannot spoof a REAPER dialog.
+        for title,props,executable,expected_dialog in (
+                ('Time signature at edit cursor',{'window_type':'dialog','transient_for':123},'reaper',True),
+                ('Unseen native dialog',{'window_type':'dialog'},'reaper',True),
+                ('Another native dialog',{'transient_for':123},'reaper',True),
+                ('Time signature at edit cursor',{'window_type':'dialog'},'firefox',False),
+                ('FX: Track 1',{'window_type':'dialog'},'reaper',False)):
+            reaper_reset()
+            with patch.object(state,'focused_window',return_value=dict(project,name=title,window_properties=dict({'class':'REAPER'},**props))), \
+                    patch.object(mapper.os,'readlink',return_value='/opt/'+executable):
+                assert state.focused_reaper_dialog()==expected_dialog
+                if expected_dialog:assert not state.focused_reaper()
+        # Dialog fields follow Tab/Shift+Tab; no DAW, workspace, wheel or stick
+        # adjustment can leak into a modal input form.
+        reaper_reset()
+        with patch.object(state,'focused_reaper_dialog',return_value=True), \
+                patch.object(state,'focused_reaper',return_value=False), \
+                patch.object(state,'reaper_control') as midi, patch.object(state,'workspace') as workspace:
+            frame();assert state.dialog_active and state.dialog_ready
+            for face,key in (('A',codes.KEY_ENTER),('B',codes.KEY_ESC)):
+                keyboard.events.clear();frame({face});frame()
+                assert downs()==[key]
+            keyboard.events.clear();frame({'X'});frame({'X'});frame()
+            assert downs()==[codes.KEY_BACKSPACE]
+            keyboard.events.clear();frame({'Y'});frame({'Y'});frame()
+            assert downs()==[codes.KEY_SPACE]
+            keyboard.events.clear();frame(shift=True,ctrl=True)
+            assert state.keys=={codes.KEY_LEFTSHIFT,codes.KEY_LEFTCTRL} and not state.reaper_area_held
+            frame();keyboard.events.clear()
+            frame(buttons=(310,));frame();frame(buttons=(311,));frame()
+            assert downs().count(codes.KEY_TAB)==2
+            assert codes.KEY_LEFTSHIFT in downs() and not state.keys
+            keyboard.events.clear();frame({'UP'});frame()
+            assert downs()==[codes.KEY_UP]
+            keyboard.events.clear()
+            state.raw_axes[config['left_stick'][1]]=32767
+            for now in (0,.1,.349,.35):state.tick(now,True)
+            assert downs()==[codes.KEY_TAB,codes.KEY_TAB]
+            state.raw_axes[config['left_stick'][1]]=0;state.tick(.4,True)
+            state.raw_axes[config['left_stick'][1]]=-32768;state.tick(.41,True)
+            assert downs()[-2:]==[codes.KEY_LEFTSHIFT,codes.KEY_TAB] and not state.keys
+            state.raw_axes[config['right_stick'][0]]=32767;state.tick(.42,True)
+            assert not midi.called and not workspace.called
+            assert not any(kind==codes.EV_REL for kind,_,_ in keyboard.events)
+            state.raw_axes[config['left_stick'][1]]=state.raw_axes[config['right_stick'][0]]=0
+            # Closing a dialog releases held editing keys and waits for neutral.
+            frame({'Y'})
+            with patch.object(state,'focused_reaper_dialog',return_value=False):
+                frame({'Y'});assert not state.keys and not state.ready and not state.dialog_active
+                frame();state.tick(1,True);assert state.ready
+                assert not midi.called
+        # Controls already held when a dialog opens are consumed until neutral.
+        reaper_reset()
+        with patch.object(state,'focused_reaper_dialog',return_value=True), patch.object(state,'reaper_control') as midi:
+            frame({'A'});frame();assert not keyboard.events and not midi.called
+            frame({'A'});frame();assert downs()==[codes.KEY_ENTER]
+
         reaper_reset()
         with patch.object(state,'reaper_control') as midi:
             frame(buttons=(317,),at=0)
@@ -1100,6 +1159,24 @@ def main():
             assert midi.call_count==count,'Focus return failed neutral gate'
             state.reset();assert not state.rotary_ready and state.rotary_value is None
         assert not keyboard.events
+        # Painted transport values repeat at selection speed and require
+        # neutral before a newly selected field can be adjusted.
+        rotary_path.write_text('')
+        transport_path=directory/'reaper-transport-field'
+        transport_path.write_text('60002')
+        reaper_reset()
+        with patch.object(state,'focused_reaper',return_value=True), patch.object(state,'reaper_control') as midi:
+            state.tick(0,True)
+            state.raw_axes[config['right_stick'][0]]=32767
+            for now in (.01,.1,.34):state.tick(now,True)
+            assert midi.call_args_list==[call(9)]
+            state.tick(.36,True);assert midi.call_args_list==[call(9),call(9)]
+            transport_path.write_text('60003');state.tick(.37,True);state.tick(1,True)
+            assert midi.call_count==2
+            state.raw_axes[config['right_stick'][0]]=0;state.tick(1.01,True)
+            state.raw_axes[config['right_stick'][0]]=32767;state.tick(1.02,True)
+            assert midi.call_count==3 and midi.call_args==call(9)
+        transport_path.unlink()
         rotary_path.unlink()
         reaper_reset()
         connection=Mock()

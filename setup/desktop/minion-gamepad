@@ -508,6 +508,10 @@ class Mapper:
         self.reaper_area_held = self.reaper_area_cancelled = False
         self.rotary_target, self.rotary_ready = '', False
         self.rotary_value, self.rotary_time = None, float('-inf')
+        self.transport_target,self.transport_ready='',False
+        self.dialog_active,self.dialog_ready=False,False
+        self.dialog_buttons=set()
+        self.dialog_direction,self.dialog_next=None,0
 
     @property
     def config(self):
@@ -534,6 +538,10 @@ class Mapper:
         self.reaper_area_held = self.reaper_area_cancelled = False
         self.rotary_target, self.rotary_ready = '', False
         self.rotary_value, self.rotary_time = None, float('-inf')
+        self.transport_target,self.transport_ready='',False
+        self.dialog_active,self.dialog_ready=False,False
+        self.dialog_buttons=set()
+        self.dialog_direction,self.dialog_next=None,0
         if self.reaper_midi:
             self.reaper_midi.close()
             self.reaper_midi = None
@@ -646,7 +654,10 @@ class Mapper:
                           'Hold L2: choose area; release L2: enter; L3: actions',
                           'Areas — move spatially between Toolbar, Tracks, Timeline and Transport',
                           'Areas — B: cancel; right stick and editing controls: inactive',
-                          'Toolbar / Transport — L / D-pad: choose visible button; A: activate',
+                          'Toolbar / Transport — L / D-pad: select; A: activate / edit',
+                          'Transport values — R: adjust; rate: angle; R2 + tempo: 0.1 BPM',
+                          'Dialogs — L / L1/R1: previous/next field; D-pad: arrows',
+                          'Dialogs — A: Enter; B: Escape; X: Backspace; Y: Space',
                           'A: select / enter; B: cancel / back / stop',
                           'Y: Play / stop once; Start: save',
                           'Arrange — D-pad: items/tracks; R2 + D-pad: cursor',
@@ -711,6 +722,8 @@ class Mapper:
                     self.reaper_midi.pulse(node['pid'], control)
                 else:
                     self.reaper_midi.pulse(node['pid'], control, value)
+                    if control==20 and self.transport_target=='60004':
+                        self.reaper_midi.pulse(node['pid'],50)
         except (ImportError, OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
             if time.monotonic() - self.reaper_error_at > 5:
                 self.reaper_error_at = time.monotonic()
@@ -749,29 +762,48 @@ class Mapper:
         } for name in names)
         return 'reaper' if executable == 'reaper' and 'reaper' in names else 'foot' if foot else 'terminal' if terminal else 'gui'
 
-    def focused_reaper(self):
-        """Only the real REAPER project window accepts DAW commands."""
+    def reaper_window_kind(self):
+        """Separate native modal dialogs from project/FX control surfaces."""
         if self.legend_open() or any(process and process.poll() is None
                                     for process in (self.launcher, self.picker)):
-            return False
+            return None
         try:
             node = self.focused_window()
+            if Path(os.readlink(f'/proc/{node["pid"]}/exe').removesuffix(' (deleted)')).name != 'reaper':
+                return None
             properties = node.get('window_properties') or {}
             names = {(node.get('app_id') or '').lower(), (properties.get('class') or '').lower()}
             title = node.get('name') or ''
-            if title == 'FX: Monitoring' or 'Helgobox' in title:
-                return False
-            return ('reaper' in names and ('REAPER v' in title or title.startswith(('FX:', 'VST:', 'VSTi:', 'VST3:', 'JS:'))
-                    or title == 'REAPER gamepad controls') and
-                    Path(os.readlink(f'/proc/{node["pid"]}/exe').removesuffix(' (deleted)')).name == 'reaper')
+            fx = title.startswith(('FX:', 'VST:', 'VSTi:', 'VST3:', 'JS:'))
+            settings = title == 'FX: Monitoring' or 'Helgobox' in title
+            if (properties.get('window_type') == 'dialog' or properties.get('transient_for')) and (not fx or settings):
+                return 'dialog'
+            if 'reaper' not in names or settings:
+                return None
+            if title == 'REAPER gamepad controls':
+                return 'controls'
+            if fx:
+                return 'fx'
+            if 'REAPER v' in title and not title.startswith('About REAPER'):
+                return 'project'
         except (OSError, ValueError, EOFError, KeyError):
-            return False
+            pass
+        return None
+
+    def focused_reaper(self):
+        return self.reaper_window_kind() in ('project','controls','fx')
+
+    def focused_reaper_dialog(self):
+        return self.reaper_window_kind() == 'dialog'
 
     def shortcut(self, key, modifiers):
         if (self.mode == 'reaper' and key in (self.e.KEY_ENTER, self.e.KEY_ESC)
                 and self.focused_reaper()):
             self.reaper_control(18 if key == self.e.KEY_ENTER else 19)
             return
+        self.keyboard_shortcut(key,modifiers)
+
+    def keyboard_shortcut(self,key,modifiers):
         held = set(self.keys)
         nonmodifiers = held - {self.e.KEY_LEFTSHIFT, self.e.KEY_LEFTCTRL, self.e.KEY_LEFTMETA, self.e.KEY_LEFTALT}
         base = nonmodifiers | set(modifiers)
@@ -1129,6 +1161,73 @@ class Mapper:
                 self.clear_dpad_navigation()
         return True
 
+    def reaper_dialog_frame(self,pressed,released,now):
+        """Use the native keyboard focus order in standard REAPER dialogs."""
+        dialog=self.mode=='reaper' and self.focused_reaper_dialog()
+        if dialog!=self.dialog_active:
+            self.dialog_active,self.dialog_ready=dialog,self.neutral()
+            self.dialog_buttons.clear()
+            self.dialog_direction,self.dialog_next=None,0
+            self.pending_buttons.clear()
+            self.button_since.clear()
+            self.text_gesture.clear()
+            self.select_gesture.clear()
+            self.clear_dpad_navigation()
+            self.write_keys(set())
+            self.rotary_ready=self.transport_ready=False
+            self.sticks,self.next_repeat=[None,None],[0,0]
+            if self.reaper_area_held:
+                self.reaper_control(31,cleanup=True)
+                self.reaper_area_held=False
+            if not dialog:
+                self.ready=False
+                self.triggers=[False,False]
+                return True
+        if not dialog:
+            return False
+        if not self.dialog_ready:
+            self.write_keys(set())
+            self.dialog_ready=self.neutral()
+            return True
+        modifiers=set()
+        if self.triggers[0]:modifiers.add(self.e.KEY_LEFTSHIFT)
+        if self.triggers[1]:modifiers.add(self.e.KEY_LEFTCTRL)
+        desired=set(modifiers)
+        for source,target in ((self.e.BTN_NORTH,self.e.KEY_BACKSPACE),(self.e.BTN_WEST,self.e.KEY_SPACE)):
+            if source in self.raw_keys:desired.add(target)
+        self.write_keys(desired)
+        self.dialog_buttons.update(pressed & {self.e.BTN_SOUTH,self.e.BTN_EAST})
+        for source,key in ((self.e.BTN_SOUTH,self.e.KEY_ENTER),(self.e.BTN_EAST,self.e.KEY_ESC)):
+            if source in released and source in self.dialog_buttons:
+                self.keyboard_shortcut(key,modifiers)
+        self.dialog_buttons.difference_update(released)
+        for source,back in ((self.config['previous_bumper'],True),(self.config['next_bumper'],False)):
+            if source in pressed:
+                self.keyboard_shortcut(self.e.KEY_TAB,{self.e.KEY_LEFTSHIFT} if back else set())
+        # Menu keeps the ordinary launcher/legend behavior; all DAW actions and
+        # Select+face shortcuts are suppressed until the dialog loses focus.
+        menu={self.e.BTN_MODE}
+        self.button_gestures(pressed & menu,released & menu,now,True)
+        horizontal,vertical=self.config['chord_axes']
+        directions=set()
+        for axis,negative,positive in ((horizontal,'LEFT','RIGHT'),(vertical,'UP','DOWN')):
+            value=self.raw_axes.get(axis,0)
+            if value:directions.add(negative if value<0 else positive)
+        if directions:self.navigate_dpad(directions,now)
+        else:self.clear_dpad_navigation()
+        x,y=(self.axis(code) for code in self.config['left_stick'])
+        magnitude=max(abs(x),abs(y))
+        if magnitude<=self.config['stick_release']:
+            self.dialog_direction=None
+        elif magnitude>=self.config['stick_press']:
+            direction='left' if abs(x)>=abs(y) and x<0 else 'right' if abs(x)>=abs(y) else 'up' if y<0 else 'down'
+            fresh=direction!=self.dialog_direction
+            if fresh or now>=self.dialog_next:
+                self.keyboard_shortcut(self.e.KEY_TAB,{self.e.KEY_LEFTSHIFT} if direction in ('up','left') else set())
+                self.dialog_direction=direction
+                self.dialog_next=now+(.35 if fresh else .16)
+        return True
+
     def frame(self, pressed, released, now, active):
         if self.block_lid_input(active):
             return
@@ -1142,6 +1241,8 @@ class Mapper:
             value = self.axis(self.config[name], True)
             threshold = self.config['trigger_release' if self.triggers[index] else 'trigger_press']
             self.triggers[index] = value > threshold
+        if self.reaper_dialog_frame(pressed,released,now):
+            return
         if self.reaper_area_frame(pressed,previous_triggers,now):
             return
         if self.mode == 'reaper' and tuple(self.triggers) != previous_triggers:
@@ -1389,13 +1490,26 @@ class Mapper:
             self.ready = self.neutral()
             return
         self.frame(set(), set(), now, active)
-        if not self.ready or self.mode_gesture.previous:
+        if not self.ready or self.mode_gesture.previous or self.dialog_active:
             return
         for index, name in enumerate(('left_stick', 'right_stick')):
             if self.reaper_area_held and (index == 1 or self.reaper_area_cancelled):
                 continue
             x, y = (self.axis(code) for code in self.config[name])
             magnitude = max(abs(x), abs(y))
+            transport_field=''
+            if index==1 and self.mode=='reaper':
+                try:
+                    path=self.directory/'reaper-transport-field'
+                    transport_field=path.read_text().strip() if time.time()-path.stat().st_mtime<1 else ''
+                except OSError: pass
+                if transport_field!=self.transport_target:
+                    self.transport_target=transport_field
+                    self.transport_ready=magnitude<=self.config['stick_release']
+                    self.sticks[index],self.next_repeat[index]=None,0
+                if transport_field:
+                    if magnitude<=self.config['stick_release']: self.transport_ready=True
+                    if not self.transport_ready: continue
             if self.stick_pending[index]:
                 self.sticks[index] = None
                 self.motion_time[index], self.motion_credit[index] = None, 0
@@ -1443,7 +1557,8 @@ class Mapper:
                         or (self.directory / 'reaper-area').exists() and (self.directory / 'reaper-area').read_text().strip())
                 except OSError:
                     mixer_navigation = False
-                if mixer_navigation:
+                transport_adjustment=reaper and index==1 and bool(transport_field)
+                if mixer_navigation or transport_adjustment:
                     # Object selection needs a deliberate nudge, then bounded
                     # repeats rather than the continuous scrolling speed.
                     if not fresh and now < self.next_repeat[index]:
@@ -1492,7 +1607,7 @@ class Mapper:
                 self.command(f"resize {action} {dimension} {self.config['resize_step']} ppt")
 
     def status(self, active):
-        return {'mode': self.mode, 'session_active': active, 'lid_closed': self.lid_closed(), 'paused': (self.directory / 'paused').exists(),
+        return {'mode': self.mode, 'dialog_active': self.dialog_active, 'session_active': active, 'lid_closed': self.lid_closed(), 'paused': (self.directory / 'paused').exists(),
                 'device': self.device.path if self.device else None,
                 'device_name': self.device.name if self.device else None,
                 'grabbed': self.grabbed, 'ready': self.ready, 'keys': sorted(self.keys),
@@ -1508,7 +1623,7 @@ def output_capabilities(config, codes):
     for profile in (config, *config.get('profiles', {}).values()):
         keys.update(profile['buttons'].values())
         keys.update(key for values in profile['dpad'].values() for key in values)
-    keys |= {codes.KEY_LEFTSHIFT, codes.KEY_LEFTCTRL, codes.KEY_LEFTMETA}
+    keys |= {codes.KEY_LEFTSHIFT, codes.KEY_LEFTCTRL, codes.KEY_LEFTMETA,codes.KEY_TAB}
     keys |= {getattr(codes, name) for key, modifiers in KEY_ACTIONS.values() for name in (key, *modifiers)}
     keys |= {getattr(codes, name) for name in REAPER_ZOOM.values()}
     # Mouse classification requires X/Y and a mouse button even though this mapper

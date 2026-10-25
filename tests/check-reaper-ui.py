@@ -48,3 +48,36 @@ with tempfile.TemporaryDirectory(prefix='reaper-ui-check-') as name:
         (root/'reaper-menu.ini').write_text('[Main toolbar]\nitem_0=123\n')
         assert ui.detect(outline,request)==[], 'Default action assumed for a customized toolbar'
 print('Passed: PNG decoding, exact themed button positions, hidden/ambiguous rejection, generation caching and customized-toolbar refusal.')
+
+# Painted value controls are resolved only for the validated installed theme.
+with tempfile.TemporaryDirectory(prefix='reaper-transport-geometry-') as name:
+    root=Path(name); theme=root/'Reapertips.ReaperThemeZip'
+    cells='\n'.join('size '+line for line in ('automode 0 6 60 26','bpm_tap 0 7 33 24',
+                     'bpm_edit 0 8 32 22','timesig 0 8 33 22','timebase 0 8 33 22'))
+    with zipfile.ZipFile(theme,'w') as archive:archive.writestr('ReaperTips_v1.93/rtconfig.txt',cells)
+    for scale in (1,1.5,2):
+        x,y=50,100
+        a=(x,y,60*scale,26*scale)
+        t=(x+170*scale,y+2*scale,33*scale,22*scale)
+        panel=[0,y-6*scale,x+281*scale,36*scale]
+        request={'theme':str(theme),'panels':{'Transport':panel}}
+        fields=ui.transport_fields(request,{60001:a,60005:t})
+        assert {row[1] for row in fields}=={1134,60002,60003,60004},fields
+        tempo=next(row for row in fields if row[1]==60002)
+        assert tempo[3:]==tuple(map(round,(x+105*scale,y+2*scale,32*scale,22*scale)))
+        # A hidden time-signature field is not offered, and subsequent fields
+        # remain aligned with the visible timebase anchor.
+        t2=(t[0]-33*scale,*t[1:])
+        fields=ui.transport_fields(request,{60001:a,60005:t2})
+        assert 60003 not in {row[1] for row in fields}
+        # With playrate hidden, the timebase is the final control at the margin.
+        request['panels']['Transport'][2]=t[0]+t[2]+6*scale
+        fields=ui.transport_fields(request,{60001:a,60005:t})
+        assert 60004 not in {row[1] for row in fields}
+        assert ui.transport_fields(request,{60001:a})==[]
+        assert ui.transport_fields(request,{60001:a,60005:(t[0]+10*scale,*t[1:])})==[]
+    with zipfile.ZipFile(theme,'w') as archive:archive.writestr('Other/rtconfig.txt',cells)
+    assert ui.transport_fields(request,{60001:a,60005:t})==[]
+assert {40070,42616,42618}<={command for command,_,_ in ui.BUTTONS['Toolbar']}
+assert 1134 in {command for command,_,_ in ui.BUTTONS['Transport']}
+print('Passed: all three missing toolbar targets and transport geometry at 100/150/200%, hidden fields and unrecognized layouts.')

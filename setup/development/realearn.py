@@ -17,7 +17,7 @@ HERE = Path(__file__).resolve().parent
 RELEASE = json.loads((HERE / 'realearn-release.json').read_text())
 ACTION_ID = 'RS' + hashlib.sha1(b'ubuntu-mini/reaper-gamepad.lua').hexdigest()
 PLUGIN_NAME = 'VSTi: Helgobox - ReaLearn & Playtime (Helgoboss)'
-REQUEST_COUNT = 23
+REQUEST_COUNT = 27
 PAGE_COUNT = 5
 
 
@@ -92,6 +92,16 @@ def preset():
             action('Native button: '+label,18,command,page,menu=None)
             mappings[-1]['eelCondition'] += f' && p[11] == {command}'
         request('Leave native panel',19,15,page)
+        if page==4:
+            request('Edit transport field',18,22,page)
+            mappings[-1]['eelCondition'] += ' && p[11] >= 60001 && p[11] <= 60005'
+            for cc in (8,9,10,11):
+                request('Adjust transport field',cc,23+cc-8,page)
+                mappings[-1]['eelCondition'] += ' && p[11] >= 60001 && p[11] <= 60005'
+            absolute('Set playback rate knob',parameter(13),page)
+            mappings[-1]['eelCondition'] += ' && p[11] == 60004'
+            increment('Playback rate sample',50,parameter(14),page=4,step=1/65535,wrap=True)
+            mappings[-1]['eelCondition'] += ' && p[11] == 60004'
         for controls,value in (((0,24,4),11),((1,25,5),12),((2,6),13),((3,7),14)):
             for cc in controls:
                 request('Navigate native panel buttons',cc,value,page)
@@ -165,7 +175,9 @@ def preset():
                                       (9, 'Choosing area', 2, []),
                                       (10, 'Chosen area', 4, ['Timeline','Tracks','Toolbar','Transport']),
                                       (11, 'Native button action', 65536, []),
-                                      (12, 'Area hold', 3, ['Released','Cancelled','Held'])):
+                                      (12, 'Area hold', 3, ['Released','Cancelled','Held']),
+                                      (13, 'Transport knob', 16384, []),
+                                      (14, 'Transport sample', 65536, [])):
         parameters[str(index)] = dict(name=name, valueCount=count, valueLabels=labels, value=0)
     return dict(mainUnit=dict(version=RELEASE['version'], name='Device gamepad',
                              controlDeviceId='0', letMatchedEventsThrough=False,
@@ -268,7 +280,7 @@ def install(resource=None, asset_dir=None, update_controller=False):
     atomic(resource / 'Scripts/Device/reaper-gamepad.lua', (HERE / 'reaper-gamepad.lua').read_bytes())
     atomic(resource / 'Scripts/Device/reaper-control-outline.py', (HERE / 'reaper-control-outline.py').read_bytes())
     atomic(resource / 'Scripts/Device/reaper-control-navigation.lua', (HERE / 'reaper-control-navigation.lua').read_bytes())
-    for name in ('reaper-ui.lua','reaper-ui.py'):
+    for name in ('reaper-ui.lua','reaper-ui.py','reaper-transport.lua'):
         atomic(resource / 'Scripts/Device'/name,(HERE/name).read_bytes())
     keys = resource / 'reaper-kb.ini'
     current = keys.read_text() if keys.exists() else ''

@@ -7,7 +7,9 @@ if not runtime then return end
 local directory = runtime .. '/minion-gamepad/'
 local choose_control = dofile(reaper.GetResourcePath() .. '/Scripts/Device/reaper-control-navigation.lua')
 local ui = dofile(reaper.GetResourcePath() .. '/Scripts/Device/reaper-ui.lua')
-local REQUEST_COUNT, PAGE_COUNT = 23, 5
+local transport = dofile(reaper.GetResourcePath() .. '/Scripts/Device/reaper-transport.lua')
+local transport_choices, previous_transport_knob, previous_transport_sample = nil,nil,nil
+local REQUEST_COUNT, PAGE_COUNT = 27, 5
 local choosing_area, area_choice, area_held, opened_area_fx = false, 0, false, nil
 local area_names = {'Timeline','Tracks','Toolbar','Transport'}
 local area_pages = {0,1,3,4}
@@ -174,11 +176,12 @@ local function loop()
   local page = math.min(PAGE_COUNT-1, parameter(master, controller, 0, PAGE_COUNT))
   local mode = read(directory .. 'mode')
   if mode ~= 'reaper' then
-    choosing_area, menu, area_held = false, false, false
+    choosing_area, menu, area_held, transport_choices = false, false, false, nil
     set(master, controller, 9, 2, 0)
     set(master, controller, 12, 3, 0)
     write(directory .. 'reaper-area', '')
     write(directory .. 'reaper-rotary-target', '')
+    write(directory .. 'reaper-transport-field','')
     if outline_started then show_outline(nil) end
     if visible then gfx.quit(); visible = false end
     previous_mode = mode
@@ -194,8 +197,10 @@ local function loop()
   for i,name in ipairs({'Toolbar','Transport'}) do
     menus[i+3]={}
     for _,button in ipairs(ui.buttons[name]) do
-      menus[i+3][#menus[i+3]+1]={button.label,action(button.command)}
+      local command=button.command
+      menus[i+3][#menus[i+3]+1]={button.label,transport.is_field(command) and function() transport.edit(command) end or action(command)}
     end
+    if name=='Transport' and transport_choices then menus[i+3]=transport_choices end
   end
   local track = selected_track()
   local guid = track and reaper.GetTrackGUID(track) or ''
@@ -242,9 +247,19 @@ local function loop()
       if page <= 1 then reaper.SetCursorContext(page == 1 and 0 or 1, nil) end
     end
   end
+  local function edit_transport_field(command)
+    local choices,err=transport.edit(command)
+    previous_transport_knob=parameter(master,controller,13,16384)
+    previous_transport_sample=parameter(master,controller,14,65536)
+    if err then status(err) end
+    transport_choices,menu,menu_index=choices,choices~=nil,0
+    if choices then menus[5]=choices end
+    set(master,controller,4,32,0)
+    set(master,controller,6,2,menu and 1 or 0)
+  end
   local hold_state = parameter(master,controller,12,3)
   if hold_state == 2 and not area_held then
-    choosing_area, menu = true, false
+    choosing_area, menu, transport_choices = true, false, nil
     area_choice = page == 0 and 0 or page == 3 and 2 or page == 4 and 3 or 1
   elseif hold_state == 1 then
     choosing_area = false
@@ -262,20 +277,33 @@ local function loop()
       end
     elseif choosing_area and request == 16 then enter_area()
     elseif choosing_area and request == 17 then choosing_area = false
-    elseif choosing_area and request >= 18 then
+    elseif choosing_area and request >= 18 and request <= 21 then
       local rectangles={}
       for i,name in ipairs(area_names) do rectangles[i]=ui.panels[name] or false end
       area_choice = choose_control(rectangles,area_choice,({'left','right','up','down'})[request-17])
     elseif request == 1 then choosing_area = false; menu = not menu; menu_index = 0; set(master,controller,4,32,0)
     elseif request == 2 and menu then
       local entry = menus[page + 1][menu_index + 1]
-      menu = false
+      local choices=transport_choices
+      menu,transport_choices = false,nil
       set(master,controller,6,2,0)
-      if page >= 3 then reaper.defer(loop);return end -- Native ReaLearn action already invoked.
-      if entry then entry[2]() end
+      local field=page==4 and ui.buttons.Transport[menu_index+1]
+      if not choices and field and transport.is_field(field.command) then
+        edit_transport_field(field.command)
+      elseif page >= 3 and not choices then reaper.defer(loop);return -- Native action already invoked.
+      elseif entry then entry[2]() end
       -- Reacquire selection pointers after an action changes project contents.
       reaper.defer(loop);return
-    elseif request == 5 then menu = false
+    elseif request == 5 then menu,transport_choices = false,nil
+    elseif page==4 and request==22 then
+      local button=ui.current('Transport')
+      if button then
+        edit_transport_field(button.command)
+        reaper.defer(loop);return
+      end
+    elseif page==4 and request>=23 and request<=26 then
+      local button=ui.current('Transport')
+      if button then transport.step(button.command,({'left','right','up','down'})[request-22],parameter(master,controller,5,2)==1) end
     elseif request == 3 then
       if page == 0 then split_items()
       elseif page == 1 then toggle_track('B_MUTE')
@@ -330,13 +358,19 @@ local function loop()
   -- Process the last spatial move before a release commits the selection.
   if hold_state == 0 and area_held and choosing_area then enter_area() end
   area_held = hold_state == 2
-  if page ~= previous_page then menu = false; previous_page = page end
+  if page ~= previous_page then menu,transport_choices = false,nil; previous_page = page end
   set(master, controller, 6, 2, menu and 1 or 0)
   set(master, controller, 9, 2, choosing_area and 1 or 0)
   set(master, controller, 10, #area_names, area_choice)
   menu_index = math.max(0,math.min(#menus[page + 1] - 1, parameter(master, controller, 4, 32)))
   set(master, controller, 4, 32, menu_index)
-  local native_button = page >= 3 and (menu and ui.buttons[pages[page+1]][menu_index+1] or ui.current(pages[page+1]))
+  local native_button = page >= 3 and not transport_choices and (menu and ui.buttons[pages[page+1]][menu_index+1] or ui.current(pages[page+1]))
+  local knob=parameter(master,controller,13,16384)
+  local sample=parameter(master,controller,14,65536)
+  if page==4 and not choosing_area and not menu and native_button and native_button.command==60004 then
+    if previous_transport_knob~=nil and (knob~=previous_transport_knob or sample~=previous_transport_sample) then transport.absolute(60004,knob/16383) end
+  end
+  previous_transport_knob,previous_transport_sample=knob,sample
   set(master,controller,11,65536,native_button and native_button.command or 0)
   if choosing_area then
     local rect=ui.panels[area_names[area_choice+1]]
@@ -354,7 +388,8 @@ local function loop()
   local detail = ''
   if page >= 3 then
     local button=ui.current(pages[page+1])
-    detail=button and ('< '..button.label..' >  A: activate') or 'Locating visible native buttons'
+    local value=button and transport.describe(button.command)
+    detail=button and ('< '..button.label..' >  '..(value and (value..'  R: adjust  A: edit') or 'A: activate')) or 'Locating visible native buttons'
   elseif page == 1 and track then
     local volume = reaper.GetMediaTrackInfo_Value(track, 'D_VOL')
     local entry = controls[control + 1]
@@ -376,14 +411,17 @@ local function loop()
   end
   write(directory .. 'reaper-page', pages[page + 1])
   local rotary_target = ''
-  if not menu and not choosing_area and track then
-    if page == 1 and control <= 1 then
+  if not menu and not choosing_area then
+    if page==4 and native_button and native_button.command==60004 then
+      rotary_target=pid..':transport:playrate'
+    elseif page == 1 and track and control <= 1 then
       rotary_target = pid .. ':' .. guid .. ':control:' .. control
-    elseif page == 2 and fx_count > 0 then
+    elseif page == 2 and track and fx_count > 0 then
       rotary_target = pid .. ':' .. guid .. ':' .. reaper.TrackFX_GetFXGUID(track,fx_index) .. ':' .. param_index
     end
   end
   write(directory .. 'reaper-rotary-target', rotary_target)
+  write(directory .. 'reaper-transport-field',page==4 and not menu and not choosing_area and native_button and transport.is_field(native_button.command) and tostring(native_button.command) or '')
   write(directory .. 'reaper-area', choosing_area and area_names[area_choice + 1] or '')
   write(directory .. 'reaper-context', (choosing_area and 'areas' or menu and 'menu' or 'page') .. '\n' .. summary .. '\n' .. (choosing_area and ('Choose area: ' .. area_names[area_choice + 1]) or detail))
   if visible then
@@ -420,5 +458,5 @@ local function loop()
   end
   reaper.defer(loop)
 end
-reaper.atexit(function() gfx.quit(); write(directory .. 'reaper-page', ''); os.remove(directory .. 'reaper-area'); os.remove(directory .. 'reaper-rotary-target'); os.remove(outline_path) end)
+reaper.atexit(function() gfx.quit(); write(directory .. 'reaper-page', ''); os.remove(directory .. 'reaper-area'); os.remove(directory .. 'reaper-rotary-target'); os.remove(directory .. 'reaper-transport-field'); os.remove(outline_path) end)
 reaper.defer(loop)

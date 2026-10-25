@@ -10,6 +10,89 @@ Firefox-first browser preferences were applied on the WIN Mini: `xdg-settings ge
 
 ## Recent device checks
 
+On 2026-10-26, REAPER navigation gained a window → region → control hierarchy.
+L1/R1 cycle distinct main/track-FX windows; L2 chooses only regions in the current
+window. FX regions expose the effects list and Add/Remove, preset/routing header,
+and native ReaEQ/ReaComp controls. Spatial navigation includes band tools,
+selectors and switches; A dispatches to the identified native control. Selectors
+support preview/accept/cancel. Numeric FX MIDI targets are gated separately from
+buttons/selectors, with band reveal and neutral guards on target changes.
+Native SWELL popup menus gained an owned X11 menu detector and an arrow/Enter/
+Escape keyboard layer, maintained while deferred Lua is paused by the menu.
+Host hierarchy, MIDI mapping/routing, menu/mapper, picker, native-widget, transport
+and setup checks passed. In a muted headless Sway/Xwayland REAPER project, actual
+stick gestures reached all fifteen exposed ReaEQ controls, added/removed a band,
+toggled a band, selected/adjusted the correct band's parameter, cancelled a combo
+preview and navigated ReaComp. Window bumpers and window-local L2 regions passed.
+Native menus remained gamepad-operable while Lua's heartbeat was paused; Add FX
+dialog focus/keyboard controls, native FX removal, empty-chain recovery and opening
+an empty chain from Mixer passed. Popup focus is restricted to owned transient
+children of the originating project and rejected when the user moves elsewhere.
+Closed controls lose their cached activation/rotary target, and window cycling
+recovers from a vanished current window. Local installation completed after
+saving/closing REAPER, with backups and verified mapper/script hashes and
+controller state. Only the owned controller preset/scripts and system mapper
+were updated; Desktop mode and the reserved MIDI input were preserved.
+Physical usability confirmation remains pending.
+[Private hierarchy report](../.local/device-checks/realearn/hierarchy-result.json),
+[private menu/lifecycle report](../.local/device-checks/realearn/hierarchy-menus-result.json),
+[private empty-track report](../.local/device-checks/realearn/hierarchy-empty-entry-result.json),
+[private installation report](../.local/device-checks/realearn/hierarchy-install-result.json).
+
+On 2026-10-25, the custom ReaEQ/ReaComp interfaces gained native-widget outlines
+for controller parameter selection. ReaEQ reveals a parameter's band using native
+[SWELL tab keyboard messages](https://github.com/justinfrankel/WDL/blob/main/WDL/swell/swell-wnd-generic.cpp)
+before highlighting its Frequency/Gain/Bandwidth fader. Global Gain, fourteen
+ReaComp widgets and host Bypass/Wet are mapped by validated widget identity.
+Outlines clip to their native ancestor/window bounds; hidden, ambiguous, unmapped
+or other plug-in controls do not receive guessed highlights. The controller panel
+explains hidden/outside-tile cases. The custom interfaces remain enabled.
+Host FX-UI, picker, native-button, transport, ReaLearn and setup checks passed.
+A muted headless Sway/Xwayland REAPER project passed exact outlines on ReaEQ's
+band faders/Global Gain, fourteen ReaComp controls and host Bypass/Wet. Revealing
+four EQ bands preserved all parameter values. Floating ReaEQ used its own window
+identity; narrow tiles clipped partial controls and explained wholly offscreen
+ones. A private screenshot confirmed the cyan border on the actual Gain fader.
+Local installation completed, with backups and matching script hashes; the user
+confirmed the new outline while reporting the remaining spatial-navigation gap.
+[Private native report](../.local/device-checks/realearn/fx-highlight-result.json),
+[private installation report](../.local/device-checks/realearn/fx-highlight-install-result.json).
+
+On 2026-10-25, a physical FX retest exposed that the left stick still selected
+tracks after releasing L2. FX stick directions now select parameters horizontally
+and effects vertically, leaving track selection on L1/R1. Object-selection repeats
+are bounded on FX as on other selector pages. An already open native FX chain
+follows the selected effect, and the controller panel names the selected parameter.
+The legend was updated and its stale dialog-stick hint removed. Host mapping,
+repeat, MIDI, picker, native-button, transport and setup checks passed. A private
+headless REAPER project passed actual stick parameter/effect selection without
+track changes, native chain selection, knob adjustment of the chosen parameter,
+held-L2 stick area selection without editing, and retained bumper track navigation.
+Installation completed after saving/closing REAPER; the installed mapper, scripts
+and controller mappings match the repository. The mapper restarted successfully
+and preserved Desktop mode. Physical stick confirmation remains pending.
+[Private native report](../.local/device-checks/realearn/fx-stick-result.json),
+[private installation report](../.local/device-checks/realearn/fx-stick-install-result.json).
+
+On 2026-10-25, the L2 area picker gained open track FX chains and floating
+plugin windows, with compositor focus on release and a return path to the main
+project's panels. Each FX target is bound to its current-project track and effect;
+selecting main panels leaves FX windows open. Stable window identities prevent
+closed selections from entering a different target. Focus requests are restricted
+to the same REAPER process and rejected after switching to another application.
+The existing outline process handles discovery/focus, and survives an FX window
+closing between discovery and drawing. No new service or plugin is required.
+Host window-picker, native-button, transport, ReaLearn installation and setup-layout
+checks passed. An isolated headless Sway/Xwayland REAPER project passed actual
+mapper/MIDI entry to a tiled chain, return to Tracks while keeping it open,
+selection of another track's non-first effect, correct-channel knob adjustment,
+closed-selection cancellation, and floating-plugin entry/return to Timeline.
+The three updated user-owned scripts were installed with backups and verified
+against the repository; no mapper restart or sudo was needed. REAPER was closed
+for installation. Physical gamepad confirmation after reopening remains pending.
+[Private native report](../.local/device-checks/realearn/fx-picker-result.json),
+[private installation report](../.local/device-checks/realearn/fx-picker-install-result.json).
+
 On 2026-10-25, channel FX window investigation found a stale local floating rule
 and a distro tiling rule limited to monitoring FX/controller panels. The distro
 rule now includes native FX chains and plugins. The existing workspace service

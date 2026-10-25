@@ -9,10 +9,9 @@ local choose_control = dofile(reaper.GetResourcePath() .. '/Scripts/Device/reape
 local ui = dofile(reaper.GetResourcePath() .. '/Scripts/Device/reaper-ui.lua')
 local transport = dofile(reaper.GetResourcePath() .. '/Scripts/Device/reaper-transport.lua')
 local transport_choices, previous_transport_knob, previous_transport_sample = nil,nil,nil
-local REQUEST_COUNT, PAGE_COUNT = 27, 5
-local choosing_area, area_choice, area_held, opened_area_fx = false, 0, false, nil
-local area_names = {'Timeline','Tracks','Toolbar','Transport'}
-local area_pages = {0,1,3,4}
+local REQUEST_COUNT, PAGE_COUNT = 29, 5
+local choosing_area, area_choice, area_held = false, 'Timeline', false
+local last_main_area, main_page, active_window = 0, 0, nil
 local visible, previous_mode, previous_page, menu, menu_index = false, '', -1, false, 0
 local pages = {'Arrange', 'Mixer', 'FX','Toolbar','Transport'}
 local old_track, old_fx = '', -1
@@ -75,8 +74,8 @@ end
 local function control_rectangle(track, index)
   return track_rectangle(track, controls[index + 1].widget)
 end
-local function show_outline(rectangle, area, track_number)
-  write(outline_path, rectangle and (rectangle .. (area and ' area ' .. area .. ' ' .. track_number or '')) or '')
+local function show_outline(rectangle, area, track_number, window_id)
+  write(outline_path, rectangle and (rectangle .. (window_id and ' window '..window_id or area and ' area ' .. area .. ' ' .. track_number or '')) or '')
   if (rectangle or ui.available()) and not outline_started then
     local helper = reaper.GetResourcePath() .. '/Scripts/Device/reaper-control-outline.py'
     local function quote(value) return "'" .. value:gsub("'", "'\\''") .. "'" end
@@ -177,7 +176,10 @@ local function loop()
   local mode = read(directory .. 'mode')
   if mode ~= 'reaper' then
     choosing_area, menu, area_held, transport_choices = false, false, false, nil
+    ui.cancel_focus(outline_path)
+    ui.fx_band=nil
     set(master, controller, 9, 2, 0)
+    set(master,controller,15,2,0)
     set(master, controller, 12, 3, 0)
     write(directory .. 'reaper-area', '')
     write(directory .. 'reaper-rotary-target', '')
@@ -194,6 +196,35 @@ local function loop()
   end
   previous_mode = mode
   ui.scan(now,outline_path)
+  if page~=2 then ui.fx_band=nil;main_page=page end
+  local function adopt_window(area)
+    if area.track then
+      page=2
+      reaper.SetOnlyTrackSelected(area.track)
+      set(master,controller,1,128,area.fx)
+      set(master,controller,2,256,0)
+      old_track,old_fx=reaper.GetTrackGUID(area.track),area.fx
+      if area.region and ui.fx_memory[area.id] then ui.fx_memory[area.id].region=area.region end
+    else
+      page=area.window_switch and main_page or area.page
+      main_page=page
+      last_main_area=area.main or last_main_area
+      if page<=1 then reaper.SetCursorContext(page==1 and 0 or 1,nil) end
+    end
+    active_window=area.id
+    set(master,controller,0,PAGE_COUNT,page)
+  end
+  local focused_window=ui.focused_window()
+  if focused_window and active_window~=focused_window.id and not ui.pending then
+    ui.fx_cancel(active_window)
+    choosing_area,menu,transport_choices=false,false,nil
+    local target={}
+    for key,value in pairs(focused_window) do target[key]=value end
+    target.window_switch=true
+    adopt_window(target)
+    set(master,controller,9,2,0)
+    reaper.defer(loop);return
+  end
   for i,name in ipairs({'Toolbar','Transport'}) do
     menus[i+3]={}
     for _,button in ipairs(ui.buttons[name]) do
@@ -203,14 +234,31 @@ local function loop()
     if name=='Transport' and transport_choices then menus[i+3]=transport_choices end
   end
   local track = selected_track()
+  for _,entry in ipairs(ui.windows()) do
+    if entry.id==active_window and entry.track and reaper.ValidatePtr2(0,entry.track,'MediaTrack*') and entry.track~=track then
+      reaper.SetOnlyTrackSelected(entry.track);track=entry.track
+    end
+  end
   local guid = track and reaper.GetTrackGUID(track) or ''
   local track_changed = guid ~= old_track
   local fx_index = parameter(master, controller, 1, 128)
   local param_index = parameter(master, controller, 2, 256)
   if guid ~= old_track then fx_index, param_index = 0, 0 end
+  for _,entry in ipairs(ui.windows()) do
+    if entry.id==active_window and entry.track==track and entry.kind=='chain' then
+      local selected=reaper.TrackFX_GetChainVisible(track)
+      if selected>=0 then fx_index=selected end
+    end
+  end
   local fx_count = track and reaper.TrackFX_GetCount(track) or 0
   fx_index = math.max(0, math.min(fx_index, fx_count - 1))
-  if fx_index ~= old_fx then param_index = 0 end
+  if fx_index ~= old_fx then
+    param_index = 0
+    -- Keep an already open chain on the effect chosen by the controller.
+    if page==2 and track and fx_count>0 and reaper.TrackFX_GetChainVisible(track)>=0 then
+      reaper.TrackFX_Show(track,fx_index,1)
+    end
+  end
   local param_count = track and fx_count > 0 and reaper.TrackFX_GetNumParams(track, fx_index) or 0
   param_index = math.max(0, math.min(param_index, param_count - 1))
   set(master, controller, 1, 128, fx_index)
@@ -233,19 +281,39 @@ local function loop()
     end
   end
   old_control = control
+  local window
+  for _,entry in ipairs(ui.windows()) do if entry.id==active_window then window=entry end end
+  local regions={}
+  if window and window.track then
+    regions=ui.fx_regions(window,fx_index,param_index,now)
+  else
+    for _,entry in ipairs(ui.areas) do if entry.id==active_window and entry.page~=2 and entry.rect then regions[#regions+1]=entry end end
+  end
+  local function chosen_area()
+    for _,area in ipairs(regions) do if area.key==area_choice then return area end end
+  end
+  local function begin_area()
+    if page==2 then ui.fx_cancel(active_window) end
+    choosing_area,menu,transport_choices=true,false,nil
+    if window and window.track then
+      local state=ui.fx_memory[active_window]
+      area_choice=state and state.region or 'plugin'
+    else area_choice=page==0 and 'Timeline' or page==3 and 'Toolbar' or page==4 and 'Transport' or 'Tracks' end
+    if not chosen_area() and regions[1] then area_choice=regions[1].key end
+  end
   local function enter_area()
-    choosing_area, menu, page = false, false, area_pages[area_choice+1]
-    set(master, controller, 0, PAGE_COUNT, page)
-    if page == 2 and track and fx_count > 0 then
-      reaper.TrackFX_Show(track, fx_index, 1)
-      opened_area_fx = track
-    else
-      if opened_area_fx and reaper.ValidatePtr2(0,opened_area_fx,'MediaTrack*') then
-        reaper.TrackFX_Show(opened_area_fx, 0, 0)
-      end
-      opened_area_fx = nil
-      if page <= 1 then reaper.SetCursorContext(page == 1 and 0 or 1, nil) end
-    end
+    if ui.pending then return end
+    local area=chosen_area()
+    if not area then choosing_area=false;status('Region closed or unavailable');return end
+    ui.focus(outline_path,area,now)
+  end
+  local area,focused=ui.focus_result(outline_path,now)
+  if area then
+    choosing_area,menu=false,false
+    if focused and (not area.track or reaper.ValidatePtr2(0,area.track,'MediaTrack*')) then
+      adopt_window(area)
+      reaper.defer(loop);return
+    else status('Could not focus region; select it again') end
   end
   local function edit_transport_field(command)
     local choices,err=transport.edit(command)
@@ -259,28 +327,51 @@ local function loop()
   end
   local hold_state = parameter(master,controller,12,3)
   if hold_state == 2 and not area_held then
-    choosing_area, menu, transport_choices = true, false, nil
-    area_choice = page == 0 and 0 or page == 3 and 2 or page == 4 and 3 or 1
+    begin_area()
   elseif hold_state == 1 then
     choosing_area = false
+    ui.cancel_focus(outline_path)
     set(master,controller,12,3,0) -- Acknowledge cancellation without committing.
   end
   local request = parameter(master, controller, 3, REQUEST_COUNT)
   if request ~= 0 then
     set(master, controller, 3, REQUEST_COUNT, 0)
-    if request == 15 then
-      if menu then menu = false
+    if request==27 or request==28 then
+      ui.fx_cancel(active_window)
+      ui.scan_windows(outline_path)
+      local next_window=ui.window_neighbor(active_window,request==27 and -1 or 1)
+      if next_window then
+        local target={}
+        for key,value in pairs(next_window) do target[key]=value end
+        target.window_switch=true
+        choosing_area,menu=true,false
+        ui.focus(outline_path,target,now)
+      end
+    elseif page==2 and window and window.track and not choosing_area and not menu and request==8 then
+      local note=ui.fx_activate(active_window)
+      if note then status(note) end
+      reaper.defer(loop);return
+    elseif page==2 and not choosing_area and not menu and request>=11 and request<=14 then
+      local next_fx=ui.fx_move(active_window,({'left','right','up','down'})[request-10],choose_control)
+      if next_fx then set(master,controller,1,128,next_fx);old_fx=-1;reaper.defer(loop);return end
+    elseif page==2 and not choosing_area and not menu and request>=23 and request<=26 then
+      local next_fx=ui.fx_step(active_window,({'left','right','up','down'})[request-22])
+      if next_fx then set(master,controller,1,128,next_fx);old_fx=-1;reaper.defer(loop);return end
+    elseif request == 15 then
+      if page==2 and ui.fx_cancel(active_window) then
+      elseif menu then menu = false
       elseif choosing_area then enter_area()
       else
-        choosing_area = true
-        area_choice = page == 0 and 0 or page == 3 and 2 or page == 4 and 3 or 1
+        begin_area()
       end
     elseif choosing_area and request == 16 then enter_area()
-    elseif choosing_area and request == 17 then choosing_area = false
+    elseif choosing_area and request == 17 then choosing_area = false;ui.cancel_focus(outline_path)
     elseif choosing_area and request >= 18 and request <= 21 then
-      local rectangles={}
-      for i,name in ipairs(area_names) do rectangles[i]=ui.panels[name] or false end
-      area_choice = choose_control(rectangles,area_choice,({'left','right','up','down'})[request-17])
+      if not ui.pending then
+        local rectangles,index={},nil
+        for i,entry in ipairs(regions) do rectangles[i]=entry.rect or false;if entry.key==area_choice then index=i-1 end end
+        if index then area_choice=regions[choose_control(rectangles,index,({'left','right','up','down'})[request-17])+1].key end
+      end
     elseif request == 1 then choosing_area = false; menu = not menu; menu_index = 0; set(master,controller,4,32,0)
     elseif request == 2 and menu then
       local entry = menus[page + 1][menu_index + 1]
@@ -351,7 +442,7 @@ local function loop()
         end
       elseif track and control == 6 and request == 8 then
         set(master, controller, 0, PAGE_COUNT, 2)
-        if fx_count > 0 then reaper.TrackFX_Show(track, fx_index, 1);opened_area_fx=track end
+        reaper.TrackFX_Show(track,fx_index,1) -- Empty chains still expose Add FX.
       end
     end
   end
@@ -361,7 +452,7 @@ local function loop()
   if page ~= previous_page then menu,transport_choices = false,nil; previous_page = page end
   set(master, controller, 6, 2, menu and 1 or 0)
   set(master, controller, 9, 2, choosing_area and 1 or 0)
-  set(master, controller, 10, #area_names, area_choice)
+  set(master, controller, 10, 4, last_main_area) -- Legacy main-area display metadata.
   menu_index = math.max(0,math.min(#menus[page + 1] - 1, parameter(master, controller, 4, 32)))
   set(master, controller, 4, 32, menu_index)
   local native_button = page >= 3 and not transport_choices and (menu and ui.buttons[pages[page+1]][menu_index+1] or ui.current(pages[page+1]))
@@ -372,9 +463,22 @@ local function loop()
   end
   previous_transport_knob,previous_transport_sample=knob,sample
   set(master,controller,11,65536,native_button and native_button.command or 0)
+  local fx_node,fx_state,fx_region
+  if window and window.track then fx_node,fx_state,fx_region=ui.fx_current(active_window) end
+  local fx_ready,fx_note=true,''
+  if page==2 and not choosing_area and not menu and fx_node and fx_node.band~=nil then
+    local rectangle,_,note=ui.fx_outline(track,fx_index,fx_node.param,now)
+    fx_ready=rectangle~=nil;fx_note=note or ''
+  end
+  local fx_knob=page==2 and not choosing_area and not menu and fx_ready and fx_node and fx_node.kind=='param' and fx_node.param~=nil
+  set(master,controller,15,2,fx_knob and 1 or 0)
+  if fx_knob then param_index=fx_node.param;set(master,controller,2,256,param_index) end
   if choosing_area then
-    local rect=ui.panels[area_names[area_choice+1]]
-    show_outline(rect and table.concat(rect,' '))
+    local area=chosen_area()
+    local rect=area and area.rect
+    show_outline(rect and table.concat(rect,' '),nil,nil,area and area.id)
+  elseif page==2 and not menu then
+    show_outline(fx_node and fx_ready and table.concat(fx_node.rect,' '),nil,nil,active_window)
   elseif page >= 3 and not menu then
     local button=ui.current(pages[page+1])
     show_outline(button and table.concat(button.rect,' '))
@@ -395,12 +499,21 @@ local function loop()
     local entry = controls[control + 1]
     local value = control == 0 and string.format('%.1f dB',20 * math.log(math.max(volume,1e-10),10)) or control == 1 and string.format('%.0f%%',reaper.GetMediaTrackInfo_Value(track,'D_PAN') * 100) or entry.key and (reaper.GetMediaTrackInfo_Value(track,entry.key) == 0 and 'OFF' or 'ON') or 'A: open effects'
     detail = '< ' .. entry.name .. ' >  ' .. value
-  elseif page == 2 and track and fx_count > 0 then
-    local _, fx_name = reaper.TrackFX_GetFXName(track, fx_index, '')
-    local _, param_name = reaper.TrackFX_GetParamName(track, fx_index, param_index, '')
-    local _, value = reaper.TrackFX_GetFormattedParamValue(track, fx_index, param_index, '')
-    detail = string.format('%s%s | %s: %s', reaper.TrackFX_GetEnabled(track,fx_index) and '' or '[Bypassed] ',fx_name,param_name,value)
-  elseif page == 2 then detail = 'No effects — L3: actions → Insert ReaEQ / ReaComp'
+  elseif page==2 then
+    if fx_node then
+      local value=''
+      if fx_node.param~=nil and track and fx_count>0 then
+        local _,text=reaper.TrackFX_GetFormattedParamValue(track,fx_index,fx_node.param,'');value=text
+      elseif fx_node.kind=='effects' then
+        if fx_count>0 then local ok;ok,value=reaper.TrackFX_GetFXName(track,fx_index,'') else value='Empty' end
+      elseif fx_node.kind=='combo' then value=reaper.JS_Window_GetTitle(fx_node.hwnd)
+      elseif fx_node.kind=='toggle' then value=reaper.JS_WindowMessage_Send(fx_node.hwnd,'BM_GETCHECK',0,0,0,0)==0 and 'OFF' or 'ON' end
+      detail=fx_region.label..' > '..fx_node.label..(value~='' and ': '..value or '')
+      if not fx_ready then detail=detail..' | '..fx_note end
+      if fx_state.editing then detail=detail..' | Choose with L / D-pad; A accept; B cancel'
+      elseif fx_node.kind=='param' then detail=detail..' | R: adjust'
+      else detail=detail..' | A: activate / choose' end
+    else detail='No mapped controls in this window; L2: choose a region' end
   elseif page == 0 then
     local count = reaper.CountSelectedMediaItems(0)
     local item = reaper.GetSelectedMediaItem(0, 0)
@@ -409,6 +522,7 @@ local function loop()
       reaper.GetMediaItemInfo_Value(item, 'D_POSITION')) or 'No item selected — D-pad left/right: choose item; A: select at cursor'
     if now < message_until then detail = message end
   end
+  if now < message_until then detail=message end
   write(directory .. 'reaper-page', pages[page + 1])
   local rotary_target = ''
   if not menu and not choosing_area then
@@ -416,14 +530,14 @@ local function loop()
       rotary_target=pid..':transport:playrate'
     elseif page == 1 and track and control <= 1 then
       rotary_target = pid .. ':' .. guid .. ':control:' .. control
-    elseif page == 2 and track and fx_count > 0 then
-      rotary_target = pid .. ':' .. guid .. ':' .. reaper.TrackFX_GetFXGUID(track,fx_index) .. ':' .. param_index
+    elseif fx_knob and track and fx_count>0 then
+      rotary_target = pid .. ':' .. tostring(active_window) .. ':' .. guid .. ':' .. reaper.TrackFX_GetFXGUID(track,fx_index) .. ':' .. param_index
     end
   end
   write(directory .. 'reaper-rotary-target', rotary_target)
   write(directory .. 'reaper-transport-field',page==4 and not menu and not choosing_area and native_button and transport.is_field(native_button.command) and tostring(native_button.command) or '')
-  write(directory .. 'reaper-area', choosing_area and area_names[area_choice + 1] or '')
-  write(directory .. 'reaper-context', (choosing_area and 'areas' or menu and 'menu' or 'page') .. '\n' .. summary .. '\n' .. (choosing_area and ('Choose area: ' .. area_names[area_choice + 1]) or detail))
+  write(directory .. 'reaper-area', choosing_area and (chosen_area() and chosen_area().label or 'Area closed') or '')
+  write(directory .. 'reaper-context', (choosing_area and 'areas' or menu and 'menu' or 'page') .. '\n' .. summary .. '\n' .. (choosing_area and ('Choose area: ' .. (chosen_area() and chosen_area().label or 'Area closed')) or detail))
   if visible then
     local key = gfx.getchar()
     if key == -1 then gfx.quit();visible = false
@@ -431,11 +545,11 @@ local function loop()
       gfx.set(.09,.10,.12,1);gfx.rect(0,0,gfx.w,gfx.h,1)
       local row = math.max(12, math.min(30, (gfx.h - 8) / 4))
       gfx.setfont(1, 'sans-serif', math.max(10, math.min(18, row * .78)))
-      line(choosing_area and ('Choose area: ' .. area_names[area_choice + 1]) or ('[' .. pages[page + 1] .. ']  ' .. summary), 4, true)
+      line(choosing_area and ('Choose area: ' .. (chosen_area() and chosen_area().label or 'Area closed')) or ('[' .. pages[page + 1] .. ']  ' .. summary), 4, true)
       if choosing_area then
-        line('Stick / D-pad: move between visible regions',4+row)
+        line('Stick / D-pad: regions in this window',4+row)
         line('Release L2 / A: enter     B: cancel     Right stick: inactive',4+2*row)
-        line('Toolbar / Tracks / Timeline / Transport',4+3*row)
+        line('L1/R1 switch REAPER windows outside the picker',4+3*row)
         if key == 13 then set(master,controller,3,REQUEST_COUNT,16)
         elseif key == 27 then set(master,controller,3,REQUEST_COUNT,17) end
       elseif menu then
@@ -445,18 +559,18 @@ local function loop()
       else
         local controls = {'D: item/track   R2+D: cursor   L: scroll   R: zoom',
                           'L: outline in 2D  D up/down: track  R angle: knob  A: activate',
-                          'D: FX/parameter   L: track   R angle: knob position',
+                          'L / D: move between controls   R: adjust   A: activate',
                           'L / D-pad: choose button   A: activate   B: choose area',
                           'L / D-pad: choose button   A: activate   B: choose area'}
         local buttons = {'X: split  R3: loop', 'X: mute  R3: solo', 'X: bypass  R3: FX window','',''}
         line(detail ~= '' and detail or controls[page + 1], 4 + row)
         line(detail ~= '' and controls[page + 1] or 'Y: play/stop   Start: save   R center: retain knob value', 4 + 2*row)
-        line(buttons[page + 1] .. ' | L2: areas  L3: actions  L1/R1: track', 4 + 3*row)
+        line(buttons[page + 1] .. ' | L2: areas  L3: actions  L1/R1: window', 4 + 3*row)
       end
       gfx.update()
     end
   end
   reaper.defer(loop)
 end
-reaper.atexit(function() gfx.quit(); write(directory .. 'reaper-page', ''); os.remove(directory .. 'reaper-area'); os.remove(directory .. 'reaper-rotary-target'); os.remove(directory .. 'reaper-transport-field'); os.remove(outline_path) end)
+reaper.atexit(function() gfx.quit(); write(directory .. 'reaper-page', ''); os.remove(directory .. 'reaper-area'); os.remove(directory .. 'reaper-rotary-target'); os.remove(directory .. 'reaper-transport-field'); ui.cancel_focus(outline_path);os.remove(outline_path) end)
 reaper.defer(loop)

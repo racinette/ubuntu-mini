@@ -31,8 +31,7 @@ class WindowAttributes(C.Structure):
         ('override_redirect',C.c_int),('screen',C.c_void_p))]
 
 
-def focused_pid():
-    """Check compositor focus too: Xwayland can retain stale X input focus."""
+def ipc(kind, payload=''):
     def receive(sock, size):
         data = b''
         while len(data) < size:
@@ -41,26 +40,118 @@ def focused_pid():
                 raise OSError('Closed Sway connection')
             data += part
         return data
-
-    def find(node):
-        if node.get('focused'):
-            return node.get('pid')
-        for child in node.get('nodes', []) + node.get('floating_nodes', []):
-            result = find(child)
-            if result is not None:
-                return result
-
     with socket.socket(socket.AF_UNIX) as sock:
         sock.settimeout(.15)
         sock.connect(os.environ['SWAYSOCK'])
-        sock.sendall(b'i3-ipc' + struct.pack('<II', 0, 4))
+        payload = payload.encode()
+        sock.sendall(b'i3-ipc' + struct.pack('<II', len(payload), kind) + payload)
         header = receive(sock, 14)
         if header[:6] != b'i3-ipc':
             raise OSError('Invalid Sway response')
         size, _ = struct.unpack('<II', header[6:])
         if size > 16 * 1024 * 1024:
-            raise OSError('Unexpected Sway tree size')
-        return find(json.loads(receive(sock, size)))
+            raise OSError('Unexpected Sway response size')
+        return json.loads(receive(sock, size))
+
+
+def leaves(tree):
+    children = tree.get('nodes', []) + tree.get('floating_nodes', [])
+    if not children and tree.get('pid'):
+        yield tree
+    for child in children:
+        yield from leaves(child)
+
+
+def focused_pid():
+    return next((node.get('pid') for node in leaves(ipc(4)) if node.get('focused')), None)
+
+
+def atomic_write(path, text):
+    temporary = Path(str(path) + '.tmp')
+    temporary.write_text(text)
+    temporary.replace(path)
+
+
+class WindowPicker:
+    """Share exact compositor identities with Lua; focus only this REAPER PID."""
+    def __init__(self, state, outline):
+        self.state, self.outline, self.request = state, outline, ''
+
+    def focus_popup(self, owned, nodes):
+        path=Path(str(self.state)+'.popup')
+        if not path.exists():
+            return
+        fields=path.read_text().split('\t')
+        if len(fields)!=4:
+            path.unlink(missing_ok=True)
+            return
+        stamp,origin=int(fields[0]),int(fields[1])
+        if not 0<=time.time()-stamp<=3 or origin not in owned:
+            path.unlink(missing_ok=True)
+            return
+        before={int(value) for value in fields[2].split(',') if value}
+        prefix=fields[3]
+        parent=(owned[origin].get('window_properties') or {}).get('transient_for') or owned[origin]['window']
+        candidates=[]
+        for node in owned.values():
+            properties=node.get('window_properties') or {}
+            if properties.get('transient_for') not in (parent,owned[origin]['window']):
+                continue
+            title=node.get('name') or ''
+            if title.startswith(('FX:','VST:','VSTi:','VST3:','JS:')):
+                continue
+            if (prefix and title.startswith(prefix)) or (not prefix and node['id'] not in before):
+                candidates.append(node)
+        focused=next((node for node in nodes if node.get('focused')), {})
+        if focused.get('pid')!=self.outline.pid or focused.get('id')!=origin:
+            # The dialog may already have focus, or the user moved elsewhere.
+            path.unlink(missing_ok=True)
+            return
+        if candidates:
+            target=max(candidates,key=lambda node:node['id'])
+            ipc(0,f'[con_id={target["id"]}] focus')
+            path.unlink(missing_ok=True)
+
+    def update(self):
+        self.nodes = nodes = list(leaves(ipc(4)))
+        owned = {node['id']: node for node in nodes
+                 if node.get('pid') == self.outline.pid and node.get('window')}
+        rows, visible_owned = [], {}
+        for node in owned.values():
+            window = node['window']
+            if self.outline.owner(window) != self.outline.pid or not self.outline.viewable(window):
+                continue
+            visible_owned[node['id']] = node
+            rect = self.outline.geometry(window)
+            title = (node.get('name') or '').replace('\t', ' ').replace('\n', ' ')
+            rows.append('\t'.join(map(str, (node['id'], int(node.get('focused', False)), *rect, title))))
+        atomic_write(Path(str(self.state) + '.windows'), str(int(time.time())) + '\n' + '\n'.join(rows))
+        self.focus_popup(visible_owned,nodes)
+        request_path = Path(str(self.state) + '.focus')
+        if not request_path.exists():
+            return
+        text = request_path.read_text()
+        if text == self.request:
+            return
+        self.request = text
+        sequence, target = map(int, text.split())
+        focused = next((node for node in nodes if node.get('focused')), {})
+        # Do not pull the user back after they have switched to another app.
+        success = target in visible_owned and focused.get('pid') == self.outline.pid
+        if success:
+            replies = ipc(0, f'[con_id={target}] focus')
+            success = bool(replies) and all(reply.get('success') for reply in replies)
+        if success:
+            self.nodes = list(leaves(ipc(4)))
+            focused_ids = {node['id'] for node in self.nodes if node.get('focused')}
+            updated = []
+            for row in rows:
+                fields = row.split('\t')
+                fields[1] = str(int(int(fields[0]) in focused_ids))
+                updated.append('\t'.join(fields))
+            atomic_write(Path(str(self.state) + '.windows'), str(int(time.time())) + '\n' + '\n'.join(updated))
+            success = target in focused_ids
+        atomic_write(Path(str(self.state) + '.focused'), f'{sequence} {int(success)}')
 
 
 class Outline:
@@ -183,6 +274,18 @@ class Outline:
         attributes = WindowAttributes()
         return self.x.XGetWindowAttributes(self.display,window,C.byref(attributes)) and attributes.map_state == 2
 
+    def native_menu(self):
+        # Linux SWELL menus are authenticated, override-redirect X11 windows;
+        # Sway's focused container remains the project/FX underneath them.
+        for window in self.children(self.root):
+            if self.owner(window) != self.pid or self.title(window) != 'menu':
+                continue
+            attributes = WindowAttributes()
+            if (self.x.XGetWindowAttributes(self.display, window, C.byref(attributes))
+                    and attributes.map_state == 2 and attributes.override_redirect):
+                return True
+        return False
+
     def geometry(self, window):
         root, gx, gy, width, height, border, depth = C.c_ulong(), C.c_int(), C.c_int(), C.c_uint(), C.c_uint(), C.c_uint(), C.c_uint()
         self.x.XGetGeometry.argtypes = [C.c_void_p, C.c_ulong, C.POINTER(C.c_ulong), C.POINTER(C.c_int), C.POINTER(C.c_int), *([C.POINTER(C.c_uint)] * 4)]
@@ -269,10 +372,17 @@ def main():
         outline = Outline(args.pid)
         ui = runpy.run_path(str(Path(__file__).with_name('reaper-ui.py')))
         generation = None
+        picker = WindowPicker(args.state, outline)
         previous = None
         try:
             while Path(f'/proc/{args.pid}').exists():
                 try:
+                    menu_path=Path(str(args.state)+'.native-menu')
+                    if outline.native_menu():
+                        atomic_write(menu_path,str(args.pid))
+                    else:
+                        menu_path.unlink(missing_ok=True)
+                    picker.update()
                     if time.time() - args.state.stat().st_mtime > 2:
                         # Native file dialogs pause deferred Lua scripts. Keep
                         # the drawing helper alive, with its outline hidden.
@@ -281,19 +391,26 @@ def main():
                         continue
                     generation = ui['update'](outline,Path(str(args.state)+'.request'),Path(str(args.state)+'.buttons'),generation)
                     values = args.state.read_text().split()
-                    rect = tuple(map(int, values[:4])) if len(values) in (4,7) else None
+                    rect = tuple(map(int, values[:4])) if len(values) in (4,6,7) else None
                     parent = None
                     if rect and (min(rect[2:]) <= 0 or max(rect[2:]) > 32768):
                         rect = None
-                    if rect and focused_pid() != args.pid:
+                    if rect and not any(n.get('focused') and n.get('pid') == args.pid for n in picker.nodes):
                         rect = None
+                    if rect and len(values) == 6 and values[4] == 'window':
+                        node = next((n for n in picker.nodes if n['id'] == int(values[5]) and n.get('pid') == args.pid), None)
+                        parent = node.get('window') if node else None
+                        if not parent or not outline.viewable(parent):
+                            rect = None
                     if rect and len(values) == 7 and values[4] == 'area':
                         rect, parent = outline.area_rectangle(rect, values[5], values[6])
                     if rect:
                         # Even unchanged screen coordinates need translating
                         # again when the parent window moves.
                         if not outline.show(rect, parent):
-                            break
+                            # FX windows can close between discovery and paint.
+                            # Keep discovery/focus alive for the next selection.
+                            outline.hide()
                     elif previous:
                         outline.hide()
                     previous = rect
@@ -304,6 +421,8 @@ def main():
                 time.sleep(.1)
         finally:
             outline.close()
+            for suffix in ('.windows', '.focus', '.focused', '.native-menu', '.popup'):
+                Path(str(args.state) + suffix).unlink(missing_ok=True)
 
 
 if __name__ == '__main__':

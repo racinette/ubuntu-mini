@@ -122,8 +122,9 @@ assert cancel['source']['number']==31 and cancel['mode']['minTargetValue']==.5
 assert state['mainUnit']['parameters']['12']['valueLabels']==['Released','Cancelled','Held']
 assert state['mainUnit']['parameters']['14']['valueCount']==65536
 assert not any(int(m['target'].get('commandName','0'))>=60000 for m in mappings if m['target']['type']==0 and m['target'].get('commandName','0').isdecimal())
-assert {(m['source']['number'],m['target'].get('commandName')) for m in mappings
-        if m['name']=='Previous / next track'}=={(48,'40286'),(49,'40285')}
+assert {m['source']['number'] for m in mappings if m['name']=='Previous / next REAPER window'}=={48,49}
+assert state['mainUnit']['parameters']['3']['valueCount']==29
+assert state['mainUnit']['parameters']['15']['valueCount']==2
 assert {m['source']['number'] for m in mappings if m['name']=='Navigate held area chooser'}=={27,28,29,30}
 chain = realearn.monitoring_fx(state)
 lines = chain.splitlines()
@@ -135,3 +136,15 @@ assert all(m['source'].get('channel', 15) == 15 for m in state['mainUnit']['mapp
 assert not state['mainUnit'].get('wantsKeyboardInput')
 assert all(m['target']['type'] != 57 for m in state['mainUnit']['mappings'])
 print('Passed: ReaLearn checksums, native monitoring serialization, preserved DAW/keyboard/MIDI configuration, isolated controller input, reruns and running-instance refusal.')
+
+# FX direction events request spatial traversal and never issue track actions.
+fx_stick=[m for m in mappings if m['source'].get('number') in (4,5,6,7) and 'p[0] == 2' in m.get('eelCondition','')]
+assert len(fx_stick)==4
+for mapping in fx_stick:
+    cc=mapping['source']['number']
+    assert mapping['target']=={'type':63,'paramIndex':3}
+    assert abs(mapping['mode']['minTargetValue']-(11+cc-4)/28)<.000001
+    assert 'p[9] == 0' in mapping['eelCondition'] and 'p[6] == 0' in mapping['eelCondition']
+fx_knob=next(m for m in mappings if m['name']=='Set FX knob position')
+assert 'p[15] == 1' in fx_knob['eelCondition']
+print('Passed: window bumpers, window-local FX spatial requests and numeric-control-only absolute knob gate.')

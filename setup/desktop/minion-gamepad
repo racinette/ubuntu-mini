@@ -650,13 +650,14 @@ class Mapper:
             except OSError:
                 page = ''
             lines[1] = 'Page: ' + (page if page in ('Arrange', 'Mixer', 'FX','Toolbar','Transport') else 'Waiting for REAPER')
-            lines[2:2] = ['Select: cycle controls (page shown in the bar)',
+            lines[2:2] = ['Select: main-window pages / FX region picker',
                           'Hold L2: choose area; release L2: enter; L3: actions',
-                          'Areas — move spatially between Toolbar, Tracks, Timeline and Transport',
+                          'Areas — regions inside the focused REAPER window',
                           'Areas — B: cancel; right stick and editing controls: inactive',
                           'Toolbar / Transport — L / D-pad: select; A: activate / edit',
                           'Transport values — R: adjust; rate: angle; R2 + tempo: 0.1 BPM',
                           'Dialogs — L / L1/R1: previous/next field; D-pad: arrows',
+                          'Native menus — L / D-pad: arrows; A: Enter; B: Escape',
                           'Dialogs — A: Enter; B: Escape; X: Backspace; Y: Space',
                           'A: select / enter; B: cancel / back / stop',
                           'Y: Play / stop once; Start: save',
@@ -664,12 +665,12 @@ class Mapper:
                           'Arrange — A: select item at cursor; L: scroll; R: zoom',
                           'Mixer — D-pad up/down: tracks; left/right: outlined control',
                           'Mixer — L: outline in 2D; R angle: knob position; A: activate',
-                          'FX — D-pad: FX/parameter; L: tracks; R angle: knob position',
+                          'FX — L / D-pad: move spatially; A: activate / choose; R: adjust',
                           'Knobs — lower-left: min; up: midpoint; lower-right: max; center: hold',
                           'X: split / mute / bypass; R3: loop / solo / FX window',
-                          'R2: Ctrl / Arrange cursor; L1/R1: previous / next track in REAPER',
+                          'R2: Ctrl / Arrange cursor; L1/R1: previous / next REAPER window',
                           'ReaLearn uses direct MIDI actions, without mouse events',
-                          'REAPER dialogs: ordinary arrows; sticks suppressed']
+                          'Center the sticks after changing a target']
         return '\n'.join(lines) + '\n'
 
     def toggle_legend(self):
@@ -792,6 +793,19 @@ class Mapper:
 
     def focused_reaper(self):
         return self.reaper_window_kind() in ('project','controls','fx')
+
+    def focused_reaper_menu(self):
+        try:
+            if not any(time.time()-path.stat().st_mtime<=.5 for path in self.directory.glob('reaper-outline-*.native-menu')):
+                return False
+            node=self.focused_window()
+            pid=node['pid']
+            marker=self.directory/f'reaper-outline-{pid}.native-menu'
+            if time.time()-marker.stat().st_mtime>.5 or marker.read_text().strip()!=str(pid):
+                return False
+            return self.reaper_window_kind() in ('project','fx','controls')
+        except (OSError,ValueError,EOFError,KeyError):
+            return False
 
     def focused_reaper_dialog(self):
         return self.reaper_window_kind() == 'dialog'
@@ -1163,8 +1177,10 @@ class Mapper:
 
     def reaper_dialog_frame(self,pressed,released,now):
         """Use the native keyboard focus order in standard REAPER dialogs."""
-        dialog=self.mode=='reaper' and self.focused_reaper_dialog()
-        if dialog!=self.dialog_active:
+        native_menu=self.mode=='reaper' and self.focused_reaper_menu()
+        dialog=self.mode=='reaper' and (native_menu or self.focused_reaper_dialog())
+        if dialog!=self.dialog_active or native_menu!=getattr(self,'menu_active',False):
+            self.menu_active=native_menu
             self.dialog_active,self.dialog_ready=dialog,self.neutral()
             self.dialog_buttons.clear()
             self.dialog_direction,self.dialog_next=None,0
@@ -1203,7 +1219,7 @@ class Mapper:
         self.dialog_buttons.difference_update(released)
         for source,back in ((self.config['previous_bumper'],True),(self.config['next_bumper'],False)):
             if source in pressed:
-                self.keyboard_shortcut(self.e.KEY_TAB,{self.e.KEY_LEFTSHIFT} if back else set())
+                self.keyboard_shortcut(self.e.KEY_LEFT if back else self.e.KEY_RIGHT,set()) if native_menu else self.keyboard_shortcut(self.e.KEY_TAB,{self.e.KEY_LEFTSHIFT} if back else set())
         # Menu keeps the ordinary launcher/legend behavior; all DAW actions and
         # Select+face shortcuts are suppressed until the dialog loses focus.
         menu={self.e.BTN_MODE}
@@ -1223,7 +1239,10 @@ class Mapper:
             direction='left' if abs(x)>=abs(y) and x<0 else 'right' if abs(x)>=abs(y) else 'up' if y<0 else 'down'
             fresh=direction!=self.dialog_direction
             if fresh or now>=self.dialog_next:
-                self.keyboard_shortcut(self.e.KEY_TAB,{self.e.KEY_LEFTSHIFT} if direction in ('up','left') else set())
+                if native_menu:
+                    self.keyboard_shortcut(getattr(self.e,'KEY_'+direction.upper()),set())
+                else:
+                    self.keyboard_shortcut(self.e.KEY_TAB,{self.e.KEY_LEFTSHIFT} if direction in ('up','left') else set())
                 self.dialog_direction=direction
                 self.dialog_next=now+(.35 if fresh else .16)
         return True
@@ -1332,7 +1351,7 @@ class Mapper:
             steps = int(self.dpad_credit)
             self.dpad_credit -= steps
         modifiers = self.keys & {self.e.KEY_LEFTSHIFT, self.e.KEY_LEFTCTRL}
-        reaper = self.mode == 'reaper' and self.focused_reaper()
+        reaper = self.mode == 'reaper' and not self.dialog_active and self.focused_reaper()
         for _ in range(steps):
             for direction in sorted(directions):
                 horizontal, vertical = self.config['chord_axes']
@@ -1552,9 +1571,11 @@ class Mapper:
                 rates = self.config['zoom_rate'] if mode == 'zoom' else self.config['scroll_rate'] if mode == 'scroll' else self.config[
                     'selection_line_rate' if direction in ('up', 'down') else 'selection_rate']
                 try:
-                    mixer_navigation = reaper and index == 0 and (self.reaper_area_held or
-                        (self.directory / 'reaper-page').read_text().strip() in ('Mixer','Toolbar','Transport')
-                        or (self.directory / 'reaper-area').exists() and (self.directory / 'reaper-area').read_text().strip())
+                    page_path=self.directory / 'reaper-page'
+                    page=page_path.read_text().strip() if page_path.exists() else ''
+                    mixer_navigation = reaper and (index == 1 and page == 'FX' or index == 0 and (self.reaper_area_held or
+                        page in ('Mixer','FX','Toolbar','Transport')
+                        or (self.directory / 'reaper-area').exists() and (self.directory / 'reaper-area').read_text().strip()))
                 except OSError:
                     mixer_navigation = False
                 transport_adjustment=reaper and index==1 and bool(transport_field)

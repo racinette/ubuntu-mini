@@ -17,7 +17,7 @@ HERE = Path(__file__).resolve().parent
 RELEASE = json.loads((HERE / 'realearn-release.json').read_text())
 ACTION_ID = 'RS' + hashlib.sha1(b'ubuntu-mini/reaper-gamepad.lua').hexdigest()
 PLUGIN_NAME = 'VSTi: Helgobox - ReaLearn & Playtime (Helgoboss)'
-REQUEST_COUNT = 27
+REQUEST_COUNT = 29
 PAGE_COUNT = 5
 
 
@@ -63,8 +63,8 @@ def preset():
         mappings[-1]['source']['is14Bit'] = True
         mappings[-1]['mode'] = {} # Every value, including zero; never press-only.
 
-    for page in range(PAGE_COUNT):
-        value = ((page + 1) % PAGE_COUNT) / (PAGE_COUNT - 1)
+    for page in (0,1,3,4):
+        value = {0:1,1:3,3:4,4:0}[page] / (PAGE_COUNT - 1)
         add('Next control page', 12, parameter(0), page=page, menu=None,
             mode=dict(minTargetValue=value, maxTargetValue=value))
     request('Open/close actions', 13, 1, menu=None, areas=None)
@@ -74,8 +74,8 @@ def preset():
         mode=dict(minTargetValue=.5,maxTargetValue=.5),areas=None)
     for cc,value in ((27,18),(28,19),(29,20),(30,21)):
         request('Navigate held area chooser',cc,value,menu=None,areas=None)
-    for cc,command in ((48,40286),(49,40285)):
-        action('Previous / next track',cc,command)
+    for cc,value in ((48,27),(49,28)):
+        request('Previous / next REAPER window',cc,value,menu=None)
     request('Enter chosen area', 18, 16, areas=True)
     request('Cancel area choice', 19, 17, areas=True)
     for controls, value in (((0,24,4),18),((1,25,5),19),((2,6),20),((3,7),21)):
@@ -85,7 +85,9 @@ def preset():
     request('Cancel actions', 19, 5, menu=True)
     request('Select item at cursor', 18, 6, 0)
     request('Activate selected track control', 18, 8, 1)
-    request('Open/close selected effect', 18, 4, 2)
+    request('Activate FX control',18,8,2)
+    request('Choose FX region',19,15,2)
+    request('Choose FX region',12,15,2)
     for page in (3,4):
         ui_buttons=runpy.run_path(str(HERE/'reaper-ui.py'))['BUTTONS']['Toolbar' if page==3 else 'Transport']
         for command,label,_ in ui_buttons:
@@ -106,7 +108,7 @@ def preset():
             for cc in controls:
                 request('Navigate native panel buttons',cc,value,page)
     action('Stop', 19, 1016, 0)
-    for page in (1, 2):
+    for page in (1,):
         add('Return to Arrange', 19, parameter(0), page, mode=dict(minTargetValue=0, maxTargetValue=0))
     action('Play / stop', 16, 40044, menu=None)
     action('Save project', 17, 40026, menu=None)
@@ -141,15 +143,14 @@ def preset():
         mappings[-1]['eelCondition'] += f' && p[8] == {field}'
     request('Mute track', 15, 3, 1)
     request('Solo track', 14, 4, 1)
-    # FX: indices belong to this controller, so opening a plugin UI never
-    # silently retargets the sticks. The display clamps indices to real objects.
-    for cc, index, reverse in ((0, 2, True), (1, 2, False), (24, 2, True), (25, 2, False), (2, 1, True), (3, 1, False)):
-        increment('Choose FX / parameter', cc, parameter(index), reverse, 2)
-    for cc, command in ((4, 40286), (5, 40285), (6, 40286), (7, 40285)):
-        action('Select FX track', cc, command, 2)
+    # FX navigation uses the visible controls in the selected window region.
+    for controls,value in (((0,24,4),11),((1,25,5),12),((2,6),13),((3,7),14)):
+        for cc in controls:request('Navigate FX controls',cc,value,2)
+    for cc in (8,9,10,11):request('Adjust FX selector',cc,23+cc-8,2)
     target = dict(type=1, trackGUID='selected', fxAnchor='dynamic', fxExpression='p[1]',
                   paramType='dynamic', paramExpression='p[2]')
     absolute('Set FX knob position', target, 2)
+    mappings[-1]['eelCondition'] += ' && p[15] == 1'
     request('Bypass FX', 15, 3, 2)
     request('Show/hide FX window', 14, 4, 2)
     for cc, name, command in ((32, 'Copy items', 40698), (33, 'Paste', 40058),
@@ -177,7 +178,8 @@ def preset():
                                       (11, 'Native button action', 65536, []),
                                       (12, 'Area hold', 3, ['Released','Cancelled','Held']),
                                       (13, 'Transport knob', 16384, []),
-                                      (14, 'Transport sample', 65536, [])):
+                                      (14, 'Transport sample', 65536, []),
+                                      (15, 'FX knob active', 2, [])):
         parameters[str(index)] = dict(name=name, valueCount=count, valueLabels=labels, value=0)
     return dict(mainUnit=dict(version=RELEASE['version'], name='Device gamepad',
                              controlDeviceId='0', letMatchedEventsThrough=False,

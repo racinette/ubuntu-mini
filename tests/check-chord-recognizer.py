@@ -995,6 +995,27 @@ def main():
                 frame({'Y'});assert not state.keys and not state.ready and not state.dialog_active
                 frame();state.tick(1,True);assert state.ready
                 assert not midi.called
+        # Native SWELL menus keep the underlying Sway window focused. Their
+        # keyboard layer uses arrows and cannot emit DAW or workspace actions.
+        reaper_reset()
+        with patch.object(state,'focused_reaper_menu',return_value=True), patch.object(state,'reaper_control') as midi, patch.object(state,'workspace') as workspace:
+            frame();assert state.dialog_active and state.menu_active
+            keyboard.events.clear()
+            state.raw_axes[config['left_stick'][1]]=32767
+            state.tick(0,True);state.tick(.1,True);state.tick(.35,True)
+            assert downs()==[codes.KEY_DOWN,codes.KEY_DOWN]
+            state.raw_axes[config['left_stick'][1]]=0;state.tick(.4,True)
+            keyboard.events.clear();frame(buttons=(310,));frame();frame(buttons=(311,));frame()
+            assert downs()==[codes.KEY_LEFT,codes.KEY_RIGHT]
+            keyboard.events.clear();frame({'UP'});frame()
+            assert downs()==[codes.KEY_UP]
+            keyboard.events.clear();frame({'A'});frame();frame({'B'});frame()
+            assert downs()==[codes.KEY_ENTER,codes.KEY_ESC]
+            assert not midi.called and not workspace.called
+            with patch.object(state,'focused_reaper_menu',return_value=False):
+                frame();assert not state.menu_active and not state.dialog_active
+                state.tick(1,True);assert state.ready
+
         # Controls already held when a dialog opens are consumed until neutral.
         reaper_reset()
         with patch.object(state,'focused_reaper_dialog',return_value=True), patch.object(state,'reaper_control') as midi:
@@ -1097,26 +1118,27 @@ def main():
         # Mixer object navigation moves once on a nudge, pauses, then repeats
         # at a bounded rate. Other pages and the adjustment stick keep their
         # continuous response.
-        (directory / 'reaper-page').write_text('Mixer\n')
-        for axis, value, control in ((0, -32768, 4), (0, 32767, 5), (1, -32768, 6), (1, 32767, 7)):
-            reaper_reset()
-            state.raw_axes[config['left_stick'][axis]] = value
-            with patch.object(state, 'focused_reaper', return_value=True), patch.object(state, 'reaper_control') as midi:
-                for now in (0, .1, .2, .349):
-                    state.tick(now, True)
-                assert midi.call_args_list == [call(control)]
-                state.tick(.35, True)
-                state.tick(.50, True)
-                assert midi.call_args_list == [call(control)] * 2
-                state.tick(.511, True)
-                assert midi.call_args_list == [call(control)] * 3
-                state.raw_axes[config['left_stick'][axis]] = 0
-                state.tick(.52, True); state.tick(1, True)
-                assert midi.call_count == 3
+        for page in ('Mixer','FX','Toolbar','Transport'):
+            (directory / 'reaper-page').write_text(page+'\n')
+            for axis, value, control in ((0, -32768, 4), (0, 32767, 5), (1, -32768, 6), (1, 32767, 7)):
+                reaper_reset()
                 state.raw_axes[config['left_stick'][axis]] = value
-                state.tick(1.01, True)
-                assert midi.call_count == 4
-            assert not keyboard.events
+                with patch.object(state, 'focused_reaper', return_value=True), patch.object(state, 'reaper_control') as midi:
+                    for now in (0, .1, .2, .349):
+                        state.tick(now, True)
+                    assert midi.call_args_list == [call(control)]
+                    state.tick(.35, True)
+                    state.tick(.50, True)
+                    assert midi.call_args_list == [call(control)] * 2
+                    state.tick(.511, True)
+                    assert midi.call_args_list == [call(control)] * 3
+                    state.raw_axes[config['left_stick'][axis]] = 0
+                    state.tick(.52, True); state.tick(1, True)
+                    assert midi.call_count == 3
+                    state.raw_axes[config['left_stick'][axis]] = value
+                    state.tick(1.01, True)
+                    assert midi.call_count == 4
+                assert not keyboard.events
         reaper_reset()
         state.raw_axes[config['left_stick'][0]] = 32767
         state.raw_axes[config['right_stick'][0]] = 32767
@@ -1125,6 +1147,14 @@ def main():
                 state.tick(now, True)
             controls = [c.args[0] for c in midi.call_args_list]
             assert controls.count(5) == 1 and controls.count(9) >= 3
+        (directory / 'reaper-page').write_text('FX\n')
+        reaper_reset()
+        state.raw_axes[config['right_stick'][0]]=32767
+        with patch.object(state,'focused_reaper',return_value=True),patch.object(state,'reaper_control') as midi:
+            for now in (0,.1,.2,.349):state.tick(now,True)
+            assert midi.call_args_list==[call(9)]
+            state.tick(.35,True)
+            assert midi.call_args_list==[call(9),call(9)]
         (directory / 'reaper-page').unlink()
         # Rotary knobs use absolute angle, not direction/deflection repeats.
         rotary_path = directory / 'reaper-rotary-target'

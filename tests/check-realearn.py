@@ -43,6 +43,8 @@ with tempfile.TemporaryDirectory(prefix='realearn-install-check-') as temporary:
         assert keys.read_text().startswith('KEY 1 83 40757 0\n')
         assert keys.read_text().count(realearn.ACTION_ID) == 1
         state = json.loads((resource / 'Data/device-gamepad.json').read_text())
+        assert (resource / 'Scripts/Device/reaper-control-outline.py').read_bytes() == (PROJECT / 'setup/development/reaper-control-outline.py').read_bytes()
+        assert (resource / 'Scripts/Device/reaper-control-navigation.lua').read_bytes() == (PROJECT / 'setup/development/reaper-control-navigation.lua').read_bytes()
         assert state['mainUnit']['controlDeviceId'] == '1'
         chain = resource / 'reaper-hwoutfx.ini'
         before = chain.read_bytes()
@@ -89,6 +91,10 @@ with tempfile.TemporaryDirectory(prefix='realearn-install-check-') as temporary:
         chain.write_text(chain.read_text().replace('BYPASS 0 0 0', 'BYPASS 1 0 0'))
         realearn.install(resource, assets)
         assert chain.read_text() == expected + '// customization\n'
+        realearn.install(resource, assets, update_controller=True)
+        assert chain.read_text().endswith('// customization\n')
+        assert 'Personally customized controller' not in chain.read_text()
+        assert realearn.retarget_controller(realearn.monitoring_fx(realearn.preset()), 1) + '// customization\n' == chain.read_text()
         chain.unlink()
         (assets / 'plugin.so').write_bytes(b'corrupted')
         try:

@@ -127,19 +127,35 @@
         "BTN_MODE": "legend"
       },
       "chords": {
-        "UP+A": "copy",
-        "DOWN+A": "paste",
-        "LEFT+A": "undo",
-        "RIGHT+A": "redo",
-        "UP+LEFT+A": "cut",
-        "UP+RIGHT+A": "select_all",
-        "DOWN+LEFT+A": "find",
-        "DOWN+RIGHT+A": "save",
+        "UP+A": "reaper_copy",
+        "DOWN+A": "reaper_paste",
+        "LEFT+A": "reaper_undo",
+        "RIGHT+A": "reaper_redo",
+        "UP+LEFT+A": "reaper_cut",
+        "UP+RIGHT+A": "reaper_select_all",
+        "DOWN+LEFT+A": "reaper_zoom_items",
+        "DOWN+RIGHT+A": "reaper_save_project",
+        "UP+B": "reaper_insert_track",
+        "DOWN+B": "reaper_arm",
+        "LEFT+B": "reaper_previous_marker",
+        "RIGHT+B": "reaper_next_marker",
+        "UP+LEFT+B": "reaper_record",
+        "UP+RIGHT+B": "reaper_monitor",
+        "DOWN+LEFT+B": "reaper_duplicate",
+        "DOWN+RIGHT+B": "reaper_delete_items",
         "SELECT+A": "fullscreen",
         "SELECT+B": "floating",
         "SELECT+Y": "layout",
         "SELECT+X": "split"
-      }
+      },
+      "scroll_rate": [
+        4,
+        50
+      ],
+      "zoom_rate": [
+        3,
+        14
+      ]
     }
   }
 }

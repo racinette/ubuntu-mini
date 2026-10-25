@@ -93,13 +93,55 @@ the built-in screen.
 
 | Control | Arrange | Mixer | FX |
 | --- | --- | --- | --- |
-| D-pad left/right | Cursor by grid division | Previous/next track | Previous/next parameter |
-| D-pad up/down | Previous/next track | Previous/next send | Previous/next FX |
-| Left stick | Scroll viewport | Adjust selected send pan/level | Previous/next track |
-| Right stick | Timeline zoom / track height | Track pan / level | Adjust selected parameter |
+| D-pad left/right | Previous/next item; hold R2 for cursor by grid | Previous/next visible track control | Previous/next parameter |
+| D-pad up/down | Previous/next track | Previous/next track | Previous/next FX |
+| Left stick | Scroll viewport | Move outline spatially within track | Previous/next track |
+| Right stick | Timeline zoom / track height | Adjust outlined control | Adjust selected parameter |
 | X | Split selected items at cursor | Mute/unmute track | Bypass/enable selected FX |
 | R3 | Toggle loop | Solo/unsolo track | Show/hide FX window |
 | L3 | Open/close the page's action menu | Same | Same |
+| A | Select item at cursor on selected track | Toggle outlined switch / enter FX | Show/hide selected FX |
+| B | Stop transport | Return to Arrange | Return to Arrange |
+
+Hold A or B first, add a D-pad direction, then release both. These combos invoke
+REAPER actions directly, including while a stock FX window has focus:
+
+| D-pad | Hold A: editing | Hold B: project / recording |
+| --- | --- | --- |
+| Up | Copy items | Insert track |
+| Down | Paste | Arm/disarm selected tracks |
+| Left / Right | Undo / Redo | Previous / Next marker |
+| Up-left | Cut items | Record |
+| Up-right | Select all items on selected tracks | Input monitoring on/off |
+| Down-left | Zoom to selected items | Duplicate items |
+| Down-right | Save | Delete selected items |
+
+Arrange shows the selected item count/name and whether the track is armed.
+X splits only when the edit cursor is inside a selected item; otherwise the
+display explains what to select. Select an item with D-pad left/right, hold R2
+and move the cursor inside it, then press X. Stick rates are faster in REAPER
+(scroll/adjustment 4–50 and zoom 3–14 steps/second) without changing Desktop rates.
+
+Mixer follows the vertical track list in the arrange view. Up/down selects and
+reveals a track; left/right chooses Volume, Pan, Mute, Solo, Arm, Monitoring or
+FX, skipping controls hidden by the current theme/layout. A cyan outline marks
+the real track control. The left stick navigates within that track in screen
+space: up/down moves to a control above/below the current one, and left/right
+moves to a control on that side. It prefers aligned controls and skips hidden
+ones; at an edge the selection stays put. D-pad up/down still selects tracks,
+and D-pad left/right retains ordered control selection. A nudge moves once; holding repeats after 350 ms
+at about six moves per second, independently of the scrolling speed.
+Right-stick up/right increases a value or enables a
+switch; down/left decreases or disables it. A toggles a selected switch; on FX,
+A enters the FX page and opens the track's effects. Volume and Pan need only
+the stick. X and R3 retain their direct mute/solo actions.
+
+The outline is a click-through X11 child of the REAPER project window. It uses
+REAPER's reported control positions, follows resizing/scrolling and hides when
+another application has focus, the action menu opens or the page/profile changes.
+Its drawing process belongs to the controller script, exits when that script or
+REAPER stops and requires no session service. This prototype covers native track
+controls; sends and arbitrary plugin widgets do not have outline navigation.
 
 In the action menu, use D-pad up/down, then A to run or B/L3 to cancel. Arrange
 includes recording, insert track, copy/paste/cut, undo/redo, split/trim, markers,
@@ -112,7 +154,7 @@ Y plays/stops once on release; holding never repeats. Start saves. Either
 trigger makes level/pan/FX adjustments finer; triggers still emit Shift/Ctrl for
 physical typing and ordinary keyboard shortcuts. L1/R1 navigate workspaces;
 L2+bumper sends the window. Menu taps open the launcher and holding Menu shows
-the full legend. A+D-pad editing shortcuts and Select+face layout toggles remain.
+the full legend. Select+face layout toggles remain.
 X is a discrete context action in REAPER; it remains holdable Backspace on Desktop.
 
 MIDI controls require the genuine REAPER project, stock FX-chain/plugin window or the
@@ -128,6 +170,8 @@ controller input from **All MIDI Inputs**, so controller gestures are not record
 as performance MIDI. A nonempty, unrelated monitoring-FX chain is preserved;
 setup asks for manual integration rather than replacing it. Close REAPER before
 running `/usr/bin/python3 setup/development/realearn.py` as your normal user.
+Add `--update-controller` to explicitly replace this device's controller mappings
+with the current repository layout; ordinary setup reruns retain custom mappings.
 
 ## Switch profiles and normal gamepad input
 

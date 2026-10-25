@@ -893,6 +893,38 @@ def main():
                     midi.assert_called_once_with(control+offset)
                 assert not keyboard.events
                 assert state.keys == {codes.KEY_LEFTSHIFT,codes.KEY_LEFTCTRL}
+        # Mixer object navigation moves once on a nudge, pauses, then repeats
+        # at a bounded rate. Other pages and the adjustment stick keep their
+        # continuous response.
+        (directory / 'reaper-page').write_text('Mixer\n')
+        for axis, value, control in ((0, -32768, 4), (0, 32767, 5), (1, -32768, 6), (1, 32767, 7)):
+            reaper_reset()
+            state.raw_axes[config['left_stick'][axis]] = value
+            with patch.object(state, 'focused_reaper', return_value=True), patch.object(state, 'reaper_control') as midi:
+                for now in (0, .1, .2, .349):
+                    state.tick(now, True)
+                assert midi.call_args_list == [call(control)]
+                state.tick(.35, True)
+                state.tick(.50, True)
+                assert midi.call_args_list == [call(control)] * 2
+                state.tick(.511, True)
+                assert midi.call_args_list == [call(control)] * 3
+                state.raw_axes[config['left_stick'][axis]] = 0
+                state.tick(.52, True); state.tick(1, True)
+                assert midi.call_count == 3
+                state.raw_axes[config['left_stick'][axis]] = value
+                state.tick(1.01, True)
+                assert midi.call_count == 4
+            assert not keyboard.events
+        reaper_reset()
+        state.raw_axes[config['left_stick'][0]] = 32767
+        state.raw_axes[config['right_stick'][0]] = 32767
+        with patch.object(state, 'focused_reaper', return_value=True), patch.object(state, 'reaper_control') as midi:
+            for now in (0, .1, .2):
+                state.tick(now, True)
+            controls = [c.args[0] for c in midi.call_args_list]
+            assert controls.count(5) == 1 and controls.count(9) >= 3
+        (directory / 'reaper-page').unlink()
         reaper_reset()
         connection=Mock()
         with patch.object(state,'focused_reaper',return_value=True), patch.object(state,'focused_window',return_value=project), patch.object(mapper,'ReaperMidi',return_value=connection):
@@ -916,6 +948,25 @@ def main():
         with patch.object(state,'lid_closed',return_value=True), patch.object(state,'dispatch') as dispatch:
             state.tick(0,True); frame({'Y'}); frame(buttons=(314,315),at=1); frame(at=3)
             assert not dispatch.called and not keyboard.events and state.mode=='reaper'
+        # Every REAPER edit/recording chord uses the existing face-first release
+        # protocol and consumes both component inputs, without keyboard leakage.
+        for tokens, action in config['profiles']['reaper']['chords'].items():
+            if 'SELECT' in tokens:
+                continue
+            prefix = tokens & {'A','B'}
+            for remainder in (prefix, tokens - prefix):
+                reaper_reset()
+                with patch.object(state,'dispatch') as dispatch:
+                    frame(prefix);frame(tokens);frame(remainder);frame()
+                    dispatch.assert_called_once_with(action)
+                assert not keyboard.events
+        reaper_reset()
+        connection = Mock()
+        with patch.object(state,'focused_reaper',return_value=True), patch.object(state,'focused_window',return_value=project), patch.object(mapper,'ReaperMidi',return_value=connection):
+            state.triggers = [False, True]
+            state.navigate_dpad({'RIGHT'}, 0)
+            assert connection.pulse.call_args_list == [call(123,22,127),call(123,25)]
+            state.reset()
         reset(); state.device=None
 
         # Persistent legend on Menu hold, short-press dismissal and isolation.

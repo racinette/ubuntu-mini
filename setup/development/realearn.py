@@ -16,6 +16,7 @@ HERE = Path(__file__).resolve().parent
 RELEASE = json.loads((HERE / 'realearn-release.json').read_text())
 ACTION_ID = 'RS' + hashlib.sha1(b'ubuntu-mini/reaper-gamepad.lua').hexdigest()
 PLUGIN_NAME = 'VSTi: Helgobox - ReaLearn & Playtime (Helgoboss)'
+REQUEST_COUNT = 15
 
 
 def preset():
@@ -51,7 +52,7 @@ def preset():
 
     def request(name, cc, value, page=None, menu=False):
         add(name, cc, parameter(3), page, menu,
-            dict(minTargetValue=value / 5, maxTargetValue=value / 5))
+            dict(minTargetValue=value / (REQUEST_COUNT - 1), maxTargetValue=value / (REQUEST_COUNT - 1)))
 
     for page in range(3):
         value = ((page + 1) % 3) / 2
@@ -60,7 +61,12 @@ def preset():
     request('Open/close actions', 13, 1, menu=None)
     request('Confirm action', 18, 2, menu=True)
     request('Cancel actions', 19, 5, menu=True)
-    action('Stop', 19, 40042)
+    request('Select item at cursor', 18, 6, 0)
+    request('Activate selected track control', 18, 8, 1)
+    request('Open/close selected effect', 18, 4, 2)
+    action('Stop', 19, 1016, 0)
+    for page in (1, 2):
+        add('Return to Arrange', 19, parameter(0), page, mode=dict(minTargetValue=0, maxTargetValue=0))
     action('Play / stop', 16, 40044, menu=None)
     action('Save project', 17, 40026, menu=None)
     # A held trigger selects fine adjustment; unlike action buttons this mapping
@@ -69,30 +75,36 @@ def preset():
     mappings[-1]['mode'] = {}
     for cc, reverse in ((2, True), (3, False), (6, True), (7, False)):
         increment('Choose menu action', cc, parameter(4), reverse, menu=True)
-    for cc, command in ((0, 40646), (1, 40647), (2, 40286), (3, 40285),
+    for cc, command in ((0, 40416), (1, 40417)):
+        action('Select previous / next item', cc, command, 0)
+    for cc, command in ((24, 40646), (25, 40647)):
+        action('Move edit cursor by grid', cc, command, 0)
+    for cc, command in ((2, 40286), (3, 40285),
                         (4, 40140), (5, 40141), (6, 40138), (7, 40139),
                         (8, 1011), (9, 1012), (10, 40111), (11, 40112)):
         action('Arrange navigation', cc, command, 0)
     request('Split selected items', 15, 3, 0)
     request('Loop time selection', 14, 4, 0)
-    # Mixer: direction controls choose tracks/sends; the right stick adjusts
-    # level and pan, and the left stick adjusts the selected send.
-    for cc, command in ((0, 40286), (1, 40285)):
+    # Track controls follow the vertical TCP, with a visible control selector.
+    for cc, command in ((2, 40286), (3, 40285)):
         action('Select mixer track', cc, command, 1)
-    for cc, reverse in ((2, True), (3, False)):
-        increment('Select send', cc, parameter(7), reverse, 1)
-    for cc, kind, reverse in ((8, 4, True), (9, 4, False), (10, 2, False), (11, 2, True),
-                              (4, 9, True), (5, 9, False), (6, 3, False), (7, 3, True)):
-        target = dict(type=kind, trackGUID='selected')
-        if kind in (3, 9):
-            target.update(routeSelectorType='dynamic', routeExpression='p[7]')
-        for fine, step in ((False, .01), (True, .002)):
-            increment('Mixer adjustment', cc, target, reverse, 1, step=step, fine=fine)
+    for cc, reverse in ((0, True), (1, False), (24, True), (25, False)):
+        increment('Choose track control', cc, parameter(8), reverse, 1)
+    for cc, direction in ((4, 'left'), (5, 'right'), (6, 'up'), (7, 'down')):
+        request('Navigate track controls ' + direction, cc, 11 + cc - 4, 1)
+    for cc, reverse in ((8, True), (9, False), (10, False), (11, True)):
+        for field, kind in ((0, 2), (1, 4)):
+            for fine, step in ((False, .01), (True, .002)):
+                increment('Adjust selected track control', cc, dict(type=kind, trackGUID='selected'),
+                          reverse, 1, step=step, fine=fine)
+                mappings[-1]['eelCondition'] += f' && p[8] == {field}'
+        request('Set selected track switch', cc, 9 if reverse else 10, 1)
+        mappings[-1]['eelCondition'] += ' && p[8] >= 2 && p[8] <= 5'
     request('Mute track', 15, 3, 1)
     request('Solo track', 14, 4, 1)
     # FX: indices belong to this controller, so opening a plugin UI never
     # silently retargets the sticks. The display clamps indices to real objects.
-    for cc, index, reverse in ((0, 2, True), (1, 2, False), (2, 1, True), (3, 1, False)):
+    for cc, index, reverse in ((0, 2, True), (1, 2, False), (24, 2, True), (25, 2, False), (2, 1, True), (3, 1, False)):
         increment('Choose FX / parameter', cc, parameter(index), reverse, 2)
     for cc, command in ((4, 40286), (5, 40285), (6, 40286), (7, 40285)):
         action('Select FX track', cc, command, 2)
@@ -103,15 +115,26 @@ def preset():
             increment('Adjust FX parameter', cc, target, reverse, 2, step=step, fine=fine)
     request('Bypass FX', 15, 3, 2)
     request('Show/hide FX window', 14, 4, 2)
+    for cc, name, command in ((32, 'Copy items', 40698), (33, 'Paste', 40058),
+                              (34, 'Undo', 40029), (35, 'Redo', 40030),
+                              (36, 'Cut items', 40699), (37, 'Select track items', 40421),
+                              (38, 'Zoom selected items', 41622), (39, 'Save', 40026),
+                              (40, 'Insert track', 40001), (41, 'Arm tracks', 9),
+                              (42, 'Previous marker', 40172), (43, 'Next marker', 40173),
+                              (44, 'Record', 1013), (46, 'Duplicate items', 41295),
+                              (47, 'Delete items', 40006)):
+        action(name, cc, command, menu=None)
+    request('Toggle input monitoring', 45, 7, menu=None)
     mappings.append(dict(id='device-display', name='Start control display',
                          source=dict(category='reaper', reaperSourceType='timer', timerMillis=1000),
                          mode={}, target=dict(type=0, commandName=ACTION_ID, invocationType=0)))
     parameters = {}
     for index, name, count, labels in ((0, 'Page', 3, ['Arrange', 'Mixer', 'FX']),
                                       (1, 'FX', 128, []), (2, 'Parameter', 256, []),
-                                      (3, 'Request', 6, []), (4, 'Menu action', 32, []),
+                                      (3, 'Request', REQUEST_COUNT, []), (4, 'Menu action', 32, []),
                                       (5, 'Fine', 2, []), (6, 'Actions open', 2, []),
-                                      (7, 'Send', 128, [])):
+                                      (7, 'Send', 128, []),
+                                      (8, 'Track control', 7, ['Volume', 'Pan', 'Mute', 'Solo', 'Arm', 'Monitoring', 'FX'])):
         parameters[str(index)] = dict(name=name, valueCount=count, valueLabels=labels, value=0)
     return dict(mainUnit=dict(version=RELEASE['version'], name='Device gamepad',
                              controlDeviceId='0', letMatchedEventsThrough=False,
@@ -146,13 +169,15 @@ def atomic(path, data):
             staging.unlink(missing_ok=True)
 
 
-def retarget_controller(chain, index):
-    """Change only the reserved input in our existing native VST state."""
+def retarget_controller(chain, index, replacement=None):
+    """Change the input, optionally replacing our controller state explicitly."""
     pattern = r'(<VST [^\n]*"Device gamepad"[^\n]*\n)(.*?)(\n>\n)'
     def replace(match):
         lines = match[2].splitlines()
         header = bytearray(base64.b64decode(lines[0].strip()))
         state = json.loads(base64.b64decode(''.join(line.strip() for line in lines[1:-1])))
+        if replacement is not None:
+            state = replacement
         state['mainUnit']['controlDeviceId'] = str(index)
         data = json.dumps(state, separators=(',', ':')).encode()
         struct.pack_into('<I', header, 32, len(data))
@@ -177,7 +202,7 @@ def reaper_running():
     return False
 
 
-def install(resource=None, asset_dir=None):
+def install(resource=None, asset_dir=None, update_controller=False):
     if os.geteuid() == 0:
         raise SystemExit('Run as the desktop user')
     resource = resource or Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config')) / 'REAPER'
@@ -210,6 +235,8 @@ def install(resource=None, asset_dir=None):
     if not config_path.exists():
         atomic(config_path, b'[main]\nshowed_welcome_screen=1\nsend_errors_to_dev=0\nnotify_about_updates=0\n')
     atomic(resource / 'Scripts/Device/reaper-gamepad.lua', (HERE / 'reaper-gamepad.lua').read_bytes())
+    atomic(resource / 'Scripts/Device/reaper-control-outline.py', (HERE / 'reaper-control-outline.py').read_bytes())
+    atomic(resource / 'Scripts/Device/reaper-control-navigation.lua', (HERE / 'reaper-control-navigation.lua').read_bytes())
     keys = resource / 'reaper-kb.ini'
     current = keys.read_text() if keys.exists() else ''
     if ACTION_ID not in current:
@@ -285,7 +312,8 @@ def install(resource=None, asset_dir=None):
     if not current_chain.strip():
         atomic(chain, monitoring_fx(state).encode())
     else:
-        updated = retarget_controller(current_chain, index) if index != previous_index else current_chain
+        updated = (retarget_controller(current_chain, index, state if update_controller else None)
+                   if index != previous_index or update_controller else current_chain)
         # This FX supplies the controller in every profile, even while its UI
         # is hidden. A bypassed instance cannot receive any controller input.
         updated = re.sub(r'(^BYPASS )1( [^\n]*\n<VST [^\n]*"Device gamepad")',
@@ -300,8 +328,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--asset-dir', type=Path)
     parser.add_argument('--check', action='store_true')
+    parser.add_argument('--update-controller', action='store_true',
+                        help='Replace the device controller mappings with the current repository layout')
     args = parser.parse_args()
     if args.check:
         print('ReaLearn ' + RELEASE['version'] + ': Arrange, Mixer and FX pages')
     else:
-        install(asset_dir=args.asset_dir)
+        install(asset_dir=args.asset_dir, update_controller=args.update_controller)

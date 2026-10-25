@@ -1,6 +1,6 @@
 # Gamepad shortcuts
 
-The Desktop profile uses A/B + D-pad for editing and navigation, and Select + face buttons for layout toggles. X is immediate, holdable Backspace; Y is immediate, holdable Space. The physical QWERTY keyboard handles typing. Start+Select cycles Desktop → REAPER → Gamepad passthrough. REAPER retains A+D-pad editing and Select+face layout shortcuts, with Y assigned to one-shot play/stop; its B+D-pad and terminal chords are unassigned. The profile is [setup/desktop/gamepad.json](../setup/desktop/gamepad.json); see [controls](gamepad-controls.md) for sticks, single buttons and customization.
+The Desktop profile uses A/B + D-pad for editing and navigation, and Select + face buttons for layout toggles. X is immediate, holdable Backspace; Y is immediate, holdable Space. The physical QWERTY keyboard handles typing. Start+Select cycles Desktop → REAPER → Gamepad passthrough. REAPER has native A+D-pad editing and B+D-pad project/recording actions; Select+face layout shortcuts remain. Its Y is one-shot play/stop and terminal chords are unassigned. See the [REAPER controls and combo table](gamepad-controls.md#reaper-editing-profile). The profile is [setup/desktop/gamepad.json](../setup/desktop/gamepad.json); the tables below describe Desktop.
 
 | D-pad | + A: editing | + B: navigation/actions |
 | --- | --- | --- |

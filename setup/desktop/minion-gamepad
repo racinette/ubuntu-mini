@@ -80,6 +80,14 @@ REAPER_ZOOM = {'left': 'KEY_KPMINUS', 'right': 'KEY_KPPLUS',
 REAPER_CONTROLS = {'reaper_page': 12, 'reaper_actions': 13,
                    'reaper_secondary': 14, 'reaper_primary': 15,
                    'reaper_play_stop': 16, 'reaper_save': 17}
+REAPER_EDITS = ('copy', 'paste', 'undo', 'redo', 'cut', 'select_all', 'zoom_items', 'save_project',
+                'insert_track', 'arm', 'previous_marker', 'next_marker',
+                'record', 'monitor', 'duplicate', 'delete_items')
+REAPER_CONTROLS.update({'reaper_' + name: 32 + index for index, name in enumerate(REAPER_EDITS)})
+ACTION_LABELS.update({'reaper_' + name: 'REAPER: ' + label for name, label in zip(REAPER_EDITS, (
+    'Copy items', 'Paste items', 'Undo', 'Redo', 'Cut items', 'Select all items on selected tracks',
+    'Zoom to selected items', 'Save project', 'Insert track', 'Arm / disarm selected tracks',
+    'Previous marker', 'Next marker', 'Record', 'Input monitoring on / off', 'Duplicate items', 'Delete items'))})
 ACTION_LABELS.update({'reaper_page': 'REAPER: Arrange / Mixer / FX',
                       'reaper_actions': 'REAPER: Action menu',
                       'reaper_primary': 'REAPER: Split / mute / bypass',
@@ -354,8 +362,8 @@ def configuration(path, codes):
     if not isinstance(profiles, dict) or set(profiles) != {'reaper'}:
         raise ValueError('profiles requires the reaper mapping')
     changes = profiles['reaper']
-    if not isinstance(changes, dict) or set(changes) - {'buttons', 'actions', 'hold_actions', 'chords'}:
-        raise ValueError('REAPER profile supports buttons, actions, hold_actions and chords')
+    if not isinstance(changes, dict) or set(changes) - {'buttons', 'actions', 'hold_actions', 'chords', 'scroll_rate', 'zoom_rate'}:
+        raise ValueError('REAPER profile supports buttons, actions, hold_actions, chords and stick rates')
     reaper = compile_configuration(dict(config, **changes), codes, reaper=True)
     result = compile_configuration(dict(config), codes)
     result['profiles'] = {'reaper': reaper}
@@ -619,13 +627,15 @@ class Mapper:
                 page = ''
             lines[1] = 'Page: ' + (page if page in ('Arrange', 'Mixer', 'FX') else 'Waiting for REAPER')
             lines[2:2] = ['Select: Arrange / Mixer / FX (page shown in the bar)',
-                          'L3: actions; A: confirm; B: cancel / stop',
+                          'L3: actions; A: select / enter; B: cancel / back / stop',
                           'Y: Play / stop once; Start: save',
-                          'Arrange — D-pad: cursor/tracks; L: scroll; R: zoom',
-                          'Mixer — D-pad: tracks/sends; L: send; R: volume/pan',
+                          'Arrange — D-pad: items/tracks; R2 + D-pad: cursor',
+                          'Arrange — A: select item at cursor; L: scroll; R: zoom',
+                          'Mixer — D-pad up/down: tracks; left/right: outlined control',
+                          'Mixer — L: move outline spatially within track; R: adjust; A: activate',
                           'FX — D-pad: FX/parameter; L: tracks; R: value',
                           'X: split / mute / bypass; R3: loop / solo / FX window',
-                          'Triggers: fine adjustment; L1/R1: workspaces',
+                          'Triggers: fine adjustment; R2: Arrange cursor; L1/R1: workspaces',
                           'ReaLearn uses direct MIDI actions, without mouse events',
                           'REAPER dialogs: ordinary arrows; sticks suppressed']
         return '\n'.join(lines) + '\n'
@@ -1109,7 +1119,10 @@ class Mapper:
                 key = self.config['dpad'][axis][direction in ('RIGHT', 'DOWN')]
                 extra = {self.e.KEY_LEFTCTRL, self.e.KEY_LEFTALT} if reaper and direction in ('UP', 'DOWN') else set()
                 if reaper:
-                    self.reaper_control({'LEFT': 0, 'RIGHT': 1, 'UP': 2, 'DOWN': 3}[direction])
+                    control = {'LEFT': 0, 'RIGHT': 1, 'UP': 2, 'DOWN': 3}[direction]
+                    if self.triggers[1] and direction in ('LEFT', 'RIGHT'):
+                        control += 24
+                    self.reaper_control(control)
                 else:
                     self.shortcut(key, modifiers | extra)
 
@@ -1263,7 +1276,20 @@ class Mapper:
                 self.sticks[index] = direction
                 rates = self.config['zoom_rate'] if mode == 'zoom' else self.config['scroll_rate'] if mode == 'scroll' else self.config[
                     'selection_line_rate' if direction in ('up', 'down') else 'selection_rate']
-                steps = self.motion_steps(index, now, magnitude, fresh, rates)
+                try:
+                    mixer_navigation = reaper and index == 0 and (self.directory / 'reaper-page').read_text().strip() == 'Mixer'
+                except OSError:
+                    mixer_navigation = False
+                if mixer_navigation:
+                    # Object selection needs a deliberate nudge, then bounded
+                    # repeats rather than the continuous scrolling speed.
+                    if not fresh and now < self.next_repeat[index]:
+                        continue
+                    steps = 1
+                    self.next_repeat[index] = now + (.35 if fresh else .16)
+                    self.motion_time[index], self.motion_credit[index] = None, 0
+                else:
+                    steps = self.motion_steps(index, now, magnitude, fresh, rates)
                 if reaper:
                     offset = 4 if index == 0 else 8
                     for _ in range(steps):

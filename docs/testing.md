@@ -10,6 +10,59 @@ Firefox-first browser preferences were applied on the WIN Mini: `xdg-settings ge
 
 ## Recent device checks
 
+On 2026-10-25, Mixer left-stick navigation became spatial within the current
+track. It uses native control rectangles to choose a neighbor in each direction,
+prefers aligned controls, skips hidden controls and stays put at edges. D-pad
+up/down retains track selection. Forty-three Lua geometry fixtures passed,
+including translated/scaled layouts, hidden controls, cosmetic row offsets and
+edges. A private muted JACK project confirmed horizontal navigation, Mute/Solo
+up/down without changing tracks, held edge behavior and the existing adjustment,
+switch and FX-entry workflow. The live update installed without restarting
+REAPER. [Private workflow report](../.local/device-checks/realearn/spatial-result.json),
+[private installation report](../.local/device-checks/realearn/spatial-install-result.json).
+
+On 2026-10-25, the Mixer left stick changed from viewport scrolling to navigation
+between tracks (up/down) and outlined track controls (left/right). A nudge moves
+once, with a 350 ms delay and 160 ms repeat interval when held. Mapper-frame
+checks passed all four directions, repeat timing, neutral stop/re-engagement and
+independent right-stick adjustment. The private muted JACK project passed actual
+left-stick track/control selection and delayed repeat alongside volume, pan,
+switches and FX entry. The live update installed successfully without restarting
+REAPER. [Private workflow report](../.local/device-checks/realearn/mixer-stick-result.json),
+[private installation report](../.local/device-checks/realearn/mixer-stick-install-result.json).
+
+On 2026-10-25, Mixer gained vertical track selection and left/right selection of
+native track controls. A click-through cyan outline follows the selected TCP
+widget using REAPER's reported positions; controls hidden by the theme are
+skipped. A muted, input-disabled private JACK project passed mapper-frame tests
+for independent volume/pan adjustment, vertical tracks, mute/solo/arm, hidden
+Monitoring skip and FX entry. Native X11 readback verified four child borders,
+empty input regions, exact alignment before/after resizing and focus hide/restore.
+The outline was also visually inspected. This prototype covers track controls,
+not send widgets or arbitrary plugin interfaces. Physical comfort still needs
+user testing. The normal session installation passed after correcting an absent
+temporary-service check and waiting for mapper readiness after restart; REAPER
+and its project stayed open. [Private installation report](../.local/device-checks/realearn/outline-install-result.json),
+[private control report](../.local/device-checks/realearn/outline-result.json),
+[private drawing report](../.local/device-checks/realearn/outline-drawing-result.json).
+
+On 2026-10-25, the next REAPER controller batch added native item navigation,
+R2+D-pad grid cursor movement, item selection at the cursor, A+D-pad native
+editing, and B+D-pad recording/project actions. B now uses the actual Stop action
+instead of Go to project start. Stick rates increase only in the REAPER profile.
+A disposable three-track MIDI project running the real PipeWire/JACK backend
+passed mapper-frame-to-MIDI checks for track/item navigation, cursor movement,
+split, undo/redo, copy/paste/cut, duplicate/delete, track-item selection and zoom,
+arming/monitoring, recording/stop, markers, track insertion, FX entry/back,
+menu cancellation without stopping playback, empty split feedback and saving.
+Recording inputs were disabled and master output muted; this did not test a
+physical instrument or input latency. No mouse or shortcut-key events were
+emitted (only held Ctrl for the R2 test). Native ReaLearn state replacement and
+restarting only the owned control display also passed in that isolated resource.
+Host chord, installer preservation/explicit update, MIDI routing, status,
+development and setup-layout checks passed. Physical usability remains to be
+assessed. [Private workflow report](../.local/device-checks/realearn/batch-result.json).
+
 On 2026-10-25, the initial REAPER keyboard profile was extended with ReaLearn
 2.18.4 and direct MIDI control. JACK routing resolves PipeWire MIDI ports through authenticated client PIDs;
 the ALSA fallback resolves virtual RawMIDI clients by PID. It needs no network

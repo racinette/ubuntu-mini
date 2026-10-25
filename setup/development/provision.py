@@ -221,6 +221,7 @@ def main():
     run_as_user(user, user_environment(user), '/usr/bin/python3', HERE / 'audio.py')
     run_as_user(user, user_environment(user), '/usr/bin/python3', HERE / 'effects.py')
     run_as_user(user, user_environment(user), '/usr/bin/python3', HERE / 'reaper.py')
+    run_as_user(user, user_environment(user), '/usr/bin/python3', HERE / 'realearn.py')
     install_docker(user, 'amd64')
     print('Development toolchains ready. Log in again for Docker group access.', flush=True)
 

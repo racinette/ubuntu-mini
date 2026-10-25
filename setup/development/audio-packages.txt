@@ -2,6 +2,7 @@ supercollider-language
 supercollider-server
 supercollider-dev
 pipewire-jack
+libxdo3
 lsp-plugins-vst3/noble-backports
 lsp-plugins-r3d-glx/noble-backports
 dragonfly-reverb-vst3

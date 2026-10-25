@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""Session-scoped gamepad keyboard and Sway navigation, with explicit passthrough."""
+"""Session-scoped desktop/REAPER gamepad controls and explicit passthrough."""
 import argparse
 from collections import deque
 import ctypes
@@ -30,6 +30,9 @@ ACTION_COMMANDS = {
 }
 
 KEY_ACTIONS = {
+    'reaper_play_stop': ('KEY_SPACE', ()),
+    'reaper_save': ('KEY_S', ('KEY_LEFTCTRL',)),
+    'reaper_mixer': ('KEY_M', ('KEY_LEFTCTRL',)),
     'copy': ('KEY_C', ('KEY_LEFTCTRL',)), 'paste': ('KEY_V', ('KEY_LEFTCTRL',)),
     'cut': ('KEY_X', ('KEY_LEFTCTRL',)), 'undo': ('KEY_Z', ('KEY_LEFTCTRL',)),
     'redo': ('KEY_Z', ('KEY_LEFTCTRL', 'KEY_LEFTSHIFT')),
@@ -49,6 +52,8 @@ HISTORY_ACTIONS = {'back', 'forward'}
 NAVIGATION_ACTIONS = {'page_up', 'page_down', 'home', 'end', 'document_home', 'document_end'}
 TERMINAL_ACTIONS = {'interrupt', 'suspend_job', 'end_input'}
 ACTION_LABELS = {
+    'reaper_play_stop': 'REAPER: Play / stop',
+    'reaper_save': 'REAPER: Save project', 'reaper_mixer': 'REAPER: Toggle mixer',
     'copy': 'Copy', 'paste': 'Paste', 'cut': 'Cut', 'undo': 'Undo', 'redo': 'Redo',
     'select_all': 'Select all', 'find': 'Find', 'save': 'Save',
     'page_up': 'Page Up', 'page_down': 'Page Down', 'home': 'Beginning of line',
@@ -69,6 +74,170 @@ ACTION_LABELS = {
     'back': 'Navigation back', 'forward': 'Navigation forward',
 }
 STICK_MODES = (('scroll', 'text'), ('windows', 'resize'))
+MODES = ('desktop', 'reaper', 'passthrough')
+REAPER_ZOOM = {'left': 'KEY_KPMINUS', 'right': 'KEY_KPPLUS',
+               'up': 'KEY_PAGEUP', 'down': 'KEY_PAGEDOWN'}
+REAPER_CONTROLS = {'reaper_page': 12, 'reaper_actions': 13,
+                   'reaper_secondary': 14, 'reaper_primary': 15,
+                   'reaper_play_stop': 16, 'reaper_save': 17}
+ACTION_LABELS.update({'reaper_page': 'REAPER: Arrange / Mixer / FX',
+                      'reaper_actions': 'REAPER: Action menu',
+                      'reaper_primary': 'REAPER: Split / mute / bypass',
+                      'reaper_secondary': 'REAPER: Loop / solo / FX window'})
+
+
+def pipewire_midi_ports(snapshot, pid, direction):
+    """Resolve MIDI ports through PipeWire's authenticated client PID."""
+    objects = {entry['id']: entry for entry in snapshot}
+    found = []
+    for entry in snapshot:
+        if entry.get('type') != 'PipeWire:Interface:Port':
+            continue
+        properties = entry.get('info', {}).get('props', {})
+        if properties.get('port.direction') != direction or properties.get('format.dsp') != '8 bit raw midi':
+            continue
+        node = objects.get(int(properties.get('node.id', -1)), {}).get('info', {}).get('props', {})
+        client = objects.get(int(node.get('client.id', -1)), {}).get('info', {}).get('props', {})
+        owner = client.get('pipewire.sec.pid', client.get('application.process.id', -1))
+        if int(owner) == pid:
+            found.append((entry['id'], properties.get('port.name', '')))
+    return found
+
+
+class ReaperMidi:
+    """Use the focused REAPER process's JACK or ALSA controller input."""
+    def __init__(self):
+        # Debian's RtMidi links libjack. Load PipeWire's implementation before
+        # importing it so a controller cannot try to start a separate JACK server.
+        jack_library = Path('/usr/lib/x86_64-linux-gnu/pipewire-0.3/jack/libjack.so.0')
+        if jack_library.exists():
+            ctypes.CDLL(str(jack_library), mode=ctypes.RTLD_GLOBAL)
+        import rtmidi
+        self.rtmidi = rtmidi
+        self.output = rtmidi.MidiOut(rtmidi.API_LINUX_ALSA, name='Device gamepad')
+        self.jack_output = None
+        self.jack_route = None
+        self.backend = None
+        self.input_index = 0
+        try:
+            resource = Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config')) / 'REAPER'
+            self.input_index = int(json.loads((resource / 'Data/device-gamepad.json').read_text())['mainUnit']['controlDeviceId'])
+            if not 0 <= self.input_index < 62:
+                raise ValueError('Invalid controller MIDI input index')
+        except (OSError, KeyError, ValueError):
+            self.input_index = 0
+        self.alsa = ctypes.CDLL('libasound.so.2')
+        pointer = ctypes.c_void_p
+        signatures = {
+            'snd_seq_open': [ctypes.POINTER(pointer), ctypes.c_char_p, ctypes.c_int, ctypes.c_int],
+            'snd_seq_close': [pointer],
+            'snd_seq_client_info_malloc': [ctypes.POINTER(pointer)],
+            'snd_seq_client_info_free': [pointer],
+            'snd_seq_get_any_client_info': [pointer, ctypes.c_int, pointer],
+            'snd_seq_client_info_get_pid': [pointer],
+        }
+        for name, arguments in signatures.items():
+            getattr(self.alsa, name).argtypes = arguments
+        self.sequence, self.info = pointer(), pointer()
+        if self.alsa.snd_seq_open(ctypes.byref(self.sequence), b'default', 1, 1) < 0:
+            raise OSError('ALSA MIDI sequencer is unavailable')
+        if self.alsa.snd_seq_client_info_malloc(ctypes.byref(self.info)) < 0:
+            self.alsa.snd_seq_close(self.sequence)
+            raise OSError('Cannot inspect ALSA MIDI clients')
+        self.pid, self.connected_at = None, 0
+        self.fine_value = None
+
+    def disconnect_jack(self):
+        if self.jack_route:
+            try:
+                subprocess.run(['pw-link', '-d', *map(str, self.jack_route)], check=False,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+            self.jack_route = None
+
+    def close(self):
+        for output in (self.output, self.jack_output):
+            if output:
+                if output.is_port_open():
+                    output.send_message([0xBF, 22, 0])
+                output.close_port()
+                output.delete()
+        self.disconnect_jack()
+        self.alsa.snd_seq_client_info_free(self.info)
+        self.alsa.snd_seq_close(self.sequence)
+
+    @staticmethod
+    def graph():
+        return json.loads(subprocess.check_output(['pw-dump'], text=True, timeout=2))
+
+    def connect_jack(self, pid, snapshot):
+        targets = [port for port, name in pipewire_midi_ports(snapshot, pid, 'in')
+                   if name == f'MIDI Input {self.input_index + 1}']
+        if not targets:
+            return False
+        if len(targets) != 1:
+            raise OSError('Several JACK controller inputs match this REAPER process')
+        if self.jack_output is None:
+            self.jack_output = self.rtmidi.MidiOut(self.rtmidi.API_UNIX_JACK, name='Device gamepad')
+            self.jack_output.open_virtual_port('Controls')
+        sources = []
+        for attempt in range(5):
+            sources = [port for port, name in pipewire_midi_ports(snapshot, os.getpid(), 'out') if name == 'Controls']
+            if sources:
+                break
+            time.sleep(.02)
+            snapshot = self.graph()
+        if len(sources) != 1:
+            raise OSError('JACK controller output is unavailable')
+        route = (sources[0], targets[0])
+        linked = any(entry.get('type') == 'PipeWire:Interface:Link'
+                     and entry.get('info', {}).get('output-port-id') == route[0]
+                     and entry.get('info', {}).get('input-port-id') == route[1]
+                     for entry in snapshot)
+        if route != self.jack_route or not linked:
+            self.disconnect_jack()
+            subprocess.run(['pw-link', *map(str, route)], check=True, timeout=2,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            self.jack_route = route
+        self.backend = 'jack'
+        return True
+
+    def pulse(self, pid, control, value=127):
+        now = time.monotonic()
+        if pid != self.pid or now - self.connected_at > 2 or self.backend is None:
+            try:
+                snapshot = self.graph()
+            except (OSError, ValueError, subprocess.SubprocessError):
+                snapshot = []
+            if not self.connect_jack(pid, snapshot):
+                matches = []
+                for index, name in enumerate(self.output.get_ports()):
+                    if 'Virtual RawMIDI' not in name:
+                        continue
+                    address = name.rsplit(' ', 1)[-1].split(':')
+                    if len(address) != 2 or not all(part.isdecimal() for part in address):
+                        continue
+                    if (self.alsa.snd_seq_get_any_client_info(self.sequence, int(address[0]), self.info) >= 0
+                            and self.alsa.snd_seq_client_info_get_pid(self.info) == pid):
+                        matches.append(index)
+                if len(matches) != 1:
+                    raise OSError('REAPER controller MIDI input is unavailable; enable its MIDI input')
+                self.disconnect_jack()
+                self.output.close_port()
+                self.output.open_port(matches[0], 'Controls')
+                self.backend = 'alsa'
+            if pid != self.pid:
+                self.fine_value = None
+            self.pid, self.connected_at = pid, now
+        output = self.jack_output if self.backend == 'jack' else self.output
+        if control == 22:
+            if self.fine_value == value:
+                return
+            self.fine_value = value
+        output.send_message([0xBF, control, value])
+        if control != 22:
+            output.send_message([0xBF, control, 0])
 
 # Xbox/xpad uses Linux's historical BTN_X=BTN_NORTH, BTN_Y=BTN_WEST
 # aliases. The directional code names do not match Xbox button positions.
@@ -181,6 +350,19 @@ def configuration(path, codes):
         if not isinstance(changes, dict) or set(changes) - set(config):
             raise ValueError('Unknown gamepad profile setting')
         config.update(changes)
+    profiles = config.pop('profiles', {})
+    if not isinstance(profiles, dict) or set(profiles) != {'reaper'}:
+        raise ValueError('profiles requires the reaper mapping')
+    changes = profiles['reaper']
+    if not isinstance(changes, dict) or set(changes) - {'buttons', 'actions', 'hold_actions', 'chords'}:
+        raise ValueError('REAPER profile supports buttons, actions, hold_actions and chords')
+    reaper = compile_configuration(dict(config, **changes), codes, reaper=True)
+    result = compile_configuration(dict(config), codes)
+    result['profiles'] = {'reaper': reaper}
+    return result
+
+
+def compile_configuration(config, codes, reaper=False):
     for prefix in ('stick', 'trigger'):
         if not 0 <= config[prefix + '_release'] < config[prefix + '_press'] <= 1:
             raise ValueError('Invalid ' + prefix + ' thresholds')
@@ -188,7 +370,7 @@ def configuration(path, codes):
                  'dpad_repeat_delay', 'dpad_acceleration_time'):
         if not .05 <= config[name] <= 10:
             raise ValueError('Invalid ' + name)
-    for name in ('selection_rate', 'selection_line_rate', 'scroll_rate',
+    for name in ('selection_rate', 'selection_line_rate', 'scroll_rate', 'zoom_rate',
                  'dpad_rate', 'dpad_line_rate'):
         rates = config[name]
         if (not isinstance(rates, list) or len(rates) != 2
@@ -247,10 +429,12 @@ def configuration(path, codes):
     config['chord_faces'] = {name: code(symbol, 'BTN_') for name, symbol in FACE_NAMES.items() if name in ('A', 'B')}
     if not set(config['chord_faces'].values()) <= set(config['buttons']):
         raise ValueError('Shortcuts require A and B in buttons')
-    if config['buttons'].get(code(FACE_NAMES['X'], 'BTN_')) != code('KEY_BACKSPACE', 'KEY_'):
+    if not reaper and config['buttons'].get(code(FACE_NAMES['X'], 'BTN_')) != code('KEY_BACKSPACE', 'KEY_'):
         raise ValueError('X is reserved for holdable Backspace')
-    if config['buttons'].get(code(FACE_NAMES['Y'], 'BTN_')) != code('KEY_SPACE', 'KEY_'):
+    if not reaper and config['buttons'].get(code(FACE_NAMES['Y'], 'BTN_')) != code('KEY_SPACE', 'KEY_'):
         raise ValueError('Y is reserved for holdable Space')
+    if reaper and config['actions'].get(code(FACE_NAMES['Y'], 'BTN_')) != 'reaper_play_stop':
+        raise ValueError('REAPER Y must be the discrete play/stop action')
     action_keys = set(config['actions'])
     bumpers = {config['previous_bumper'], config['next_bumper']}
     if action_keys & set(config['buttons']) or bumpers & (action_keys | set(config['buttons'])):
@@ -264,14 +448,19 @@ def configuration(path, codes):
 
 class Mapper:
     def __init__(self, config, keyboard, codes, directory):
-        self.config, self.keyboard, self.e, self.directory = config, keyboard, codes, directory
+        self.desktop_config = config
+        self.keyboard, self.e, self.directory = keyboard, codes, directory
+        mode_path = directory / 'mode'
+        self.mode = mode_path.read_text().strip() if mode_path.exists() else 'desktop'
+        if self.mode not in MODES:
+            self.mode = 'desktop'
         self.device = None
         self.grabbed = False
         self.keys = set()
         self.legend = None
         self.launcher = None
         self.picker = None
-        self.stick_modes, self.stick_pending = ['scroll', 'windows'], [None, None]
+        self.stick_modes, self.stick_pending = self.default_sticks(), [None, None]
         self.publish_stick_mode()
         self.raw_keys = set()
         self.raw_axes = {}
@@ -296,10 +485,18 @@ class Mapper:
         self.unavailable_actions = []
         self.actions = deque(maxlen=24)
         self.reason = 'Waiting for a controller'
-        mode_path = directory / 'mode'
-        self.mode = mode_path.read_text().strip() if mode_path.exists() else 'desktop'
-        if self.mode not in ('desktop', 'passthrough'):
-            self.mode = 'desktop'
+        self.reaper_midi = None
+        self.reaper_error_at = 0
+
+    @property
+    def config(self):
+        return self.desktop_config['profiles']['reaper'] if self.mode == 'reaper' else self.desktop_config
+
+    def stick_choices(self, index):
+        return ('zoom', 'windows') if self.mode == 'reaper' and index == 1 else STICK_MODES[index]
+
+    def default_sticks(self):
+        return [self.stick_choices(index)[0] for index in range(2)]
 
     def write_keys(self, desired):
         desired = set(desired)
@@ -313,11 +510,14 @@ class Mapper:
         self.keys = set(desired)
 
     def reset(self):
+        if self.reaper_midi:
+            self.reaper_midi.close()
+            self.reaper_midi = None
         self.write_keys(set())
         self.close_legend()
         self.close_overlay('launcher')
         self.close_overlay('picker')
-        self.stick_modes, self.stick_pending = ['scroll', 'windows'], [None, None]
+        self.stick_modes, self.stick_pending = self.default_sticks(), [None, None]
         self.publish_stick_mode()
         self.triggers = [False, False]
         self.sticks = [None, None]
@@ -336,8 +536,12 @@ class Mapper:
         self.chord_consumed = self.chord_armed = False
 
     def publish_stick_mode(self):
-        (self.directory / 'stick-mode').write_text(
-            f'L:{self.stick_modes[0].capitalize()} R:{self.stick_modes[1].capitalize()}\n')
+        label = f'L:{self.stick_modes[0].capitalize()} R:{self.stick_modes[1].capitalize()}'
+        if self.mode == 'reaper':
+            label = 'REAPER controls'
+        elif self.mode == 'passthrough':
+            label = 'Gamepad'
+        (self.directory / 'stick-mode').write_text(label + '\n')
 
     def close_overlay(self, name):
         process = getattr(self, name)
@@ -383,7 +587,8 @@ class Mapper:
 
     def legend_text(self):
         order = ('SELECT', 'A', 'B', 'X', 'Y', 'UP', 'DOWN', 'LEFT', 'RIGHT')
-        lines = [f'Left stick: {self.stick_modes[0]}; right stick: {self.stick_modes[1]}']
+        lines = [f'Profile: {self.mode.capitalize()}',
+                 f'Left stick: {self.stick_modes[0]}; right stick: {self.stick_modes[1]}']
         lines += ['+'.join(t for t in order if t in tokens) + '  :  ' + ACTION_LABELS[action]
                   for tokens, action in self.config['chords'].items()]
         lines += ['X: hold Backspace; Y: hold Space; A: Enter; B: Escape',
@@ -404,6 +609,25 @@ class Mapper:
                   for button, action in self.config['hold_actions'].items()]
         lines += ['Start + Select hold: normal gamepad input',
                   'Menu tap/hold or B/Escape: dismiss this legend']
+        lines[-2] = 'Start + Select hold: Desktop > REAPER > Gamepad'
+        if self.mode == 'reaper':
+            lines = [line for line in lines if not line.startswith((
+                'X: hold', 'D-pad:', 'L3:', 'R3:', 'Text:', 'Windows:', 'Layout:'))]
+            try:
+                page = (self.directory / 'reaper-page').read_text().strip()
+            except OSError:
+                page = ''
+            lines[1] = 'Page: ' + (page if page in ('Arrange', 'Mixer', 'FX') else 'Waiting for REAPER')
+            lines[2:2] = ['Select: Arrange / Mixer / FX (page shown in the bar)',
+                          'L3: actions; A: confirm; B: cancel / stop',
+                          'Y: Play / stop once; Start: save',
+                          'Arrange — D-pad: cursor/tracks; L: scroll; R: zoom',
+                          'Mixer — D-pad: tracks/sends; L: send; R: volume/pan',
+                          'FX — D-pad: FX/parameter; L: tracks; R: value',
+                          'X: split / mute / bypass; R3: loop / solo / FX window',
+                          'Triggers: fine adjustment; L1/R1: workspaces',
+                          'ReaLearn uses direct MIDI actions, without mouse events',
+                          'REAPER dialogs: ordinary arrows; sticks suppressed']
         return '\n'.join(lines) + '\n'
 
     def toggle_legend(self):
@@ -430,6 +654,22 @@ class Mapper:
                             'Gamepad controls', label], check=False, timeout=2)
         except (OSError, subprocess.TimeoutExpired) as error:
             log.warning('Gamepad notification failed: %s', error)
+
+    def reaper_control(self, control):
+        if not self.focused_reaper():
+            return
+        try:
+            node = self.focused_window()
+            if self.reaper_midi is None:
+                self.reaper_midi = ReaperMidi()
+            fine = 127 if any(self.triggers) else 0
+            self.reaper_midi.pulse(node['pid'], 22, fine)
+            if control != 22:
+                self.reaper_midi.pulse(node['pid'], control)
+        except (ImportError, OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
+            if time.monotonic() - self.reaper_error_at > 5:
+                self.reaper_error_at = time.monotonic()
+                self.notify('REAPER controls unavailable: ' + str(error))
 
     def focused_window(self):
         def focused(node):
@@ -462,9 +702,31 @@ class Mapper:
             'ghostty', 'rio', 'blackbox', 'guake', 'tilda', 'yakuake',
             'kgx', 'ptyxis', 'tilix', 'warp', 'hyper', 'tabby',
         } for name in names)
-        return 'foot' if foot else 'terminal' if terminal else 'gui'
+        return 'reaper' if executable == 'reaper' and 'reaper' in names else 'foot' if foot else 'terminal' if terminal else 'gui'
+
+    def focused_reaper(self):
+        """Only the real REAPER project window accepts DAW commands."""
+        if self.legend_open() or any(process and process.poll() is None
+                                    for process in (self.launcher, self.picker)):
+            return False
+        try:
+            node = self.focused_window()
+            properties = node.get('window_properties') or {}
+            names = {(node.get('app_id') or '').lower(), (properties.get('class') or '').lower()}
+            title = node.get('name') or ''
+            if title == 'FX: Monitoring' or 'Helgobox' in title:
+                return False
+            return ('reaper' in names and ('REAPER v' in title or title.startswith(('FX:', 'VST:', 'VSTi:', 'VST3:', 'JS:'))
+                    or title == 'REAPER gamepad controls') and
+                    Path(os.readlink(f'/proc/{node["pid"]}/exe').removesuffix(' (deleted)')).name == 'reaper')
+        except (OSError, ValueError, EOFError, KeyError):
+            return False
 
     def shortcut(self, key, modifiers):
+        if (self.mode == 'reaper' and key in (self.e.KEY_ENTER, self.e.KEY_ESC)
+                and self.focused_reaper()):
+            self.reaper_control(18 if key == self.e.KEY_ENTER else 19)
+            return
         held = set(self.keys)
         nonmodifiers = held - {self.e.KEY_LEFTSHIFT, self.e.KEY_LEFTCTRL, self.e.KEY_LEFTMETA, self.e.KEY_LEFTALT}
         base = nonmodifiers | set(modifiers)
@@ -474,7 +736,9 @@ class Mapper:
         self.write_keys(held)
 
     def dispatch(self, action):
-        if action == 'legend':
+        if action in REAPER_CONTROLS:
+            self.reaper_control(REAPER_CONTROLS[action])
+        elif action == 'legend':
             self.toggle_legend()
         elif action == 'launcher':
             self.toggle_launcher()
@@ -484,7 +748,7 @@ class Mapper:
                         'stick_context', 'text_navigation', 'selection'):
             indices = (0,) if action == 'left_stick_context' else (1,) if action == 'right_stick_context' else (0, 1)
             for index in indices:
-                primary, secondary = STICK_MODES[index]
+                primary, secondary = self.stick_choices(index)
                 current = self.stick_pending[index] or self.stick_modes[index]
                 target = secondary if current == primary else primary
                 self.stick_pending[index] = target if target != self.stick_modes[index] else None
@@ -512,7 +776,7 @@ class Mapper:
                     if application not in ('foot', 'terminal'):
                         self.notify('This shortcut is only available in terminals')
                         return
-                elif application != 'gui':
+                elif application in ('foot', 'terminal'):
                     if application == 'foot' and action in ('copy', 'paste'):
                         modifiers.add(self.e.KEY_LEFTSHIFT)
                     else:
@@ -614,10 +878,12 @@ class Mapper:
 
     def toggle(self):
         self.ungrab()
-        self.mode = 'passthrough' if self.mode == 'desktop' else 'desktop'
+        self.mode = MODES[(MODES.index(self.mode) + 1) % len(MODES)]
+        self.reset()
         (self.directory / 'mode').write_text(self.mode + '\n')
         log.info('Gamepad mode: %s', self.mode)
-        label = 'Desktop navigation enabled' if self.mode == 'desktop' else 'Normal gamepad input enabled'
+        label = {'desktop': 'Desktop navigation enabled', 'reaper': 'REAPER editing controls enabled',
+                 'passthrough': 'Normal gamepad input enabled'}[self.mode]
         self.notify(label)
 
     def command(self, command):
@@ -670,7 +936,7 @@ class Mapper:
         return True
 
     def permitted(self, active):
-        return active and not self.lid_closed() and not (self.directory / 'paused').exists() and self.mode == 'desktop'
+        return active and not self.lid_closed() and not (self.directory / 'paused').exists() and self.mode in ('desktop', 'reaper')
 
     def button_gestures(self, pressed, released, now, active):
         """Defer individual actions to release; consume overlapping toggle buttons."""
@@ -684,6 +950,11 @@ class Mapper:
         desktop = self.permitted(active) and self.grabbed and self.ready
         eligible = pressed if desktop else pressed & combo if self.mode == 'passthrough' else set()
         reserved = set(self.config['chord_faces'].values()) | {self.e.BTN_NORTH, self.e.BTN_WEST}
+        reserved -= set(self.config['actions'])
+        if self.select_gesture.previous or self.e.BTN_SELECT in self.raw_keys:
+            faces = {getattr(self.e, symbol) for symbol in FACE_NAMES.values()}
+            eligible -= faces
+            self.pending_buttons.difference_update(faces)
         self.pending_buttons.update(eligible - reserved)
         for button in eligible - reserved:
             self.button_since[button] = now
@@ -738,15 +1009,18 @@ class Mapper:
         if not self.permitted(active) or not self.grabbed or not self.ready:
             self.button_gestures(pressed, released, now, active)
             return
+        previous_triggers = tuple(self.triggers)
         for index, name in enumerate(('shift_trigger', 'ctrl_trigger')):
             value = self.axis(self.config[name], True)
             threshold = self.config['trigger_release' if self.triggers[index] else 'trigger_press']
             self.triggers[index] = value > threshold
+        if self.mode == 'reaper' and tuple(self.triggers) != previous_triggers:
+            self.reaper_control(22)
         selecting = self.select_shortcut_frame()
         desired = set()
         if not selecting:
             for button in (self.e.BTN_NORTH, self.e.BTN_WEST):
-                if button in self.raw_keys:
+                if button in self.raw_keys and button in self.config['buttons']:
                     desired.add(self.config['buttons'][button])
         if not self.config['chords'] and not selecting:
             for source, (negative, positive) in self.config['dpad'].items():
@@ -827,12 +1101,17 @@ class Mapper:
             steps = int(self.dpad_credit)
             self.dpad_credit -= steps
         modifiers = self.keys & {self.e.KEY_LEFTSHIFT, self.e.KEY_LEFTCTRL}
+        reaper = self.mode == 'reaper' and self.focused_reaper()
         for _ in range(steps):
             for direction in sorted(directions):
                 horizontal, vertical = self.config['chord_axes']
                 axis = horizontal if direction in ('LEFT', 'RIGHT') else vertical
                 key = self.config['dpad'][axis][direction in ('RIGHT', 'DOWN')]
-                self.shortcut(key, modifiers)
+                extra = {self.e.KEY_LEFTCTRL, self.e.KEY_LEFTALT} if reaper and direction in ('UP', 'DOWN') else set()
+                if reaper:
+                    self.reaper_control({'LEFT': 0, 'RIGHT': 1, 'UP': 2, 'DOWN': 3}[direction])
+                else:
+                    self.shortcut(key, modifiers | extra)
 
     def shortcut_frame(self, now):
         held = {name for name, code in self.config['chord_faces'].items() if code in self.raw_keys}
@@ -966,22 +1245,47 @@ class Mapper:
             if self.legend_open():
                 self.motion_time[index], self.motion_credit[index] = None, 0
                 continue
+            # DAW gestures should not zoom a dialog's controls or a different
+            # application. Window-management stick modes remain available.
+            reaper = self.mode == 'reaper' and self.focused_reaper()
             direction = ('left' if x < 0 else 'right') if abs(x) >= abs(y) else ('up' if y < 0 else 'down')
             fresh = direction != self.sticks[index] and magnitude >= self.config['stick_press']
             mode = self.stick_modes[index]
-            if mode in ('scroll', 'text'):
+            if mode in ('scroll', 'text', 'zoom'):
+                if self.mode == 'reaper' and not reaper:
+                    self.sticks[index] = None
+                    self.motion_time[index], self.motion_credit[index] = None, 0
+                    continue
                 if not fresh and self.sticks[index] is None:
                     continue
                 if not fresh:
                     direction = self.sticks[index]
                 self.sticks[index] = direction
-                rates = self.config['scroll_rate'] if mode == 'scroll' else self.config[
+                rates = self.config['zoom_rate'] if mode == 'zoom' else self.config['scroll_rate'] if mode == 'scroll' else self.config[
                     'selection_line_rate' if direction in ('up', 'down') else 'selection_rate']
                 steps = self.motion_steps(index, now, magnitude, fresh, rates)
+                if reaper:
+                    offset = 4 if index == 0 else 8
+                    for _ in range(steps):
+                        self.reaper_control(offset + {'left': 0, 'right': 1, 'up': 2, 'down': 3}[direction])
+                    continue
                 if mode == 'scroll':
-                    self.scroll(direction, steps)
+                    if reaper:
+                        # Stock Alt+arrows scroll the REAPER viewport. Keyboard
+                        # events carry modifier state reliably; its wheel
+                        # handler can instead sample modifiers after release.
+                        for _ in range(steps):
+                            self.shortcut(getattr(self.e, 'KEY_' + direction.upper()), {self.e.KEY_LEFTALT})
+                    else:
+                        self.scroll(direction, steps)
+                    continue
+                if mode == 'zoom':
+                    for _ in range(steps):
+                        self.shortcut(getattr(self.e, REAPER_ZOOM[direction]), set())
                     continue
                 modifiers = self.keys & {self.e.KEY_LEFTSHIFT, self.e.KEY_LEFTCTRL}
+                if reaper and direction in ('up', 'down'):
+                    modifiers |= {self.e.KEY_LEFTCTRL, self.e.KEY_LEFTALT}
                 for _ in range(steps):
                     self.shortcut(getattr(self.e, 'KEY_' + direction.upper()), modifiers)
                 continue
@@ -1011,9 +1315,13 @@ class Mapper:
 
 
 def output_capabilities(config, codes):
-    keys = set(config['buttons'].values()) | {key for values in config['dpad'].values() for key in values}
+    keys = set()
+    for profile in (config, *config.get('profiles', {}).values()):
+        keys.update(profile['buttons'].values())
+        keys.update(key for values in profile['dpad'].values() for key in values)
     keys |= {codes.KEY_LEFTSHIFT, codes.KEY_LEFTCTRL, codes.KEY_LEFTMETA}
     keys |= {getattr(codes, name) for key, modifiers in KEY_ACTIONS.values() for name in (key, *modifiers)}
+    keys |= {getattr(codes, name) for name in REAPER_ZOOM.values()}
     # Mouse classification requires X/Y and a mouse button even though this mapper
     # emits only wheel movement. No pointer movement or mouse clicks are generated.
     keys.add(codes.BTN_LEFT)

@@ -49,6 +49,7 @@ rtkit
 upower
 pavucontrol
 python3-evdev
+python3-rtmidi
 gammastep
 openssh-client
 sudo

@@ -1,6 +1,6 @@
 # Gamepad desktop controls
 
-Post-install setup installs this profile automatically. In the WIN Mini's gamepad mode, the controller navigates applications and the Sway desktop. The hardware mouse mode and trackpad remain independently available. Use the physical QWERTY keyboard for typing.
+Post-install setup installs desktop and REAPER mappings plus normal gamepad passthrough. Hold Start+Select for 0.75 seconds, then release both, to cycle **Desktop → REAPER → Gamepad → Desktop**. Super+Ctrl+G and `minion-gamepad --toggle` use the same cycle. The hardware mouse mode and trackpad remain independently available. Use the physical QWERTY keyboard for typing. The following table describes Desktop mode.
 
 | Control | Action |
 | --- | --- |
@@ -73,16 +73,72 @@ The window picker lists windows across workspaces, with the current window first
 
 Hold Start alone for at least 0.75 seconds, then release it to open a new Thunar window. A shorter press opens a terminal on release. Start waits for release so adding Select at any point still consumes both individual actions. Holding does not open repeated windows.
 
-## Switch to normal gamepad input
+## REAPER editing profile
 
-Hold Start+Select together for at least 0.75 seconds, then release both, or press Super+Ctrl+G. A notification shows the mode. Any overlapping Start/Select press consumes their individual actions, including a short overlap. In passthrough the mapper releases its controller grab and all keyboard keys so games receive normal input. The toggle gesture also reaches games; use the keyboard shortcut if it conflicts.
+This profile uses [ReaLearn](https://www.helgoboss.org/projects/realearn), installed
+with REAPER by the development setup. It sends MIDI control changes to REAPER's numbered JACK input under PipeWire,
+or to its ALSA virtual input with other Linux audio backends. Both routes verify
+the focused application's PID; identical JACK client names cannot redirect input.
+It generates no mouse movement, clicks or wheel events. The physical keyboard
+keeps REAPER's ordinary shortcuts.
+
+Select cycles **Arrange → Mixer → FX → Arrange**. The bottom bar shows
+`RP:Arrange`, `RP:Mixer` or `RP:FX`; REAPER's docked control display shows the
+selected track, current controls and relevant values. Start+Select still changes
+the overall Desktop / REAPER / Gamepad profile.
+
+The controller display normally stays docked inside REAPER. Its undocked window
+and the ReaLearn monitoring-FX settings window follow Sway tiling, including on
+the built-in screen.
+
+| Control | Arrange | Mixer | FX |
+| --- | --- | --- | --- |
+| D-pad left/right | Cursor by grid division | Previous/next track | Previous/next parameter |
+| D-pad up/down | Previous/next track | Previous/next send | Previous/next FX |
+| Left stick | Scroll viewport | Adjust selected send pan/level | Previous/next track |
+| Right stick | Timeline zoom / track height | Track pan / level | Adjust selected parameter |
+| X | Split selected items at cursor | Mute/unmute track | Bypass/enable selected FX |
+| R3 | Toggle loop | Solo/unsolo track | Show/hide FX window |
+| L3 | Open/close the page's action menu | Same | Same |
+
+In the action menu, use D-pad up/down, then A to run or B/L3 to cancel. Arrange
+includes recording, insert track, copy/paste/cut, undo/redo, split/trim, markers,
+metronome and item removal. Mixer includes record arming, input monitoring,
+mute/solo, insert track, recording, level reset and pan centering. FX includes
+inserting stock ReaEQ, ReaComp, ReaGate, ReaDelay and ReaVerbate. Plugin-specific
+custom interfaces and dialogs are outside this layout's scope.
+
+Y plays/stops once on release; holding never repeats. Start saves. Either
+trigger makes level/pan/FX adjustments finer; triggers still emit Shift/Ctrl for
+physical typing and ordinary keyboard shortcuts. L1/R1 navigate workspaces;
+L2+bumper sends the window. Menu taps open the launcher and holding Menu shows
+the full legend. A+D-pad editing shortcuts and Select+face layout toggles remain.
+X is a discrete context action in REAPER; it remains holdable Backspace on Desktop.
+
+MIDI controls require the genuine REAPER project, stock FX-chain/plugin window or the
+controller display to be focused. Native dialogs retain ordinary D-pad arrows,
+Enter and Escape; sticks are suppressed. Input to another application is never
+routed to a background DAW. Disconnecting, changing profiles, locking or closing
+the lid clears keyboard state and MIDI fine adjustment. Neutral controls are
+required before mapping resumes.
+
+The installer preserves existing REAPER audio/theme/license settings, other MIDI
+inputs and an existing device controller preset. It excludes the controller's
+controller input from **All MIDI Inputs**, so controller gestures are not recorded
+as performance MIDI. A nonempty, unrelated monitoring-FX chain is preserved;
+setup asks for manual integration rather than replacing it. Close REAPER before
+running `/usr/bin/python3 setup/development/realearn.py` as your normal user.
+
+## Switch profiles and normal gamepad input
+
+Hold Start+Select together for at least 0.75 seconds, then release both, or press Super+Ctrl+G. Each completed gesture advances once through Desktop, REAPER and Gamepad passthrough. A notification shows the mode; the bar shows `Pad` during passthrough. Any overlapping Start/Select press consumes their individual actions, including a short overlap. In passthrough the mapper releases its controller grab and all keyboard keys so games receive normal input. The toggle gesture also reaches games; use the keyboard shortcut if it conflicts.
 
 ```bash
 minion-gamepad --toggle
 minion-gamepad --status
 ```
 
-Passthrough mode survives service restart while the user's runtime directory exists; cold boot starts in desktop mode. Reconnect/resume/restart requires buttons, triggers and sticks to return to neutral. Disconnecting or leaving the active desktop releases held keys. The lock command pauses mapping until unlock.
+The selected profile survives service restart while the user's runtime directory exists; cold boot starts in desktop mode. Reconnect/resume/restart requires buttons, triggers and sticks to return to neutral. Disconnecting or leaving the active desktop releases held keys. The lock command pauses mapping until unlock.
 
 ## Personal profile
 
@@ -99,6 +155,13 @@ minion-gamepad --status
 Setup preserves this file. Top-level settings override the defaults; a nested object replaces that entire object. Chord values are named actions such as `copy`, `close`, `home` and `equalize`, as shown in the default JSON. `actions` assigns named actions to buttons, including `legend`, `left_stick_context` and `right_stick_context`. `hold_actions` assigns alternate actions to the same buttons after `action_hold` seconds, consuming the short-press action. Hold actions on passthrough toggle buttons wait until release, so any overlap still consumes the individual action. Select is reserved for its release shortcuts and cannot have a hold action. The older `stick_context`, `selection` and `text_navigation` actions remain compatible and request changes to both sticks, each waiting for its own neutral position. X must remain Backspace and cannot appear in a chord. Set `chords` to `{}` to disable shortcuts and restore held D-pad arrows. D-pad acceleration uses `dpad_repeat_delay`, `dpad_acceleration_time`, `dpad_rate` and `dpad_line_rate`. Thresholds, repeat timing and resize increments are configurable. `workspace_numbers: null` selects the dynamic ring and automatic renumbering; an explicit list such as `"workspace_numbers": [1, 2, 3, 4]` retains circular navigation through that list. Existing personal lists are preserved and disable automatic renumbering.
 
 Text navigation and selection speed is configurable with `selection_rate` (horizontal) and `selection_line_rate` (vertical), retaining the earlier setting names. Each is a pair of minimum and maximum steps per second, from 1 to 100. Scrolling speed uses `scroll_rate`, another minimum/maximum pair of wheel steps per second. Window focus and resizing retain their existing repeat timing.
+
+`zoom_rate` controls REAPER right-stick zoom steps per second (default 1–6).
+`profiles.reaper` overrides `buttons`, `actions`, `hold_actions` and `chords`
+for that mapping; hardware assignments and timing are shared. A personal
+`profiles` object replaces the whole default object, so retain its `reaper`
+entry. X remains holdable Backspace; REAPER Y is the discrete
+`reaper_play_stop` action. The selected profile is reported as `mode` in status.
 
 Old character-typing profiles and the old `super` action are incompatible with this layout. On a fresh install use the new default; if retaining a personal copy during development, replace its old `chords` and `actions` objects before restarting. No profile migration is performed.
 

@@ -248,6 +248,19 @@ print(value)
                     label = f'L:{left} R:{right}'
                     mode.write_text(label + '\n')
                     assert status.stick_mode()['full_text'] == f'L:{left[0]} R:{right[0]}'
+            for left in ('Scroll', 'Text'):
+                for right in ('Zoom', 'Windows'):
+                    mode.write_text(f'REAPER L:{left} R:{right}\n')
+                    assert status.stick_mode()['full_text'] == f'RP L:{left[0]} R:{right[0]}'
+            mode.write_text('REAPER controls\n')
+            for page in ('Arrange','Mixer','FX'):
+                (mode.parent/'reaper-page').write_text(page+'\n')
+                assert status.stick_mode()['full_text']=='RP:'+page
+            (mode.parent/'reaper-page').write_text('invalid')
+            assert status.stick_mode()['full_text']=='RP:Waiting'
+
+            mode.write_text('Gamepad\n')
+            assert status.stick_mode()['full_text'] == 'Pad'
             mode.write_text('unknown\n')
             assert status.stick_mode()['full_text'] == 'L:S R:W'
             mode.write_text('L:Scroll R:Windows\n')

@@ -8,7 +8,7 @@ from pathlib import Path
 import re
 import tempfile
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch, call
 
 PROJECT = Path(__file__).resolve().parents[1]
 # xpad reports Xbox A/B/X/Y as BTN_A/B/X/Y. The historical Linux aliases
@@ -76,8 +76,8 @@ def main():
                         frames * .03 if at is None else at, active)
             frames += 1
         def reset():
-            state.reset()
             state.mode = 'desktop'
+            state.reset()
             state.grabbed = state.ready = True
             state.raw_keys.clear()
             state.raw_axes = {axis: 0 for axis in state.ranges}
@@ -517,7 +517,7 @@ def main():
             frame(buttons=(314, 315))
             for _ in range(30): frame(buttons=(314, 315))
             frame(buttons=(315,)); assert state.mode == 'desktop'
-            frame(); assert state.mode == 'passthrough' and not dispatch.called
+            frame(); assert state.mode == 'reaper' and not dispatch.called
         reset()
         with patch.object(state, 'dispatch') as dispatch:
             frame(buttons=(314, 315)); frame()
@@ -801,13 +801,122 @@ def main():
                 (directory / 'paused').touch(); state.tick(0, True); (directory / 'paused').unlink()
             else:
                 with patch.object(state, 'notify'): state.toggle()
-            assert not state.keys and state.stick_modes == ['scroll', 'windows'] and state.stick_pending == [None, None]
+            defaults = ['scroll', 'zoom'] if reason == 'passthrough' else ['scroll', 'windows']
+            assert not state.keys and state.stick_modes == defaults and state.stick_pending == [None, None]
             assert state.motion_time == [None, None] and state.motion_credit == [0, 0]
             assert not state.text_gesture.previous and not state.pending_buttons
             assert not state.select_gesture.previous and not state.select_in_legend
             assert not state.button_since
             assert not state.dpad_navigation and state.dpad_since is None and state.dpad_credit == 0
         state.device = None
+
+        # The explicit profile cycle clears held keys and gestures, preserves
+        # the selected profile over service restart, and resets its own sticks.
+        reset(); state.device = Mock()
+        with patch.object(state, 'notify'):
+            for wanted, sticks in (('reaper', ['scroll', 'zoom']),
+                                   ('passthrough', ['scroll', 'windows']),
+                                   ('desktop', ['scroll', 'windows'])):
+                state.write_keys({codes.KEY_LEFTCTRL, codes.KEY_BACKSPACE})
+                state.toggle()
+                assert state.mode == wanted and state.stick_modes == sticks
+                assert not state.keys and not state.ready and not state.grabbed
+                assert (directory / 'mode').read_text().strip() == wanted
+                restarted = mapper.Mapper(config, Keyboard(), codes, directory)
+                assert restarted.mode == wanted and restarted.stick_modes == sticks
+
+        def reaper_reset():
+            reset(); state.mode = 'reaper'; state.reset()
+            state.device = Mock(); state.ready = state.grabbed = True
+
+        # A genuine client executable and project window are both required.
+        project = {'pid': 123, 'name': 'Song - REAPER v7.83', 'window_properties': {'class': 'REAPER'}}
+        for title, executable, expected_focus in (('Song - REAPER v7.83', 'reaper', True),
+                                                 ('REAPER Preferences', 'reaper', False),
+                                                 ('FX: Track 1', 'reaper', True),
+                                                 ('FX: Monitoring', 'reaper', False),
+                                                 ('VST: ReaEQ (Cockos)', 'reaper', True),
+                                                 ('Song - REAPER v7.83', 'firefox', False)):
+            reaper_reset()
+            with patch.object(state, 'focused_window', return_value=dict(project, name=title)), \
+                 patch.object(mapper.os, 'readlink', return_value='/opt/' + executable):
+                assert state.focused_reaper() == expected_focus
+
+        reaper_reset()
+        with patch.object(state, 'reaper_control') as midi:
+            frame({'Y'}, shift=True, ctrl=True, at=0)
+            midi.assert_called_once_with(22); midi.reset_mock()
+            frame({'Y'}, shift=True, ctrl=True, at=10)
+            assert not midi.called
+            frame(shift=True, ctrl=True, at=11)
+            midi.assert_called_once_with(16)
+            assert state.keys == {codes.KEY_LEFTSHIFT, codes.KEY_LEFTCTRL}
+            assert not any(key == codes.KEY_SPACE for kind,key,value in keyboard.events)
+        for button, control in ((315, 17), (314, 12), (317, 13), (318, 14), (307, 15)):
+            reaper_reset()
+            with patch.object(state, 'reaper_control') as midi:
+                frame(buttons=(button,)); assert not midi.called
+                frame()
+                midi.assert_called_once_with(control)
+            assert not keyboard.events
+
+        # Select+face consumes transport/save/mixer singles in either release
+        # order. The existing layout chords remain available in both profiles.
+        for face, action in (('A','fullscreen'),('B','floating'),('X','split'),('Y','layout')):
+            for remainder in ({'SELECT'}, {face}):
+                reaper_reset()
+                with patch.object(state,'dispatch') as dispatch:
+                    frame({'SELECT'}); frame({'SELECT',face}); frame(remainder); frame()
+                    dispatch.assert_called_once_with(action)
+                assert not keyboard.events
+        reaper_reset()
+        with patch.object(state, 'dispatch') as dispatch, patch.object(state,'notify'):
+            frame(buttons=(315,), at=0); frame(buttons=(315,314), at=.1)
+            frame(buttons=(315,314), at=2); frame(buttons=(314,), at=3); frame(at=4)
+            assert state.mode == 'passthrough' and not dispatch.called
+
+        # Project controls emit MIDI without keyboard/mouse gestures. Native
+        # dialogs retain ordinary arrows, and modifier keys are cleaned up.
+        for focused in (False,True):
+            reaper_reset()
+            with patch.object(state,'focused_reaper',return_value=focused), patch.object(state,'reaper_control') as midi:
+                frame({'UP'},shift=True,at=0)
+                assert [c.args[0] for c in midi.call_args_list if c.args[0]!=22] == ([2] if focused else [])
+            assert set(downs()) == ({codes.KEY_LEFTSHIFT} if focused else {codes.KEY_UP,codes.KEY_LEFTSHIFT})
+        for index, control in ((0,4),(1,8)):
+            for direction,axis,value,offset in (('left',0,-32768,0),('right',0,32767,1),('up',1,-32768,2),('down',1,32767,3)):
+                reaper_reset()
+                frame(shift=True,ctrl=True);keyboard.events.clear()
+                state.raw_axes[config['left_stick' if index==0 else 'right_stick'][axis]]=value
+                with patch.object(state,'focused_reaper',return_value=True), patch.object(state,'reaper_control') as midi:
+                    state.tick(0,True)
+                    midi.assert_called_once_with(control+offset)
+                assert not keyboard.events
+                assert state.keys == {codes.KEY_LEFTSHIFT,codes.KEY_LEFTCTRL}
+        reaper_reset()
+        connection=Mock()
+        with patch.object(state,'focused_reaper',return_value=True), patch.object(state,'focused_window',return_value=project), patch.object(mapper,'ReaperMidi',return_value=connection):
+            state.dispatch('reaper_save')
+            assert connection.pulse.call_args_list == [call(123,22,0),call(123,17)]
+            state.reset();connection.close.assert_called_once();assert state.reaper_midi is None
+        reaper_reset()
+        with patch.object(state,'focused_reaper',return_value=False), patch.object(state,'notify'):
+            frame({'Y'}); frame()
+            state.raw_axes[config['left_stick'][1]]=32767
+            state.raw_axes[config['right_stick'][0]]=32767
+            state.tick(0,True)
+            assert not keyboard.events
+        reaper_reset()
+        with patch.object(state,'focused_reaper',return_value=False), patch.object(state,'notify'), patch.object(state,'command') as command:
+            state.dispatch('right_stick_context'); state.tick(0,True)
+            assert state.stick_modes == ['scroll','windows']
+            state.raw_axes[config['right_stick'][0]]=32767
+            state.tick(1,True); command.assert_called_once_with('focus right')
+        reaper_reset()
+        with patch.object(state,'lid_closed',return_value=True), patch.object(state,'dispatch') as dispatch:
+            state.tick(0,True); frame({'Y'}); frame(buttons=(314,315),at=1); frame(at=3)
+            assert not dispatch.called and not keyboard.events and state.mode=='reaper'
+        reset(); state.device=None
 
         # Persistent legend on Menu hold, short-press dismissal and isolation.
         reset()
@@ -882,6 +991,10 @@ def main():
                         {'selection_rate': 'fast'}, {'scroll_rate': [18, 1]},
                         {'dpad_rate': [30, 4]}, {'dpad_line_rate': [4, True]},
                         {'dpad_repeat_delay': 0}, {'dpad_acceleration_time': 0},
+                        {'zoom_rate': [7, 1]}, {'profiles': {}},
+                        {'profiles': {'other': {}}},
+                        {'profiles': {'reaper': {'device': {}}}},
+                        {'profiles': {'reaper': {'actions': {'BTN_WEST': 'save'}, 'hold_actions': {}}}},
                         {'action_hold': 0}, {'hold_actions': {'BTN_MODE': 'unknown'}},
                         {'hold_actions': {'BTN_THUMBL': 'unknown'}},
                         {'hold_actions': {'BTN_TL': 'legend'}},
@@ -899,7 +1012,7 @@ def main():
         assert keyboard.events == [(codes.EV_KEY, codes.KEY_UP, 1)]
         frame(); assert keyboard.events[-1] == (codes.EV_KEY, codes.KEY_UP, 0)
         config['chords'] = saved
-        print(f'Passed: {len(expected)} named shortcuts, {orders} face-first press/release orders, unlimited prefixes, terminal-only Ctrl+C/Z/D and pair-prefix guards, wrong-order/simultaneous suppression, immediate/accelerated D-pad navigation, Xbox codes, Backspace/Space holds and Select-first layout actions, modifier restoration, terminal guards, workspace compaction, dynamic wraparound and explicit-list compatibility, independent stick modes/individual neutral switches, Menu hold and launcher toggling, pointer-preserving wheel scrolling/direction/speed/modifiers, text navigation/speed, legend capture, lifecycle reset and profile validation.')
+        print(f'Passed: {len(expected)} named shortcuts, {orders} face-first press/release orders, unlimited prefixes, terminal-only Ctrl+C/Z/D and pair-prefix guards, wrong-order/simultaneous suppression, immediate/accelerated D-pad navigation, Xbox codes, Backspace/Space holds and Select-first layout actions, modifier restoration, terminal guards, workspace compaction, dynamic wraparound and explicit-list compatibility, independent stick modes/individual neutral switches, Menu hold and launcher toggling, pointer-preserving wheel scrolling/direction/speed/modifiers, text navigation/speed, legend capture, three-profile cycling/persistence, REAPER transport/navigation/scroll/zoom guards, lifecycle reset and profile validation.')
 
 
 if __name__ == '__main__':

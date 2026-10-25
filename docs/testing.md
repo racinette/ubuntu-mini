@@ -10,6 +10,57 @@ Firefox-first browser preferences were applied on the WIN Mini: `xdg-settings ge
 
 ## Recent device checks
 
+On 2026-10-25, the initial REAPER keyboard profile was extended with ReaLearn
+2.18.4 and direct MIDI control. JACK routing resolves PipeWire MIDI ports through authenticated client PIDs;
+the ALSA fallback resolves virtual RawMIDI clients by PID. It needs no network
+listener or separate MIDI-routing service. A disposable project using dummy audio passed Arrange navigation and
+zoom, one-shot transport, Mixer level/pan with finer trigger adjustment,
+mute/solo, action-menu record arming, FX/parameter navigation and adjustment,
+bypass, stock-effect insertion, three-page wraparound and saving. The native
+controller display starts from the saved monitoring-FX preset. These automated
+checks do not establish physical-controller ergonomics or guitar-interface
+latency. [Private ReaLearn report](../.local/device-checks/realearn/live-result.json).
+
+The first device install exposed an audio-backend gap: dummy-audio checks had
+used an ALSA virtual input, while the real session used JACK. A muted disposable
+JACK project with recording inputs disabled passed the complete page workflow
+after adding native JACK output and PipeWire port-ID linking. Regression checks
+cover duplicate JACK client names, authenticated-PID selection, retained links,
+reset recovery, rerouting and backend-specific input-cache setup. ReaLearn's
+large settings window and an undocked controller panel are explicitly tiled.
+The same workflow also passed using a copy of the user's existing JACK device
+cache. That cache had left the originally selected MIDI slot unavailable; setup
+now reserves an unused numbered JACK input while retaining other devices and
+the user's controller state. The installed normal REAPER session confirmed a
+MIDI page change and return to its original page. Its controller FX was bypassed
+and was re-enabled. Native Sway readback confirmed the monitoring-FX settings
+window tiled at 320×517 logical pixels with fullscreen disabled. Temporary MIDI
+producers and test instances were stopped. Installer migration/bypass recovery,
+MIDI routing, chord, status, development and setup-layout checks passed.
+[Private installed-session report](../.local/device-checks/realearn/installed-jack-result.json).
+
+The following initial-profile report records the earlier keyboard implementation,
+which the ReaLearn profile supersedes:
+
+On 2026-10-24, a REAPER editing profile was added to the existing mapper.
+Start+Select hold/release and the keyboard/CLI toggle now cycle Desktop, REAPER
+and raw gamepad passthrough. The bar and Menu-hold legend identify the profile.
+Isolated checks passed mode persistence, neutral gating, modifier cleanup,
+Select-prefix consumption, one-shot transport, guarded save/mixer/zoom,
+accelerated track navigation, stick modes, lid suppression and status labels;
+existing desktop chord, idle-policy and setup staging/hash checks also passed.
+A temporary uinput keyboard fed the prepared mapper into a disposable REAPER
+project with dummy audio. REAPER confirmed play/stop without hold repeats,
+track/cursor navigation, horizontal zoom, track-height adjustment, mixer toggle,
+project saving and vertical scrolling without changing zoom. The live check
+caught unreliable modified-wheel handling, so REAPER scrolling instead uses its
+stock Alt+arrow viewport actions; no REAPER keymap change or extension is needed.
+The test did not record the microphone or play audio. Local installation passed
+source comparisons, an active mapper check and the complete REAPER → passthrough
+→ Desktop cycle with grab/neutral/key-state checks. The running bar command was
+restarted to load the profile labels. Physical controller feedback is pending.
+No VM/reboot or guitar-interface test was run. [Private REAPER input report](../.local/device-checks/reaper-gamepad/live-result.json).
+
 On 2026-10-24, REAPER 7.83 was added to the development setup using Cockos's
 official Linux x86_64 archive and published SHA-256 checksum. An isolated fresh
 installation through the upstream installer created the executable, application
@@ -363,6 +414,9 @@ python3 tests/check-proxy-bypass.py
 python3 tests/check-hhd-artifacts.py
 python3 tests/check-coding-clis.py
 python3 tests/check-development.py
+python3 tests/check-reaper.py
+python3 tests/check-realearn.py
+python3 tests/check-midi-routing.py
 python3 tests/check-audio-tooling.py
 python3 tests/check-audio-effects.py
 ```
@@ -384,6 +438,8 @@ The status bar check uses battery/hwmon fixtures and isolated command/API provid
 The HHD artifact check refuses corrupted downloads and altered cache entries, checks temporary-file cleanup, and verifies that matching cached releases need no network access. It also checks module-loading and enrollment decisions with isolated command responses: working modules, disabled Secure Boot, mismatched certificates, enrolled/pending keys, unattended instructions and interactive import success/failure. It changes no host modules or EFI variables. The setup-layout check includes default HHD installation, its read-only preflight and all component source hashes. Selected real power-control tests and remaining coverage are summarized in [validation status](validation-plan.md).
 
 The coding CLI check verifies that installers and initial version checks drop root privileges, use the selected user's home and groups, and exclude root credentials/settings from their environment. It also checks that existing commands are retained without execution, failed downloads are cleaned up before shell execution, missing installed commands fail setup, interactive Bash sets PATH without duplication and preflight is read-only. Bubblewrap checks cover ordinary provisioning dependencies, initial AppArmor profile installation, preservation and reloading on reruns, inactive AppArmor, missing packaged profiles and load failures; these use isolated files and mocked parser calls. The setup-layout check includes these tools in ordinary provisioning and source staging. These checks do not download releases or start model sessions.
+
+The ReaLearn check verifies download checksums, native VST monitoring-state serialization, preservation of personal DAW/key bindings and MIDI device slots, exclusion of the controller from performance inputs, retained controller mappings on reruns, and refusal to rewrite a running instance or unrelated monitoring chain. It uses synthetic plugin payloads and a temporary resource directory.
 
 The development check verifies user privilege/environment isolation, immediate latest-version installation for missing defaults, retention of selected mise/Rust/Python versions, refusal of conflicting Docker runtimes/repositories and read-only preflight. It downloads no runtimes and changes no host services. The audio-tooling check verifies refusal of modified/foreign SDKs, modified extension preservation, editable project retention, unchanged reruns without rebuilding and refusal to run user-owned builds as root. It uses an isolated home and mocked build/download operations. The audio-effects check uses synthetic archives and an isolated home to verify checksums, rejection of traversal/absolute paths and links, preservation of modified/unmanaged bundles, unchanged reruns without downloads or writes, and refusal to install user plugins as root.
 

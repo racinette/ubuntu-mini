@@ -138,5 +138,6 @@ with tempfile.TemporaryDirectory(prefix='minion-development-check-') as temporar
          contextlib.redirect_stdout(io.StringIO()):
         provision.main()
     run.assert_any_call(user, provision.user_environment(user), '/usr/bin/python3', provision.HERE / 'reaper.py')
+    run.assert_any_call(user, provision.user_environment(user), '/usr/bin/python3', provision.HERE / 'realearn.py')
 
 print('Passed: development user isolation, immediate latest installation, retained selections, container-runtime/repository conflict refusal and read-only preflight.')

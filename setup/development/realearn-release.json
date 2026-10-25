@@ -1,0 +1,17 @@
+{
+  "version": "2.18.4",
+  "assets": [
+    {
+      "file": "FX/helgobox-x64.so",
+      "filename": "helgobox-linux-x86_64.so",
+      "url": "https://github.com/helgoboss/helgobox/releases/download/v2.18.4/helgobox-linux-x86_64.so",
+      "sha256": "03bbe56852f8dbb8fd9d2f8666bbd17b36f0ebfe888adcc0adaf53fed8999b16"
+    },
+    {
+      "file": "reaper_helgobox-x64.so",
+      "filename": "reaper_helgobox-linux-x86_64.so",
+      "url": "https://github.com/helgoboss/helgobox/releases/download/v2.18.4/reaper_helgobox-linux-x86_64.so",
+      "sha256": "91642088ca26a964a9fce1983a333506a28d3b7ec5092739cd778bd9267181e9"
+    }
+  ]
+}

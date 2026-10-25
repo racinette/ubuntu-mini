@@ -103,5 +103,43 @@
     "A+B": "interrupt",
     "UP+A+B": "suspend_job",
     "DOWN+A+B": "end_input"
+  },
+  "zoom_rate": [
+    1,
+    6
+  ],
+  "profiles": {
+    "reaper": {
+      "buttons": {
+        "BTN_SOUTH": "KEY_ENTER",
+        "BTN_EAST": "KEY_ESC"
+      },
+      "actions": {
+        "BTN_START": "reaper_save",
+        "BTN_SELECT": "reaper_page",
+        "BTN_MODE": "launcher",
+        "BTN_THUMBL": "reaper_actions",
+        "BTN_THUMBR": "reaper_secondary",
+        "BTN_WEST": "reaper_play_stop",
+        "BTN_NORTH": "reaper_primary"
+      },
+      "hold_actions": {
+        "BTN_MODE": "legend"
+      },
+      "chords": {
+        "UP+A": "copy",
+        "DOWN+A": "paste",
+        "LEFT+A": "undo",
+        "RIGHT+A": "redo",
+        "UP+LEFT+A": "cut",
+        "UP+RIGHT+A": "select_all",
+        "DOWN+LEFT+A": "find",
+        "DOWN+RIGHT+A": "save",
+        "SELECT+A": "fullscreen",
+        "SELECT+B": "floating",
+        "SELECT+Y": "layout",
+        "SELECT+X": "split"
+      }
+    }
   }
 }

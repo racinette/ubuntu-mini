@@ -331,12 +331,18 @@ runs as the desktop user and installs the program under `~/opt/REAPER`, with
 its application launcher, icons, file types and uninstaller. Fresh installations
 also get `~/.local/bin/reaper`, so projects can be opened with `reaper song.rpp`
 or from Super+D. An existing `reaper` command or usable `~/opt/REAPER` installation
-is retained without downloading or reinstalling. Setup does not change personal
-settings, themes, projects or license files under `~/.config/REAPER`, and does not
-activate a license. Cockos provides a 60-day evaluation; continued use requires
+is retained without downloading or reinstalling. The application installer preserves personal settings, themes, projects and
+license files under `~/.config/REAPER`; it does not activate a license. Cockos provides a 60-day evaluation; continued use requires
 your own license. To install just REAPER after the desktop dependencies are
 present, run `/usr/bin/python3 setup/development/reaper.py` as your normal user.
-Theme, screen layout and audio-device tuning are separate from installation.
+Theme, screen layout and audio-device tuning are separate from installation. The development setup also installs checksum-pinned
+ReaLearn 2.18.4, a native control display and Arrange/Mixer/FX gamepad pages.
+The controller installer reserves a numbered JACK MIDI input or an ALSA virtual
+input, according to the audio backend, and adds a monitoring-FX preset while
+preserving other devices and existing personal controller mappings.
+An unrelated monitoring-FX chain is never replaced. Close REAPER before running
+`/usr/bin/python3 setup/development/realearn.py` separately. See
+[REAPER controls](gamepad-controls.md#reaper-editing-profile).
 
 Audio development uses SuperCollider 3.13 from Ubuntu, the VSTPlugin 0.6.2 extension for native Linux VST3 instruments/effects, and JUCE 9.0.4 for building your own plugins with CMake/Ninja. [The manifest](../setup/development/audio-sources.json) pins the user-owned SDK sources and VST3 interfaces by commit. Setup builds the extension under `~/.local/share/SuperCollider/Extensions/VSTPlugin` and puts JUCE under `~/.local/share/minion/audio`. Downloads and builds run as the desktop user. The graphical SuperCollider IDE and Wine plugin bridge are not installed.
 
@@ -487,6 +493,8 @@ After installing fonts in an existing session, open a new terminal or restart an
 affected application so it can discover them. Private-use icons from Nerd Fonts
 and CJK fonts are not included in this fallback set.
 
+The REAPER profile uses ReaLearn for direct MIDI control. Select cycles Arrange, Mixer and FX; L3 opens a navigable action menu. The bar shows `RP:Arrange`, `RP:Mixer` or `RP:FX`, and a compact native REAPER panel shows the selected track and current values. Start+Select retains the overall Desktop/REAPER/Gamepad cycle. No mouse events are emitted in the DAW. See [REAPER controls](gamepad-controls.md#reaper-editing-profile).
+
 The WIN Mini's built-in keyboard supports English (US) and Russian typing. Press **Ctrl+Space** to switch; the bar shows **US** or **RU**, and a centered popup briefly confirms the active language. It disappears after one second; switching again updates the same popup. `minion-layout-popup.service` watches actual Sway layout changes, including the gamepad shortcut, without displaying anything at login or changing focus. Select remains the gamepad window picker. Menus and system messages remain English. Desktop shortcuts keep the same physical keys in either layout. The physical keyboard and gamepad share a keymap so L2/R2 modifiers also work with physical typing; hold R2 and press the spacebar to switch languages. Personal layout overrides in `~/.config/sway/minion.conf` still take precedence.
 
 Use the **NetworkManager tray icon** in the bottom bar to view nearby Wi-Fi
@@ -543,7 +551,7 @@ charging rate is net power entering the battery. Runtime estimates follow the
 recent workload and can change quickly. `htop`, when installed, remains useful
 for ordinary CPU/memory process inspection.
 
-Setup also installs [gamepad desktop navigation](gamepad-controls.md): triggers hold Shift/Ctrl and bumpers change workspaces. D-pad first sends arrows immediately and accelerates while held; hold A/B first, then choose a D-pad direction for a named shortcut, or hold Select before a face button for a layout toggle. Start taps open a terminal; holding Start for 0.75 seconds then releasing opens a new Thunar window. Select opens the window picker; Menu opens the launcher. X/Y provide immediate, holdable Backspace/Space; A/B singles and other discrete controls act on release. [A/B + D-pad and Select + face shortcuts](gamepad-chord-layout.md) perform editing, text navigation and desktop actions; use the physical QWERTY keyboard for typing. Hold Start+Select together, then release both, or press Super+Ctrl+G to toggle normal gamepad input for games. Personal overrides in `~/.config/minion/gamepad.json` are preserved across setup reruns. The mapping has [VM acceptance tests](testing.md#gamepad-tests); actual WIN Mini controls still need verification.
+Setup also installs [gamepad desktop navigation](gamepad-controls.md): triggers hold Shift/Ctrl and bumpers change workspaces. D-pad first sends arrows immediately and accelerates while held; hold A/B first, then choose a D-pad direction for a named shortcut, or hold Select before a face button for a layout toggle. Start taps open a terminal; holding Start for 0.75 seconds then releasing opens a new Thunar window. Select opens the window picker; Menu opens the launcher. X/Y provide immediate, holdable Backspace/Space; A/B singles and other discrete controls act on release. [A/B + D-pad and Select + face shortcuts](gamepad-chord-layout.md) perform editing, text navigation and desktop actions; use the physical QWERTY keyboard for typing. Hold Start+Select for 0.75 seconds, then release both, or press Super+Ctrl+G to cycle Desktop → REAPER → normal gamepad passthrough. Personal overrides in `~/.config/minion/gamepad.json` are preserved across setup reruns. The mapping has [VM acceptance tests](testing.md#gamepad-tests); actual WIN Mini controls still need verification.
 
 The default layout uses left-stick scrolling and right-stick window focus/move together. Sway centers the pointer in a newly selected window only when it is outside that window (`mouse_warping container`), so scrolling follows selection while preserving an existing in-window pointer position. L3 switches the left stick between scrolling and text navigation; R3 independently switches the right stick between window focus/move and resize. Each change waits only for its own stick to return to neutral; the bar shows both behaviors. L2 adds Shift for text selection and R2 adds Ctrl. Hold Menu for 0.75 seconds to open a persistent shortcut legend; a short Menu tap, B/Escape or Enter dismisses it. Menu taps otherwise toggle the launcher. Hold B then Up to close the focused window. Hold Select then A for fullscreen, B for floating, Y for tiled/tabbed, or X for split orientation. A+D-pad carries editing shortcuts; B+Left/Right navigates back/forward. X holds Backspace and Y holds Space, both with immediate press and normal repeat. Editing shortcuts include terminal-aware copy/paste. Old character-typing personal profiles must be replaced with the new shortcut layout; setup performs no migration.
 

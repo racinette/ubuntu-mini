@@ -10,6 +10,19 @@ Firefox-first browser preferences were applied on the WIN Mini: `xdg-settings ge
 
 ## Recent device checks
 
+On 2026-10-25, Start-first D-pad shortcuts replaced Start+Select mode cycling:
+Left selects Desktop, Up REAPER and Right passthrough after both controls are
+released. Down is unassigned. Host mapper checks passed all nine source/target
+pairs, both release orders, long prefixes, same-mode selection, held modifier
+cleanup, wrong-order/simultaneous/diagonal/rolling suppression, retained Start
+singles and Select layout shortcuts, and cancellation on pause, inactivity,
+reset and lid close. The tick/grab/resync path passed passthrough recovery,
+stick suppression during the prefix and persisted mode changes. The VM acceptance
+script was updated but has not been rerun. The live mapper and profile were
+installed, retained Desktop mode and returned ready with no virtual keys held.
+The user confirmed the three physical mode shortcuts work on the WIN Mini.
+[Private installation report](../.local/device-checks/gamepad-modes/install-result.json).
+
 On 2026-10-25, L3 area selection gained actual Toolbar, Tracks, Timeline and
 Transport panels. The left stick/D-pad choose spatial neighbors; A/L3 enters,
 B cancels, and holding L3 retains the action menu. FX stays within track controls.

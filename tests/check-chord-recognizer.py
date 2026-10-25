@@ -14,7 +14,7 @@ PROJECT = Path(__file__).resolve().parents[1]
 # xpad reports Xbox A/B/X/Y as BTN_A/B/X/Y. The historical Linux aliases
 # put BTN_X at BTN_NORTH (0x133), and BTN_Y at BTN_WEST (0x134).
 # Keep this fixture independent of FACE_NAMES and the loaded configuration.
-XBOX_FACE_CODES = {'SELECT': 314, 'A': 0x130, 'B': 0x131, 'X': 0x133, 'Y': 0x134}
+XBOX_FACE_CODES = {'START':315, 'SELECT': 314, 'A': 0x130, 'B': 0x131, 'X': 0x133, 'Y': 0x134}
 loader = importlib.machinery.SourceFileLoader('mapper', str(PROJECT / 'setup/desktop/minion-gamepad'))
 spec = importlib.util.spec_from_loader(loader.name, loader)
 mapper = importlib.util.module_from_spec(spec)
@@ -394,8 +394,7 @@ def main():
             picker.poll.return_value = None
             state.reset()
             assert picker.terminate.call_count == 2 and state.picker is None
-        # Start waits for release even on a long hold; a late Select overlap
-        # must still suppress both launches and retain passthrough priority.
+        # Start singles wait for release; overlapping Select never cycles modes.
         for duration, action in ((.74, 'terminal'), (.75, 'file_manager'), (5, 'file_manager')):
             reset()
             with patch.object(state, 'dispatch') as dispatch:
@@ -422,7 +421,62 @@ def main():
                         frame(buttons=(last,), at=13 + duration)
                         frame(at=15)
                         assert not dispatch.called
-                        assert toggle.call_count == (1 if duration >= .75 else 0)
+                        assert not toggle.called and state.mode == 'desktop'
+        # Every mode is directly reachable from every other mode. Prefixes
+        # have no timeout and either release order commits once, with no singles.
+        state.device=SimpleNamespace(ungrab=lambda: None)
+        for source in mapper.MODES:
+            for direction,target in profile['mode_directions'].items():
+                for start_first_release in (False,True):
+                    reset(); state.mode=source
+                    state.grabbed=source!='passthrough'
+                    with patch.object(state,'dispatch') as dispatch, patch.object(state,'notify') as notify:
+                        frame({'START'},at=0); frame({'START'},at=60)
+                        frame({'START',direction},at=61); frame({'START',direction},at=120)
+                        assert state.mode==source and not keyboard.events and not dispatch.called
+                        frame({direction} if start_first_release else {'START'},at=121)
+                        assert state.mode==source and not notify.called
+                        frame(at=122)
+                        assert state.mode==target and not state.keys and not state.ready
+                        notify.assert_called_once()
+                        assert not dispatch.called and not keyboard.events
+                        frame(at=123); notify.assert_called_once()
+        # Down, diagonals, simultaneous/wrong-order and rolling gestures cannot
+        # choose a mode or leak a deferred Start action.
+        for sequence in (
+                ({'START'},{'START','DOWN'},set()),
+                ({'START'},{'START','UP','RIGHT'},set()),
+                ({'START','UP'},set()),
+                ({'UP'},{'START','UP'},set()),
+                ({'START'},{'START','LEFT'},{'START'},{'START','RIGHT'},set()),
+                ({'START'},{'START','UP'},{'UP'},{'UP','START'},set()),
+                ({'START'},{'START','A'},set()),
+                ({'SELECT'},{'SELECT','START'},{'SELECT'},set())):
+            reset()
+            with patch.object(state,'dispatch') as dispatch, patch.object(state,'notify') as notify:
+                for held in sequence: frame(held)
+                assert state.mode=='desktop' and not dispatch.called and not notify.called and not state.keys
+                assert all(code==codes.KEY_UP for kind,code,value in keyboard.events)
+        # A held modifier is released when starting a mode gesture.
+        reset(); frame(ctrl=True); keyboard.events.clear()
+        with patch.object(state,'notify'):
+            frame({'START'},ctrl=True); frame({'START','RIGHT'},ctrl=True); frame(ctrl=True)
+        assert state.mode=='passthrough' and keyboard.events==[(codes.EV_KEY,codes.KEY_LEFTCTRL,0)]
+        # Lifecycle changes discard a pending mode choice.
+        for reason in ('reset','inactive','paused','lid'):
+            reset()
+            with patch.object(state,'notify') as notify, patch.object(state,'dispatch') as dispatch:
+                frame({'START'}); frame({'START','UP'})
+                if reason=='reset': state.reset()
+                elif reason=='paused': (directory/'paused').touch()
+                elif reason=='lid':
+                    (directory.parent/'minion-idle').mkdir(exist_ok=True)
+                    (directory.parent/'minion-idle/lid-closed').touch()
+                frame(active=reason!='inactive')
+                if reason=='paused': (directory/'paused').unlink()
+                elif reason=='lid': (directory.parent/'minion-idle/lid-closed').unlink()
+                assert state.mode=='desktop' and not dispatch.called and not notify.called
+        state.device=None
         for mode in ('paused', 'inactive', 'reset', 'passthrough'):
             reset()
             with patch.object(state, 'dispatch') as dispatch:
@@ -517,7 +571,7 @@ def main():
             frame(buttons=(314, 315))
             for _ in range(30): frame(buttons=(314, 315))
             frame(buttons=(315,)); assert state.mode == 'desktop'
-            frame(); assert state.mode == 'reaper' and not dispatch.called
+            frame(); assert state.mode == 'desktop' and not dispatch.called
         reset()
         with patch.object(state, 'dispatch') as dispatch:
             frame(buttons=(314, 315)); frame()
@@ -527,6 +581,34 @@ def main():
             path, name = '/dev/fixture', 'Fixture'
             def ungrab(self): pass
             def close(self): pass
+        # Exercise the actual tick/grab/resync path, including recovery from
+        # ungrabbed passthrough and stick suppression while Start is held.
+        class LoopDevice(Device):
+            def grab(self): pass
+            def active_keys(self): return list(state.raw_keys)
+            def absinfo(self,axis): return SimpleNamespace(value=state.raw_axes.get(axis,0))
+        state.device=LoopDevice()
+        reset()
+        with patch.object(state,'dispatch') as dispatch, patch.object(state,'notify'), \
+                patch.object(state,'command') as command, patch.object(state,'reaper_control') as midi:
+            for direction,target in (('RIGHT','passthrough'),('UP','reaper'),('LEFT','desktop')):
+                frame({'START'},at=1); state.tick(1.01,True)
+                state.raw_axes[config['left_stick'][0]]=32767
+                state.raw_axes[config['right_stick'][0]]=32767
+                state.tick(1.02,True)
+                assert not keyboard.events and not command.called and not midi.called
+                state.raw_axes[config['left_stick'][0]]=0
+                state.raw_axes[config['right_stick'][0]]=0
+                frame({'START',direction},at=2); state.tick(2.01,True)
+                frame({direction},at=3); state.tick(3.01,True)
+                frame(at=4); state.tick(4.01,True)
+                assert state.mode==target and state.ready and state.grabbed==(target!='passthrough')
+                assert not keyboard.events and not dispatch.called and not command.called and not midi.called
+                assert (directory/'mode').read_text().strip()==target
+            # Start alone remains inert in passthrough.
+            state.set_mode('passthrough'); state.tick(5,True)
+            frame({'START'},at=6); state.tick(7,True); frame(at=8); state.tick(8.01,True)
+            assert state.mode=='passthrough' and not dispatch.called
         state.device = Device()
         reset()
         assert state.stick_modes == ['scroll', 'windows']
@@ -880,7 +962,7 @@ def main():
         with patch.object(state, 'dispatch') as dispatch, patch.object(state,'notify'):
             frame(buttons=(315,), at=0); frame(buttons=(315,314), at=.1)
             frame(buttons=(315,314), at=2); frame(buttons=(314,), at=3); frame(at=4)
-            assert state.mode == 'passthrough' and not dispatch.called
+            assert state.mode == 'reaper' and not dispatch.called
 
         # Project controls emit MIDI without keyboard/mouse gestures. Native
         # dialogs retain ordinary arrows, and modifier keys are cleaned up.
@@ -1032,6 +1114,7 @@ def main():
             state.raw_axes[config['left_stick'][0]] = 0
             state.raw_axes[config['right_stick'][0]] = 0
         legend = state.legend_text()
+        assert 'Start + Left: Desktop' in legend and 'Start + Select' not in legend
         assert all(mapper.ACTION_LABELS[action] in legend for action in expected.values())
         with patch.object(state, 'dispatch') as dispatch:
             frame({'SELECT'}); frame({'SELECT', 'Y'}); state.close_legend(); frame()
@@ -1104,7 +1187,7 @@ def main():
         assert keyboard.events == [(codes.EV_KEY, codes.KEY_UP, 1)]
         frame(); assert keyboard.events[-1] == (codes.EV_KEY, codes.KEY_UP, 0)
         config['chords'] = saved
-        print(f'Passed: {len(expected)} named shortcuts, {orders} face-first press/release orders, unlimited prefixes, terminal-only Ctrl+C/Z/D and pair-prefix guards, wrong-order/simultaneous suppression, immediate/accelerated D-pad navigation, Xbox codes, Backspace/Space holds and Select-first layout actions, modifier restoration, terminal guards, workspace compaction, dynamic wraparound and explicit-list compatibility, independent stick modes/individual neutral switches, Menu hold and launcher toggling, pointer-preserving wheel scrolling/direction/speed/modifiers, text navigation/speed, legend capture, three-profile cycling/persistence, REAPER transport/navigation/scroll/zoom guards, lifecycle reset and profile validation.')
+        print(f'Passed: {len(expected)} named shortcuts, {orders} face-first press/release orders, unlimited prefixes, terminal-only Ctrl+C/Z/D and pair-prefix guards, wrong-order/simultaneous suppression, immediate/accelerated D-pad navigation, Xbox codes, Backspace/Space holds and Select-first layout actions, modifier restoration, terminal guards, workspace compaction, dynamic wraparound and explicit-list compatibility, independent stick modes/individual neutral switches, Menu hold and launcher toggling, pointer-preserving wheel scrolling/direction/speed/modifiers, text navigation/speed, legend capture, direct Start+D-pad mode selection/passthrough recovery and keyboard cycling/persistence, REAPER transport/navigation/scroll/zoom guards, lifecycle reset and profile validation.')
 
 
 if __name__ == '__main__':

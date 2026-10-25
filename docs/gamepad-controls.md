@@ -1,6 +1,6 @@
 # Gamepad desktop controls
 
-Post-install setup installs desktop and REAPER mappings plus normal gamepad passthrough. Hold Start+Select for 0.75 seconds, then release both, to cycle **Desktop → REAPER → Gamepad → Desktop**. Super+Ctrl+G and `minion-gamepad --toggle` use the same cycle. The hardware mouse mode and trackpad remain independently available. Use the physical QWERTY keyboard for typing. The following table describes Desktop mode.
+Post-install setup installs desktop and REAPER mappings plus normal gamepad passthrough. Hold Start first, then press **Left for Desktop**, **Up for REAPER** or **Right for Gamepad passthrough**, and release both to choose the mode directly. Start+Down is unassigned. Super+Ctrl+G and `minion-gamepad --toggle` still cycle **Desktop → REAPER → Gamepad → Desktop**. The hardware mouse mode and trackpad remain independently available. Use the physical QWERTY keyboard for typing. The following table describes Desktop mode.
 
 | Control | Action |
 | --- | --- |
@@ -71,7 +71,7 @@ Hold Menu/Xbox for at least 0.75 seconds to open a persistent Fuzzel legend deri
 
 The window picker lists windows across workspaces, with the current window first. D-pad up/down selects, A focuses the selected window, and B cancels. Typing filters by application, title or workspace. The launcher uses the same navigation keys. Optional buttons missing from a controller are reported in status.
 
-Hold Start alone for at least 0.75 seconds, then release it to open a new Thunar window. A shorter press opens a terminal on release. Start waits for release so adding Select at any point still consumes both individual actions. Holding does not open repeated windows.
+Hold Start alone for at least 0.75 seconds, then release it to open a new Thunar window. A shorter press opens a terminal on release. Start waits for release so adding a D-pad direction consumes its standalone action. Start+Select is unassigned and consumes both individual actions. Holding does not open repeated windows.
 
 ## REAPER editing profile
 
@@ -84,7 +84,7 @@ keeps REAPER's ordinary shortcuts.
 
 Select cycles **Arrange → Mixer → FX → Toolbar → Transport → Arrange**. The bottom bar shows
 the current `RP:` page; REAPER's docked control display shows the
-selected track, current controls and relevant values. Start+Select still changes
+selected track, current controls and relevant values. Start+Left/Up/Right chooses
 the overall Desktop / REAPER / Gamepad profile.
 
 The controller display normally stays docked inside REAPER. Its undocked window
@@ -207,7 +207,9 @@ with the current repository layout; ordinary setup reruns retain custom mappings
 
 ## Switch profiles and normal gamepad input
 
-Hold Start+Select together for at least 0.75 seconds, then release both, or press Super+Ctrl+G. Each completed gesture advances once through Desktop, REAPER and Gamepad passthrough. A notification shows the mode; the bar shows `Pad` during passthrough. Any overlapping Start/Select press consumes their individual actions, including a short overlap. In passthrough the mapper releases its controller grab and all keyboard keys so games receive normal input. The toggle gesture also reaches games; use the keyboard shortcut if it conflicts.
+Hold Start first, add Left (Desktop), Up (REAPER) or Right (Gamepad passthrough), then release both. There is no hold threshold or prefix timeout. Either release order works; each gesture selects its named mode once, even if already selected. Down is unassigned. Diagonals, simultaneous Start/direction presses, direction-first presses and rolling gestures do not switch modes. These shortcuts consume Start and the D-pad, including Start's normal terminal/file-manager or REAPER Save action. While Start is held, other mapper controls are suppressed. Start+Select no longer switches modes and consumes both individual actions; Select+face layout shortcuts remain available.
+
+Super+Ctrl+G and `minion-gamepad --toggle` retain the three-mode cycle. A notification shows the selected mode; the bar shows `Pad` during passthrough. In passthrough the mapper releases its controller grab and all virtual keys so games receive ordinary input. Start+direction still switches back to Desktop or REAPER, but those physical inputs also reach the game; use the keyboard shortcut if they conflict. Start alone does nothing in passthrough.
 
 ```bash
 minion-gamepad --toggle

@@ -40,10 +40,6 @@
   "ctrl_trigger": "ABS_RZ",
   "previous_bumper": "BTN_TL",
   "next_bumper": "BTN_TR",
-  "toggle_buttons": [
-    "BTN_SELECT",
-    "BTN_START"
-  ],
   "workspace_numbers": null,
   "stick_press": 0.55,
   "stick_release": 0.35,
@@ -74,7 +70,6 @@
     18
   ],
   "resize_step": 5,
-  "toggle_hold": 0.75,
   "chord_axes": [
     "ABS_HAT0X",
     "ABS_HAT0Y"
@@ -158,5 +153,10 @@
         14
       ]
     }
+  },
+  "mode_directions": {
+    "LEFT": "desktop",
+    "UP": "reaper",
+    "RIGHT": "passthrough"
   }
 }

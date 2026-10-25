@@ -382,7 +382,7 @@ def compile_configuration(config, codes, reaper=False):
     for prefix in ('stick', 'trigger'):
         if not 0 <= config[prefix + '_release'] < config[prefix + '_press'] <= 1:
             raise ValueError('Invalid ' + prefix + ' thresholds')
-    for name in ('repeat_delay', 'repeat_interval', 'toggle_hold', 'action_hold',
+    for name in ('repeat_delay', 'repeat_interval', 'action_hold',
                  'dpad_repeat_delay', 'dpad_acceleration_time'):
         if not .05 <= config[name] <= 10:
             raise ValueError('Invalid ' + name)
@@ -402,8 +402,10 @@ def compile_configuration(config, codes, reaper=False):
         raise ValueError('workspace_numbers must be null or a list of unique positive numbers')
     if not isinstance(config['device'], dict) or set(config['device']) - {'name', 'vendor', 'product'}:
         raise ValueError('device supports name, vendor and product selectors')
-    if len(config['toggle_buttons']) != 2:
-        raise ValueError('toggle_buttons requires two buttons')
+    modes = config['mode_directions']
+    if (not isinstance(modes, dict) or not set(modes) <= {'LEFT', 'RIGHT', 'UP', 'DOWN'}
+            or len(modes) != len(MODES) or set(modes.values()) != set(MODES)):
+        raise ValueError('mode_directions requires one direction per gamepad mode')
     for name in ('left_stick', 'right_stick'):
         if len(config[name]) != 2:
             raise ValueError(name + ' requires two axes')
@@ -429,7 +431,6 @@ def compile_configuration(config, codes, reaper=False):
         config[name] = code(config[name], 'ABS_')
     for name in ('previous_bumper', 'next_bumper'):
         config[name] = code(config[name], 'BTN_')
-    config['toggle_buttons'] = [code(v, 'BTN_') for v in config['toggle_buttons']]
     config['chord_axes'] = [code(v, 'ABS_') for v in config['chord_axes']]
     if len(config['chord_axes']) != 2 or len(set(config['chord_axes'])) != 2 or not set(config['chord_axes']) <= set(config['dpad']):
         raise ValueError('chord_axes requires the horizontal and vertical D-pad axes')
@@ -455,8 +456,8 @@ def compile_configuration(config, codes, reaper=False):
     bumpers = {config['previous_bumper'], config['next_bumper']}
     if action_keys & set(config['buttons']) or bumpers & (action_keys | set(config['buttons'])):
         raise ValueError('A button may have only one individual action')
-    if len(set(config['toggle_buttons'])) != 2 or len(bumpers) != 2:
-        raise ValueError('Toggle buttons and bumpers must be distinct pairs')
+    if len(bumpers) != 2:
+        raise ValueError('Bumpers must be distinct')
     if code('BTN_SELECT', 'BTN_') in config['hold_actions']:
         raise ValueError('Select is reserved for release shortcuts')
     return config
@@ -488,9 +489,8 @@ class Mapper:
         self.ready = False
         self.lid_blocked = False
         self.running = True
-        self.chord_since = None
-        self.chord_consumed = False
-        self.chord_armed = False
+        self.mode_gesture = ReleaseGesture()
+        self.mode_since = None
         self.pending_buttons = set()
         self.button_since = {}
         self.text_gesture = ReleaseGesture()
@@ -552,8 +552,8 @@ class Mapper:
         self.select_in_legend = False
         self.clear_dpad_navigation()
         self.gesture_in_legend = False
-        self.chord_since = None
-        self.chord_consumed = self.chord_armed = False
+        self.mode_gesture.clear()
+        self.mode_since = None
 
     def publish_stick_mode(self):
         label = f'L:{self.stick_modes[0].capitalize()} R:{self.stick_modes[1].capitalize()}'
@@ -627,9 +627,9 @@ class Mapper:
                   for button, action in self.config['actions'].items()]
         lines += [labels.get(button, 'Button') + f' hold ({self.config["action_hold"]:g}s)  :  ' + ACTION_LABELS[action]
                   for button, action in self.config['hold_actions'].items()]
-        lines += ['Start + Select hold: normal gamepad input',
-                  'Menu tap/hold or B/Escape: dismiss this legend']
-        lines[-2] = 'Start + Select hold: Desktop > REAPER > Gamepad'
+        lines += ['Start + ' + direction.title() + ': ' + mode.capitalize()
+                  for direction, mode in self.config['mode_directions'].items()]
+        lines += ['Menu tap/hold or B/Escape: dismiss this legend']
         if self.mode == 'reaper':
             lines = [line for line in lines if not line.startswith((
                 'X: hold', 'D-pad:', 'L3:', 'R3:', 'Text:', 'Windows:', 'Layout:'))]
@@ -911,8 +911,11 @@ class Mapper:
                 and all(not self.raw_axes.get(code, 0) for code in self.config['dpad']))
 
     def toggle(self):
+        self.set_mode(MODES[(MODES.index(self.mode) + 1) % len(MODES)])
+
+    def set_mode(self, mode):
         self.ungrab()
-        self.mode = MODES[(MODES.index(self.mode) + 1) % len(MODES)]
+        self.mode = mode
         self.reset()
         (self.directory / 'mode').write_text(self.mode + '\n')
         log.info('Gamepad mode: %s', self.mode)
@@ -973,72 +976,100 @@ class Mapper:
         return active and not self.lid_closed() and not (self.directory / 'paused').exists() and self.mode in ('desktop', 'reaper')
 
     def button_gestures(self, pressed, released, now, active):
-        """Defer individual actions to release; consume overlapping toggle buttons."""
-        if not active or self.lid_closed() or (self.directory / 'paused').exists():
+        """Defer discrete buttons to release; Start owns the mode gesture."""
+        if not self.permitted(active) or not self.grabbed or not self.ready:
             self.pending_buttons.clear()
             self.button_since.clear()
-            self.chord_since = None
-            self.chord_consumed = self.chord_armed = False
             return
-        combo = set(self.config['toggle_buttons'])
-        desktop = self.permitted(active) and self.grabbed and self.ready
-        eligible = pressed if desktop else pressed & combo if self.mode == 'passthrough' else set()
         reserved = set(self.config['chord_faces'].values()) | {self.e.BTN_NORTH, self.e.BTN_WEST}
         reserved -= set(self.config['actions'])
+        reserved.add(self.e.BTN_START)
+        eligible = pressed - reserved
         if self.select_gesture.previous or self.e.BTN_SELECT in self.raw_keys:
             faces = {getattr(self.e, symbol) for symbol in FACE_NAMES.values()}
             eligible -= faces
             self.pending_buttons.difference_update(faces)
-        self.pending_buttons.update(eligible - reserved)
-        for button in eligible - reserved:
+        self.pending_buttons.update(eligible)
+        for button in eligible:
             self.button_since[button] = now
-        held = combo & self.raw_keys
-        if held == combo and combo <= self.pending_buttons and not self.chord_consumed:
-            self.chord_since = now
-            self.chord_consumed = True
-        if self.chord_consumed:
-            self.pending_buttons.difference_update(combo)
-            if held != combo and self.chord_since is not None:
-                self.chord_armed = now - self.chord_since >= self.config['toggle_hold']
-                self.chord_since = None
-            if not held:
-                armed = self.chord_armed
-                self.chord_consumed = self.chord_armed = False
-                if armed:
-                    self.toggle()
-                    return
-        if desktop:
-            # Toggle-pair members wait until release, so a late overlap still
-            # consumes both individual actions, even after a long solo hold.
-            for button in sorted((set(self.config['hold_actions']) & self.pending_buttons) - combo):
-                if now - self.button_since.get(button, now) >= self.config['action_hold']:
-                    self.pending_buttons.discard(button)
-                    action = self.config['hold_actions'][button]
-                    if not self.legend_open() or action == 'legend':
-                        self.dispatch(action)
-            for button in sorted(released & self.pending_buttons):
-                if button == self.e.BTN_SELECT:
-                    continue  # Select alone and Select+face are handled together.
-                if self.legend_open() and self.config['actions'].get(button) not in (
-                        'legend', 'launcher', 'left_stick_context', 'right_stick_context',
-                        'stick_context', 'text_navigation', 'selection'):
-                    continue
-                if button == self.config['previous_bumper']:
-                    self.workspace(-1)
-                elif button == self.config['next_bumper']:
-                    self.workspace(1)
-                elif button in self.config['actions']:
-                    action = self.config['actions'][button]
-                    if (button in combo and button in self.config['hold_actions']
-                            and now - self.button_since.get(button, now) >= self.config['action_hold']):
-                        action = self.config['hold_actions'][button]
+        for button in sorted(set(self.config['hold_actions']) & self.pending_buttons):
+            if now - self.button_since.get(button, now) >= self.config['action_hold']:
+                self.pending_buttons.discard(button)
+                action = self.config['hold_actions'][button]
+                if not self.legend_open() or action == 'legend':
                     self.dispatch(action)
+        for button in sorted(released & self.pending_buttons):
+            if button == self.e.BTN_SELECT:
+                continue  # Select alone and Select+face are handled together.
+            if self.legend_open() and self.config['actions'].get(button) not in (
+                    'legend', 'launcher', 'left_stick_context', 'right_stick_context',
+                    'stick_context', 'text_navigation', 'selection'):
+                continue
+            if button == self.config['previous_bumper']:
+                self.workspace(-1)
+            elif button == self.config['next_bumper']:
+                self.workspace(1)
+            elif button in self.config['actions']:
+                self.dispatch(self.config['actions'][button])
         self.pending_buttons.difference_update(released)
         for button in released:
             self.button_since.pop(button, None)
 
+    def mode_shortcut_frame(self, now, active):
+        """Start first, then one direction; commit after both are released."""
+        gesture = self.mode_gesture
+        if not active or self.lid_closed() or (self.directory / 'paused').exists():
+            gesture.clear()
+            self.mode_since = None
+            return False
+        if self.mode == 'passthrough' and not self.ready:
+            self.ready = self.neutral()
+        if not self.ready or self.mode != 'passthrough' and not self.grabbed:
+            return False
+        if self.e.BTN_START not in self.raw_keys and not gesture.previous:
+            return False
+        held = {'START'} if self.e.BTN_START in self.raw_keys else set()
+        horizontal, vertical = self.config['chord_axes']
+        for axis, negative, positive in ((horizontal, 'LEFT', 'RIGHT'), (vertical, 'UP', 'DOWN')):
+            value = self.raw_axes.get(axis, 0)
+            if value:
+                held.add(negative if value < 0 else positive)
+        if self.raw_keys - {self.e.BTN_START}:
+            held.add('OTHER')
+        if not gesture.previous:
+            self.mode_since = now
+            if (held != {'START'} or self.text_gesture.previous or self.select_gesture.previous
+                    or self.dpad_navigation or self.pending_buttons):
+                gesture.invalid = True
+        if len(held - {'START'}) > 1 or 'OTHER' in held:
+            gesture.invalid = True
+        # Clear pending desktop/DAW gestures before any normal input can fire.
+        self.pending_buttons.clear()
+        self.button_since.clear()
+        self.text_gesture.clear()
+        self.select_gesture.clear()
+        self.clear_dpad_navigation()
+        self.write_keys(set())
+        since = self.mode_since
+        result = gesture.update(held)
+        if not held:
+            self.mode_since = None
+        if result == {'START'} and self.mode != 'passthrough' and not self.legend_open():
+            action = self.config['actions'].get(self.e.BTN_START)
+            if now - since >= self.config['action_hold']:
+                action = self.config['hold_actions'].get(self.e.BTN_START, action)
+            if action:
+                self.dispatch(action)
+        elif result and 'START' in result and len(result) == 2:
+            target = self.config['mode_directions'].get(next(iter(result - {'START'})))
+            if target:
+                self.set_mode(target)
+        return True
+
     def frame(self, pressed, released, now, active):
         if self.block_lid_input(active):
+            return
+        if self.mode_shortcut_frame(now, active):
             return
         if not self.permitted(active) or not self.grabbed or not self.ready:
             self.button_gestures(pressed, released, now, active)
@@ -1089,7 +1120,7 @@ class Mapper:
         new_faces = (held & set(FACE_NAMES)) - (gesture.previous & set(FACE_NAMES))
         if (new_faces and 'SELECT' not in gesture.previous
                 or held & {'UP', 'DOWN', 'LEFT', 'RIGHT'}
-                or self.e.BTN_START in self.raw_keys or self.chord_consumed
+                or self.e.BTN_START in self.raw_keys
                 or self.text_gesture.previous or self.dpad_navigation
                 or self.select_in_legend != self.legend_open()):
             gesture.invalid = True
@@ -1276,9 +1307,9 @@ class Mapper:
         if self.block_lid_input(active):
             return
         if not self.permitted(active):
-            self.button_gestures(set(), set(), now, active)
             if self.grabbed or self.keys:
                 self.ungrab()
+            self.frame(set(), set(), now, active)
             return
         if not self.grabbed:
             try:
@@ -1291,6 +1322,8 @@ class Mapper:
             self.ready = self.neutral()
             return
         self.frame(set(), set(), now, active)
+        if not self.ready or self.mode_gesture.previous:
+            return
         for index, name in enumerate(('left_stick', 'right_stick')):
             x, y = (self.axis(code) for code in self.config[name])
             magnitude = max(abs(x), abs(y))
@@ -1421,7 +1454,7 @@ def discover(config, evdev):
     matches = []
     required_axes = set(config['left_stick'] + config['right_stick'] + list(config['dpad']) +
                         [config['shift_trigger'], config['ctrl_trigger']])
-    required_keys = set(config['buttons']) | {config['previous_bumper'], config['next_bumper']} | set(config['toggle_buttons'])
+    required_keys = set(config['buttons']) | {config['previous_bumper'], config['next_bumper']} | {evdev.ecodes.BTN_START}
     for path in evdev.list_devices():
         device = None
         try:

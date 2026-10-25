@@ -566,32 +566,37 @@ else:raise ValueError('Mapped keyboard is missing')
         if raw['text'] != 'hello' or any(e['code'] == 'Enter' for e in raw['events']):
             raise ValueError('Passthrough still produced keyboard Enter')
         report['passthrough_browser'] = raw
-        control('pulse', [[1, 314, 1], [1, 315, 1]], [[1, 314, 0], [1, 315, 0]], 1.2)
+        control('emit', [[1,315,1]])
+        control('emit', [[3,16,-1]])
+        control('emit', [[1,315,0]])
+        control('emit', [[3,16,0]])
         wait(status, lambda s: s['mode'] == 'desktop' and s['ready'] and s['grabbed'], 'Controller chord did not restore desktop mode')
-        report['checks']['passthrough_and_controller_toggle'] = True
+        report['checks']['passthrough_and_direct_mode_selection'] = True
 
         frozen_windows = {n['id'] for n in tree()}
         frozen_actions = status()['actions']
-        control('emit', [[1, 315, 1]])
-        control('emit', [[1, 314, 1]])
+        control('emit', [[1,315,1]])
+        control('emit', [[3,17,-1]])
         time.sleep(1)
         if status()['mode'] != 'desktop' or {n['id'] for n in tree()} != frozen_windows or picker_processes():
-            raise ValueError('Held toggle chord acted before release')
-        control('emit', [[1, 315, 0]])
+            raise ValueError('Held mode chord acted before release')
+        control('emit', [[1,315,0]])
         if status()['mode'] != 'desktop' or picker_processes():
             raise ValueError('Partial chord release triggered an action')
-        control('emit', [[1, 314, 0]])
+        control('emit', [[3,17,0]])
         wait(status, lambda s: s['mode'] == 'reaper' and s['ready'], 'Full chord release did not select REAPER')
         if status()['actions'] != frozen_actions or {n['id'] for n in tree()} != frozen_windows or picker_processes():
-            raise ValueError('Toggle chord also dispatched an individual action')
-        control('pulse', [[1, 315, 1], [1, 314, 1]], [[1, 314, 0], [1, 315, 0]], 1)
-        wait(status, lambda s: s['mode'] == 'passthrough', 'Second chord did not select passthrough')
-        control('pulse', [[1, 315, 1], [1, 314, 1]], [[1, 314, 0], [1, 315, 0]], 1)
-        wait(status, lambda s: s['mode'] == 'desktop' and s['ready'], 'Reverse-order chord release did not restore navigation')
-        control('pulse', [[1, 314, 1], [1, 315, 1]], [[1, 315, 0], [1, 314, 0]], .12)
+            raise ValueError('Mode chord also dispatched an individual action')
+        for value,target in ((1,'passthrough'),(-1,'desktop')):
+            control('emit', [[1,315,1]])
+            control('emit', [[3,16,value]])
+            control('emit', [[3,16,0]])
+            control('emit', [[1,315,0]])
+            wait(status, lambda s: s['mode']==target and s['ready'], 'Direct mode selection failed: '+target)
+        control('pulse', [[1,314,1],[1,315,1]], [[1,315,0],[1,314,0]], 1)
         time.sleep(.3)
         if status()['mode'] != 'desktop' or status()['actions'] != frozen_actions or picker_processes():
-            raise ValueError('Short overlapping chord dispatched an individual action')
+            raise ValueError('Removed Start+Select gesture dispatched an action')
         report['checks']['chord_release_consumes_individual_actions'] = True
 
         control('emit', [[3, 2, 255]])

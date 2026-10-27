@@ -99,7 +99,7 @@ When checking module acceptance, `sudo modprobe acpi_call` should succeed. If it
 
 ## Controller navigation and shortcuts
 
-Use the [control reference](gamepad-controls.md) and [shortcut tables](gamepad-chord-layout.md) while checking these items.
+Use the [control reference](gamepad-controls.md) and [shortcut tables](gamepad-controls.md#shortcut-table) while checking these items.
 
 - [ ] In hardware gamepad mode, A/B produce Enter/Escape on release; X produces immediate, repeatable Backspace and Y produces immediate, repeatable Space. Confirm X and Y are not swapped. R2+X deletes words where supported; R2+Y switches US/RU.
 - [ ] The default layout scrolls with the left stick and focuses windows with the right; L2+right stick moves windows. Select another window with the right stick, then scroll it with the left without touching the touchpad. Focus changes center the pointer only when it is outside the selected window; verify an off-center point inside the selected window stays put, including while scrolling. L3 changes the left stick to text navigation; R3 changes the right stick to resize. Bumpers change workspaces; L2+bumper moves the focused window without following it. Check dead zones, repeat rate and diagonal handling for comfort.

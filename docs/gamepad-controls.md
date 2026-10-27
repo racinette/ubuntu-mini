@@ -47,13 +47,55 @@ Window focus and resize actions repeat after a short hold; text movement and scr
 
 ## Shortcut table
 
-Hold A/B first, then use the D-pad for the [editing/navigation shortcuts](gamepad-chord-layout.md). A provides copy/paste, undo/redo, cut, select all, find and save. B provides close, equalize, navigation back/forward, document boundaries and search matches. Hold Select first, then A for fullscreen, B for floating, Y for tiled/tabbed or X for split orientation. Prefixes have no timeout; release all participating controls to execute once. Select alone toggles the window picker; Select+face consumes both individual actions. X and Y otherwise act immediately and repeat while held. Invalid, unassigned and rolling combos emit no shortcut.
+These tables describe Desktop mode. REAPER has its own
+[actions and combos](#reaper-editing-profile); Select+face layout toggles remain
+available there. Hold the prefix first, then the direction or face button.
 
-D-pad first sends an arrow immediately. Holding it starts repetition after 400 ms, increasing from 12 to 25 steps per second in all directions over another 300 ms. The sustained rate matches Sway's default keyboard repeat used by held X; personal keyboard repeat settings can differ. A diagonal sends both arrows at the vertical rate. Changing direction restarts the delay and acceleration; releasing stops immediately without an extra step. L2/R2 add Shift/Ctrl, including changes during a hold. Adding A/B during navigation stops repetition and suppresses the gesture until all those controls are released; it cannot become a combo. A face and direction first observed in the same input frame are also suppressed. To make a combo, press the face button first.
+| D-pad | + A: editing | + B: navigation/actions |
+| --- | --- | --- |
+| Up | Copy | Close focused window |
+| Down | Paste | Equalize tiled window sizes |
+| Left | Undo | Navigation back (Alt+Left) |
+| Right | Redo | Navigation forward (Alt+Right) |
+| Up-left | Cut | Beginning of document (Ctrl+Home) |
+| Up-right | Select all | End of document (Ctrl+End) |
+| Down-left | Find | Previous search match (Shift+F3) |
+| Down-right | Save | Next search match (F3) |
 
-Copy/paste are terminal-aware. Editing actions ignore held triggers for their shortcut and restore them afterward; navigation shortcuts accept Shift/Ctrl. Application support determines Find, Save, Redo and search-match behavior. B+Left/Right send Alt+Left/Right for navigation history, including the configured Neovim jump list. See the table for details.
+| Hold Select, then press | Layout action |
+| --- | --- |
+| A | Toggle fullscreen |
+| B | Toggle floating |
+| Y | Toggle tiled/tabbed |
+| X | Toggle horizontal/vertical split for the next window |
 
-Terminal controls use the free A+B prefix: release A+B for Ctrl+C (interrupt), hold both before Up for Ctrl+Z (suspend job), or hold both before Down for Ctrl+D (end input). Release all participating controls to execute once, with no hold deadline or repeats. These actions work only in recognized terminal windows and ignore trigger modifiers. Ctrl+D can exit an empty shell; `fg` resumes a suspended job. The [terminal control reference](gamepad-chord-layout.md#terminal-controls) describes ordering and application behavior.
+### Enter a shortcut
+
+Hold A/B first, then choose the D-pad direction, or hold Select first, then press one face button. Neither prefix has a timeout. Release all participating controls to execute once. A diagonal is one physical D-pad position. Holding a shortcut does not repeat it. A new press after release has begun cancels the gesture; finish releasing before starting another. Unassigned combinations do nothing.
+
+Single A/B inputs produce Enter/Escape on release. X and Y act immediately and remain held for normal application key repeat. R2+X gives Ctrl+Backspace, and R2+Y gives Ctrl+Space (US/RU switching). Select alone opens the window picker on release. Select+face consumes the picker and face actions, including Space/Backspace. Face-before-Select and simultaneous starts cannot become layout shortcuts. Select+D-pad and multi-face Select gestures are suppressed until all participating controls are released.
+
+D-pad first sends arrows immediately, then repeats after 400 ms and accelerates from 12 to 25 steps per second over another 300 ms. Release stops immediately; direction changes restart the ramp. Adding A/B during navigation stops it and consumes the remaining gesture. Simultaneous face/direction starts are suppressed. L2/R2 add Shift/Ctrl to navigation. X/Y do not prefix D-pad shortcuts.
+
+### Terminal controls
+
+| Gesture | Action |
+| --- | --- |
+| A+B | Interrupt / cancel (Ctrl+C) |
+| Hold A+B, then Up | Suspend the foreground job (Ctrl+Z) |
+| Hold A+B, then Down | End input (Ctrl+D) |
+
+Both face buttons must be held before adding a direction. They may be pressed in either order or together, with no deadline. Release every participating control to execute once; holding does not repeat. Adding the second face button alongside or after the direction suppresses the gesture. Unassigned directions do nothing rather than falling back to interruption.
+
+These controls send literal Ctrl+C/Z/D only in recognized terminal windows, including Foot with custom application IDs. They are skipped in graphical applications and when the client cannot be identified. Held triggers do not change their modifiers. Terminal applications determine the result: Ctrl+C normally interrupts a foreground command, Ctrl+Z normally suspends it (use `fg` to resume), and Ctrl+D ends input rather than sending a signal; at an empty shell prompt it can exit the shell. No Enter/Escape or arrow leaks from these gestures.
+
+### Modifiers and application behavior
+
+Copy/paste use Ctrl+C/V in graphical applications and Ctrl+Shift+C/V in Foot, including Foot windows with custom application IDs. Other detected terminals receive no editing shortcut. Cut, undo, redo, select all, find, save and search-match commands are skipped in detected terminals; this prevents shell interrupts, suspension or prefix commands. If the client cannot be identified, these actions are skipped with a notification.
+
+Editing shortcuts have fixed modifiers and restore any held triggers afterward. Redo uses Ctrl+Shift+Z; search matches use Shift+F3/F3. Their behavior depends on the focused application. Document boundaries accept held Shift/Ctrl triggers. For example L2+Up-right+B selects to the end of the document. Navigation history sends fixed Alt+Left/Right, ignoring trigger modifiers; browsers and file managers use their own history, and the default Neovim configuration maps these keys to its jump list.
+
+Desktop actions call Sway directly. Equalize balances tiled siblings recursively within the focused workspace, retains layout/focus, and leaves floating windows alone. Application size constraints can limit balancing.
 
 ## Stick contexts and legend
 
@@ -137,14 +179,20 @@ L3 opens/closes the current page's action menu with a single press.
 
 Within an FX region, the **left stick/D-pad** move spatially between visible,
 enabled controls. **A** activates a button, toggles a switch, or enters/accepts a
-band, combo, effects-list or plugin-list selector. A on a native value field opens
+band, combo or plugin-list selector. A on a native value field opens
 a value editor; use the keyboard to enter text and A/B to accept/cancel. Inside a selector, the stick/D-pad change
 the choice; **B** restores its previous choice. L2 or window switching cancels a
 pending selector. Right-stick directions also step selectors or set switches;
 its angle adjusts numeric faders/knobs. Non-numeric controls disable the previous
 rotary target, and changing targets requires the stick to return to center.
 
-The Effects region includes the list selector and **Add FX / Remove selected FX**.
+The **Effects list** region starts on the selected effect. Left stick/D-pad
+**Up/Down** selects the previous/next effect directly, without an A-to-enter step.
+**A** enters that effect's native controls or generic parameter list. The right
+stick does not change the selected effect. Down after the final effect reaches
+**Add FX / Remove selected FX**; left/right chooses between those buttons, and
+Up returns to the list. B or L2 opens the region picker; selecting another effect
+is immediate, with no preview/cancel mode.
 The header includes available preset controls, preset/parameter action menus,
 audio routing, UI mode, Wet and Effect enabled. ReaEQ's editor includes the band
 selector, Frequency/Gain/Bandwidth, Global Gain, band type/enabled/log-frequency
@@ -366,4 +414,4 @@ One compatible controller is selected automatically. If several match, set `devi
 
 The mapping follows Xbox/xpad labels: X is Linux BTN_NORTH (307), and Y is BTN_WEST (308). These historical directional aliases do not describe Xbox button positions. The host checker independently feeds driver codes through every assigned gesture, without creating a host input device.
 
-The [VM mapping suite](testing.md#gamepad-tests) covers real applications, shortcuts and lifecycle behavior with a synthetic controller. See recorded results for what has actually run on this revision. Physical controls, suspend and comfort need WIN Mini validation. The rear buttons use their own session reader independently of the controller mapper, including in controller passthrough. Gyro and rumble have no added mappings.
+The [VM mapping suite](testing.md#gamepad-tests) covers real applications, shortcuts and lifecycle behavior with a synthetic controller. See recorded results for what has actually run on this revision. Core physical controls have been exercised on the WIN Mini; see [validation status](validation-plan.md) for remaining coverage. The rear buttons use their own session reader independently of the controller mapper, including in controller passthrough. Gyro and rumble have no added mappings.

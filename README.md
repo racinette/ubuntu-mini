@@ -38,7 +38,6 @@ Installed commands, services, configuration and state use the `minion` name. Pre
 Only `setup.sh` and `setup/` are needed for post-install device setup. `install.sh` is a standalone file used earlier in the live USB environment. Tests run separately and are not installed by setup. `tests/vm.py` supports manual VM installation; `tests/test-install-vm.py` tests the optional installer helper on disposable virtual disks.
 
 - [Gamepad navigation and customization](docs/gamepad-controls.md)
-- [Gamepad shortcut layout](docs/gamepad-chord-layout.md)
 - [Run tests and inspect validation results](docs/testing.md)
 - [Reuse downloads through the local mirror](docs/local-mirror.md)
 - [Configure and enable the proxy service](docs/proxy.md)
@@ -47,5 +46,6 @@ Only `setup.sh` and `setup/` are needed for post-install device setup. `install.
 - [Use the installed coding CLIs](docs/post-install-setup.md#coding-clis)
 - [Check the actual device after installation](docs/device-checklist.md)
 - [Remaining validation and hardware checks](docs/validation-plan.md)
+- [Agent handoff and current development state](docs/agent-handoff.md)
 
 ISO images, VM disks, firmware variables, credentials, mirror content and test reports stay under ignored local paths. Documentation links into `.local/` refer to private evidence unavailable in a fresh clone. Retained VM results describe the source revision tested; restructuring the repository does not update installed VM sources.

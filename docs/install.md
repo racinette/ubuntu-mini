@@ -4,7 +4,7 @@
 
 The helper preserves every existing partition without inspecting its operating system. It never shrinks, deletes or reuses one. A previously created but unformatted partition is occupied space. Free the intended space explicitly before starting; the helper contains no cleanup operation.
 
-On the disk recorded in your dual-boot handoff, p5–p7 already occupy the intended Ubuntu region. They must be explicitly reclaimed before this free-space-only helper can use that region. The recorded region is approximately 210 GiB, so a `250G` request would be refused even after reclamation; omit `--size` or request a smaller allocation.
+This is a fresh-install helper, not an in-place upgrade or reinstall tool. An existing Ubuntu installation occupies space even if it came from an earlier manual partitioning attempt. Inspect the current disk rather than using historical partition numbers or geometry. Never reclaim partitions on the working device merely to rerun setup; use [post-install setup](post-install-setup.md) for configuration changes.
 
 ## Run from the live installer
 

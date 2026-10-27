@@ -350,7 +350,7 @@ function ui.fx_regions(area,fx,param,now)
  if state.guid~=guid then
   state.guid,state.band=guid,0
   state.shifter,state.pitch=0,false;invalidate_shifter(state)
-  if not state.editing or state.editing.kind~='effects' then state.editing=nil end
+  state.editing=nil
  end
  local all=native_children(root)
  local regions={}
@@ -374,7 +374,7 @@ function ui.fx_regions(area,fx,param,now)
  local list=widget(chain_controls,1076,'SysListView32')
  if area.kind=='chain' and list then
   local effects=region('effects','Effects list',list)
-  add(effects,'effects:list','Choose effect',list,'effects')
+  add(effects,'effects:list','Selected effect',list,'effects')
   add(effects,'effects:add','Add FX',widget(chain_controls,1075,'Button','Add'))
   add(effects,'effects:remove','Remove selected FX',widget(chain_controls,1058,'Button','Remove'))
  end
@@ -594,7 +594,7 @@ function ui.fx_regions(area,fx,param,now)
    for _,node in ipairs(region.nodes) do if node.key==selected then found=true end end
    if not found then
     if state.editing and state.editing.key==selected then state.editing=nil end
-    state.selection[region.key]=region.key=='plugin' and eq and 'eq:freq' or region.nodes[1].key
+    state.selection[region.key]=region.key=='effects' and 'effects:list' or region.key=='plugin' and eq and 'eq:freq' or region.nodes[1].key
     local has=false
     for _,node in ipairs(region.nodes) do if node.key==state.selection[region.key] then has=true end end
     if not has then state.selection[region.key]=region.nodes[1].key end
@@ -640,10 +640,6 @@ function ui.fx_step(window,direction)
  elseif node.kind=='combo' then
   local index=combo_index(node.hwnd)
   if index then combo_index(node.hwnd,index+delta) end
- elseif node.kind=='effects' then
-  local count=reaper.TrackFX_GetCount(state.track)
-  local index=math.max(0,math.min(count-1,state.fx+delta))
-  if count>0 then reaper.TrackFX_Show(state.track,index,1);return index end
  elseif node.kind=='toggle' then
   reaper.JS_WindowMessage_Send(node.hwnd,'BM_SETCHECK',delta>0 and 1 or 0,0,0,0);command_widget(node.hwnd)
  elseif node.kind=='list' then
@@ -654,6 +650,19 @@ function ui.fx_move(window,direction,choose)
  local node,state,region=ui.fx_current(window)
  if not node then return end
  if state.editing then return ui.fx_step(window,direction) end
+ if node.kind=='effects' and (direction=='up' or direction=='down') then
+  local count=reaper.TrackFX_GetCount(state.track)
+  local current=reaper.TrackFX_GetChainVisible(state.track)
+  if current<0 then current=state.fx end
+  local index=current+(direction=='up' and -1 or 1)
+  if index>=0 and index<count then
+   reaper.TrackFX_Show(state.track,index,1)
+   state.fx=index
+   return index
+  end
+  if direction=='up' and count>0 then return end
+  -- Down past the final row leaves the list for its Add/Remove buttons.
+ end
  if node.list_only then
   for i,item in ipairs(region.nodes) do
    if item.key==node.key then
@@ -680,6 +689,13 @@ function ui.fx_activate(window)
  if node.ready==false then return 'Selecting shifter '..(state.shifter+1) end
  if state.editing then state.editing=nil;return end
  if node.kind=='param' then return 'Turn the right stick to adjust '..node.label
+ elseif node.kind=='effects' then
+  if reaper.TrackFX_GetCount(state.track)==0 then return 'The FX chain is empty; choose Add FX' end
+  for _,key in ipairs({'plugin','parameters','header'}) do
+   for _,region in ipairs(state.regions) do
+    if region.key==key then state.region=key;return end
+   end
+  end
  elseif node.kind=='toggle' then
   local checked=reaper.JS_WindowMessage_Send(node.hwnd,'BM_GETCHECK',0,0,0,0)
   reaper.JS_WindowMessage_Send(node.hwnd,'BM_SETCHECK',checked==0 and 1 or 0,0,0,0);command_widget(node.hwnd)
@@ -690,8 +706,8 @@ function ui.fx_activate(window)
   if original<0 then select_native(node,0) end
  elseif node.kind=='shifter' then
   state.editing={key=node.key,kind=node.kind,original=state.shifter}
- elseif node.kind=='band' or node.kind=='combo' or node.kind=='effects' then
-  state.editing={key=node.key,kind=node.kind,original=node.kind=='band' and state.band or node.kind=='effects' and state.fx or combo_index(node.hwnd)}
+ elseif node.kind=='band' or node.kind=='combo' then
+  state.editing={key=node.key,kind=node.kind,original=node.kind=='band' and state.band or combo_index(node.hwnd)}
  elseif node.kind=='edit' then
   local hwnd=node.editor or node.hwnd
   local original=reaper.JS_Window_GetTitle(hwnd)
@@ -723,7 +739,7 @@ function ui.fx_cancel(window)
   elseif editing.kind=='shifter' then state.shifter=editing.original;invalidate_shifter(state)
   elseif editing.kind=='combo' then combo_index(node.hwnd,editing.original)
   elseif editing.kind=='list' then select_native(node,editing.original)
-  elseif editing.kind=='effects' and reaper.TrackFX_GetCount(state.track)>editing.original then reaper.TrackFX_Show(state.track,editing.original,1) end
+  end
  end
  return true
 end

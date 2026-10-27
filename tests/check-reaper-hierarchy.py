@@ -92,9 +92,16 @@ ui.fx_step(30,'right');assert(nodes[14].check==1)
 choose('plugin','eq:type');ui.fx_activate(30);assert(state.editing)
 ui.fx_move(30,'right',spatial);assert(nodes[15].combo==1 and commands[#commands].notification==1)
 assert(ui.fx_cancel(30) and nodes[15].combo==0 and not state.editing)
-choose('effects','effects:list');ui.fx_activate(30)
+choose('effects','effects:list')
 assert(ui.fx_move(30,'down',spatial)==1 and fx==1)
-assert(ui.fx_cancel(30) and fx==0)
+assert(not state.editing and not ui.fx_cancel(30))
+for _,direction in ipairs({'left','right','up','down'}) do ui.fx_step(30,direction);assert(fx==1,'Right stick must not switch effects') end
+assert(ui.fx_move(30,'up',spatial)==0 and fx==0)
+ui.fx_move(30,'up',spatial);assert(fx==0 and ui.fx_current(30).kind=='effects')
+ui.fx_move(30,'down',spatial);ui.fx_move(30,'down',spatial)
+assert(ui.fx_current(30).kind=='command','Down past the last effect reaches the buttons')
+ui.fx_move(30,'up',spatial);assert(ui.fx_current(30).kind=='effects')
+ui.fx_activate(30);assert(state.region=='plugin' and not state.editing,'A enters the selected effect controls')
 -- Removed, disabled and foreign controls cannot retain a stale activation target.
 nodes[12].style=0x08000000;ui.fx_regions(area,0,0,2)
 for _,r in ipairs(state.regions) do for _,n in ipairs(r.nodes) do assert(n.key~='eq:add') end end

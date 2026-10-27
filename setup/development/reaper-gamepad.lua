@@ -254,10 +254,8 @@ local function loop()
   fx_index = math.max(0, math.min(fx_index, fx_count - 1))
   if fx_index ~= old_fx then
     param_index = 0
-    -- Keep an already open chain on the effect chosen by the controller.
-    if page==2 and track and fx_count>0 and reaper.TrackFX_GetChainVisible(track)>=0 then
-      reaper.TrackFX_Show(track,fx_index,1)
-    end
+    -- Navigation explicitly selects the effect. Observe the native selection
+    -- here; showing it again can overwrite a selection still being applied.
   end
   local param_count = track and fx_count > 0 and reaper.TrackFX_GetNumParams(track, fx_index) or 0
   param_index = math.max(0, math.min(param_index, param_count - 1))
@@ -517,6 +515,7 @@ local function loop()
       detail=fx_region.label..' > '..fx_node.label..(value~='' and ': '..value or '')
       if not fx_ready then detail=detail..' | '..fx_note end
       if fx_state.editing then detail=detail..' | Choose with L / D-pad; A accept; B cancel'
+      elseif fx_node.kind=='effects' then detail=detail..' | Up/down: effect; A: controls'
       elseif fx_node.kind=='param' then detail=detail..(fx_node.list_only and ' | L: choose; R: adjust' or ' | R: adjust')
       elseif fx_node.kind=='edit' then detail=detail..' | A: edit value'
       else detail=detail..' | A: activate / choose' end

@@ -10,6 +10,117 @@ Firefox-first browser preferences were applied on the WIN Mini: `xdg-settings ge
 
 ## Recent device checks
 
+On 2026-10-27, L1/R1 window cycling stopped sorting the main window first and
+FX windows by creation ID. It now preserves Sway's tab/split tree order from the
+outline helper. Tests passed for nested groups, reordered tabs with conflicting
+creation IDs/focus history, equal-size tab geometry, main-window placement,
+controller-panel exclusion and wraparound in both directions. Existing ownership,
+focus guards and control-hierarchy tests passed. After the user closed REAPER,
+the Lua script was installed with a backup and matching hash, and the normal
+session was reopened. Physical confirmation remains pending.
+[Installation report](../.local/device-checks/realearn/tab-order-install-result.json).
+
+On 2026-10-27, opaque FX editors gained a generic automation-parameter list.
+The controller shows the selected name/value and neighboring entries, skips
+empty/unused and synthetic MIDI CC slots, and never outlines an invented native
+knob. Parameter indices retain their original host mapping, including duplicate
+names, and the ReaLearn selector now supports 65536 entries. Native widget
+navigation remains the first choice; custom pedal creation/cable routing is
+outside the controller support boundary.
+
+Hierarchy, FX-widget, ReaLearn and setup checks passed. A muted private REAPER
+instance at 960×540 verified BYOD output-gain changes without input-gain changes,
+skipping unused slots, rotary control of parameter 509, the same fallback in
+REAPER's generic view, and an existing ReaEQ knob regression. The private test
+uses mapper MIDI events, not physical gamepad presses. The same fallback also
+passed AIDA-X selection and a two-state parameter change, without an adapter.
+Scripts and the controller parameter range were installed with backups after the
+user closed REAPER; the normal session was reopened. Physical confirmation is
+pending. Private test services were stopped.
+[Fallback report](../.local/device-checks/realearn/parameter-fallback-result.json),
+[AIDA-X report](../.local/device-checks/realearn/parameter-second-plugin-result.json),
+[installation report](../.local/device-checks/realearn/parameter-fallback-install-result.json).
+
+The 2026-10-27 ReaPitch rotary update replaces that plugin's generic fallback
+with exact bindings for all nine shifter sliders, including all three formant
+ranges. A Shifter selector reveals the selected tab and supports accept/cancel;
+Add/Delete Shifter rebinds the parameter indices. Native tab notifications are
+observed in pass-through mode, so changing tabs cannot leave the visible panel
+and controller-selected shifter out of sync. Owned message monitoring is released
+on exit; plain region discovery does not switch tabs. Rotary input is gated while
+the selected panel settles, and generic UI mode stops custom-tab preparation.
+
+Hierarchy/FX-widget/ReaLearn checks passed, covering group bindings, reveal delay,
+tab changes with unchanged handles, cleanup and generic-view transitions. Muted
+native REAPER tests at 960×540 verified right-stick changes on all nine sliders
+on each of two shifters, preserving the other shifter's values, selector
+accept/cancel, deletion/rebinding and native-tab synchronization with distinct
+formant values. The two Lua scripts were installed with backups and verified
+hashes. REAPER was reopened after confirming that the prior instance had closed;
+physical confirmation is pending. Private test services were stopped.
+[Rotary test report](../.local/device-checks/realearn/pitch-rotary-result.json),
+[installation report](../.local/device-checks/realearn/pitch-rotary-install-result.json).
+
+On 2026-10-27, the workspace service made new REAPER project/FX/controller
+surfaces tabbed by default. Origin placement runs before the layout command, so
+background FX returns to its parent without altering the unrelated workspace or
+stealing its focus. Modal dialogs are excluded. Window-origin and setup checks
+passed; private Sway fixtures verified full-width project/FX tabs, foreground
+focus, background placement and the live new-window subscription. Actual REAPER
+project/FX tabs passed L1/R1 switching after each asynchronous focus transition
+completed. The root-owned service script was installed with a backup, compared
+against the repository and restarted successfully. No REAPER surfaces were open
+at installation; the new default applies when they open. Private test services
+were stopped.
+[Tab placement report](../.local/device-checks/reaper-fx/tabs-result.json),
+[native switching report](../.local/device-checks/realearn/tabs-switch-result.json),
+[installation report](../.local/device-checks/reaper-fx/tabs-install-result.json).
+
+The 2026-10-27 ReaPitch follow-up accepts unique numbered parameter prefixes
+(`1: Shift (cents)` versus the visible `Shift (cents)`) and keeps unmatched sliders
+selectable through a unique adjacent writable field. Multiple shifters with
+identical parameter names disable rotary binding and use the active native
+field instead. Regression tests cover unique/ambiguous groups, correct field
+notifications, duplicate editor candidates and read-only rejection. Native FX,
+hierarchy, window and ReaLearn checks passed. A muted private ReaPitch project
+verified all nine shifter sliders through mapper navigation, four matching
+rotary parameters, duplicate-group rotary suppression, and a 12.5-semitone edit
+to shifter 2 without changing shifter 1. All nine remained reachable at 960×540
+after giving the FX full width; half-width tiling can clip the rightmost slider.
+The two Lua scripts were installed with backups and matching hashes. REAPER was
+reopened after the user saved and closed it; physical confirmation remains pending.
+The private test services were stopped.
+[ReaPitch report](../.local/device-checks/realearn/pitch-result.json),
+[installation report](../.local/device-checks/realearn/pitch-install-result.json).
+
+On 2026-10-27, FX navigation gained generic native-widget discovery. Host effects
+and header controls are scoped to their direct parent, so ReaVerb's internal
+list/Add/Remove IDs cannot collide with REAPER's chain controls. Standard buttons,
+switches, lists, combos and writable fields are discovered by class and ownership;
+unique nearby parameter labels bind numeric faders without reusing host Wet.
+SWELL group-box flags and list states use their actual platform/API definitions
+([SWELL](https://github.com/justinfrankel/WDL/blob/main/WDL/swell/swell-types.h),
+[js_ReaScriptAPI](https://github.com/juliansader/js_ReaScriptAPI/blob/master/js_ReaScriptAPI_def.h)).
+No active parameter probing or pointer movement is used for discovery.
+
+The hierarchy regression suite covers duplicate IDs, host/plugin Wet separation,
+ambiguous parameter names, read-only/group-box exclusion, list cancellation,
+native value notifications and removed-control recovery. FX-widget, window,
+outline, transport, ReaLearn and setup checks passed. Muted private REAPER tests
+reached ReaVerb's native controls with mapper stick gestures, adjusted plugin Wet,
+toggled ZL, cancelled Max FFT selection, cancelled a value dialog and accepted a
+50 ms Pre-reverb edit, navigated/cancelled a two-row impulse list, added
+and removed impulse modules without removing the track FX, and navigated
+ReaDelay through the same discovery. Existing EQ/Comp and native-menu tests passed.
+The full control test uses a larger private viewport; controls clipped by the
+device's 540-pixel logical height remain unavailable until revealed. Custom-painted
+controls and unmatched sliders are not implied to work. Physical usability of
+this revision remains pending. The two Lua scripts were installed with backups
+and verified hashes; REAPER was reopened after the user saved and closed it.
+The disposable REAPER/display services were stopped after testing.
+[Private native-discovery report](../.local/device-checks/realearn/generic-result.json),
+[installation report](../.local/device-checks/realearn/generic-install-result.json).
+
 On 2026-10-26, REAPER navigation gained a window → region → control hierarchy.
 L1/R1 cycle distinct main/track-FX windows; L2 chooses only regions in the current
 window. FX regions expose the effects list and Add/Remove, preset/routing header,

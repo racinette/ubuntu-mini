@@ -168,7 +168,7 @@ def preset():
                          mode={}, target=dict(type=0, commandName=ACTION_ID, invocationType=0)))
     parameters = {}
     for index, name, count, labels in ((0, 'Page', PAGE_COUNT, ['Arrange', 'Mixer', 'FX','Toolbar','Transport']),
-                                      (1, 'FX', 128, []), (2, 'Parameter', 256, []),
+                                      (1, 'FX', 128, []), (2, 'Parameter', 65536, []),
                                       (3, 'Request', REQUEST_COUNT, []), (4, 'Menu action', 32, []),
                                       (5, 'Fine', 2, []), (6, 'Actions open', 2, []),
                                       (7, 'Send', 128, []),

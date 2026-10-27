@@ -145,6 +145,7 @@ for mapping in fx_stick:
     assert mapping['target']=={'type':63,'paramIndex':3}
     assert abs(mapping['mode']['minTargetValue']-(11+cc-4)/28)<.000001
     assert 'p[9] == 0' in mapping['eelCondition'] and 'p[6] == 0' in mapping['eelCondition']
+assert realearn.preset()['mainUnit']['parameters']['2']['valueCount']==65536
 fx_knob=next(m for m in mappings if m['name']=='Set FX knob position')
 assert 'p[15] == 1' in fx_knob['eelCondition']
 print('Passed: window bumpers, window-local FX spatial requests and numeric-control-only absolute knob gate.')

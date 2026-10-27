@@ -160,6 +160,19 @@ def reaper_fx_placement(tree, window_id):
     return '[con_id='+str(window_id)+'] '+', '.join(commands)
 
 
+def reaper_tabbed_window(tree, window_id):
+    """Use full-size tabs for project/FX/controller surfaces, not modal dialogs."""
+    if tree.get('id') == window_id:
+        props = tree.get('window_properties') or {}
+        title = tree.get('name') or ''
+        return props.get('class') == 'REAPER' and bool(
+            re.search(r' - REAPER v[0-9]', title)
+            or re.match(r'^(FX:|VSTi?:|VST3:|JS:)', title)
+            or title in ('Device gamepad', 'REAPER gamepad controls'))
+    return any(reaper_tabbed_window(child, window_id) for child in
+               tree.get('nodes', []) + tree.get('floating_nodes', []))
+
+
 def place_child_window(window_id):
     if type(window_id) is not int or window_id <= 0:
         return
@@ -169,6 +182,10 @@ def place_child_window(window_id):
         origin = window_origin(tree, window_id)
         if origin:
             command = f'[con_id={window_id}] move container to workspace {json.dumps(origin["name"])}'
+    if reaper_tabbed_window(tree, window_id):
+        # Apply after origin placement: an FX created on another workspace must
+        # not change that workspace's layout before moving to its parent.
+        command = command + ', layout tabbed' if command else f'[con_id={window_id}] layout tabbed'
     if command:
         result = json.loads(subprocess.check_output(['swaymsg', '-r', command]))
         if not all(item.get('success') for item in result):

@@ -101,7 +101,16 @@ def main():
     assert fx(fixture,32) is None
     with patch.object(function_globals['subprocess'],'check_output',side_effect=[json.dumps(foreground),'[{"success":true}]']) as ipc:
         policy['place_child_window'](32)
-        assert ipc.call_args.args[0][-1]=='[con_id=32] floating disable, focus'
+        assert ipc.call_args.args[0][-1]=='[con_id=32] floating disable, focus, layout tabbed'
+    tabbed=policy['reaper_tabbed_window']
+    for title in ('Song - REAPER v7.83 - EVALUATION LICENSE','FX: Track 1','VST: ReaPitch','VST3: Effect','Device gamepad','REAPER gamepad controls'):
+        assert tabbed({'id':7,'name':title,'window_properties':{'class':'REAPER'}},7)
+    for title in ('About REAPER','Add FX to Track 1','Time signature at edit cursor','REAPER Preferences'):
+        assert not tabbed({'id':7,'name':title,'window_properties':{'class':'REAPER'}},7)
+    assert not tabbed({'id':7,'name':'FX: Another app','window_properties':{'class':'Other'}},7)
+    with patch.object(function_globals['subprocess'],'check_output',side_effect=[json.dumps(foreign),'[{"success":true}]']) as ipc:
+        policy['place_child_window'](32)
+        assert ipc.call_args.args[0][-1]=='[con_id=32] move container to workspace "4", floating disable, layout tabbed'
     print('Passed: agent ancestry, current/renamed/floating workspaces, independent launches, shared-process ambiguity, scratchpad, safe IPC and disappearing processes.')
 
 

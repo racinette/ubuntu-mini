@@ -66,6 +66,27 @@ with tempfile.TemporaryDirectory() as tmp:
         picker.update();assert not popup.exists() and len(calls)==2
 
 print('Passed: exact compositor IDs, single dispatch, foreign PID/closed target rejection and no background focus stealing.')
+# Sway's child order follows tab placement even when IDs and focus history do
+# not. Preserve it across nested tab groups and a later tab rearrangement.
+with tempfile.TemporaryDirectory() as tmp:
+    state=Path(tmp)/'outline'
+    outline=Mock(pid=42)
+    outline.owner.return_value=42
+    outline.viewable.return_value=True
+    outline.geometry.return_value=(0,0,400,300)
+    def window(id):return dict(id=id,pid=42,window=id*10,name=f'Window {id}')
+    tabs={'layout':'tabbed','focus':[8,30,7],
+          'nodes':[window(30),{'layout':'splith','nodes':[window(7),window(8)]}]}
+    tree={'nodes':[tabs]}
+    picker=module['WindowPicker'](state,outline)
+    with patch.dict(picker.update.__globals__,ipc=lambda *_:tree):
+        def order():
+            picker.update()
+            return [int(row.split('\t')[0]) for row in Path(str(state)+'.windows').read_text().splitlines()[1:]]
+        assert order()==[30,7,8]
+        tabs['nodes'].reverse()
+        assert order()==[7,8,30], 'Tab moves must update the exported order'
+
 # The popup must belong to this PID and be an override-redirect native menu.
 outline=object.__new__(module['Outline'])
 outline.pid,outline.root,outline.display=42,1,None
@@ -120,6 +141,26 @@ assert(ui.areas[6].key=='fx:9' and ui.areas[6].track==tracks[2] and ui.areas[6].
 assert(#ui.windows()==3 and ui.focused_window().id==8)
 assert(ui.window_neighbor(7,1).id==8 and ui.window_neighbor(7,-1).id==9)
 assert(ui.window_neighbor(9,1).id==7 and ui.window_neighbor(8,-1).id==7)
+-- Equal-sized tabs have no useful spatial difference; row order is authoritative.
+local saved_rects=rects
+rects={main={0,0,400,300},chain={0,0,400,300},floating={0,0,400,300}}
+local rows={
+ '9\t0\t0\t0\t400\t300\tVST: Plugin',
+ '8\t1\t0\t0\t400\t300\tFX: Track 1 "One"',
+ '99\t0\t0\t0\t400\t300\tDevice gamepad',
+ '7\t0\t0\t0\t400\t300\tProject - REAPER v7'}
+local function tabs()
+ write('.windows',os.time()..'\n'..table.concat(rows,'\n'));ui.scan_windows(path)
+end
+tabs();local ordered=ui.windows()
+assert(#ordered==3 and ordered[1].id==9 and ordered[2].id==8 and ordered[3].id==7)
+assert(ui.window_neighbor(9,1).id==8 and ui.window_neighbor(9,-1).id==7)
+assert(ui.window_neighbor(7,1).id==9 and ui.window_neighbor(7,-1).id==8)
+assert(ui.focused_window().id==8,'Focus must not reorder tabs')
+rows[1],rows[4]=rows[4],rows[1];tabs()
+ordered=ui.windows();assert(ordered[1].id==7 and ordered[2].id==8 and ordered[3].id==9)
+assert(ui.window_neighbor(8,1).id==9 and ui.window_neighbor(8,-1).id==7)
+rects=saved_rects
 -- Closed chains and stale discovery cannot leave an editable ghost target.
 tracks[1].fx=-1;scan();assert(#ui.areas==5 and ui.areas[5].key=='fx:9')
 scan(os.time()-5);assert(#ui.areas==0)

@@ -108,15 +108,27 @@ does not switch workspaces or take focus. Later manual window moves remain yours
 
 Navigation has three levels: **window → region → control**. **L1/R1** cycle
 through the main REAPER window and its open track FX chains/floating plug-ins,
-wrapping at either end. Focusing an FX window binds the controls to its owning
+following their visible Sway tab/split order and wrapping at either end. Moving a
+tab changes that order; creation IDs and focus history do not. Focusing an FX
+window binds the controls to its owning
 track and visible effect. The main window remembers its previous page. Monitoring
 FX and unrelated dialogs are excluded. In other applications, bumpers retain
 Linux workspace switching; in native dialogs, they retain Tab/Shift+Tab.
 
+New REAPER project, FX and controller windows automatically use **full-size tabs**
+in their tiled group. They share the available area rather than dividing it into
+narrow panes. L1/R1 switches project/FX tabs; the tab titles also accept clicks.
+File choosers, preferences and other modal dialogs keep their popup behavior.
+The window-placement service applies tabbing after moving a new FX to its
+parent's workspace, without changing the layout of the workspace it left.
+Select+Y can temporarily toggle back to a split; opening another REAPER surface
+restores the tabbed default.
+
 **Hold L2** to choose a region within the current window. The controller panel
 shows **Choose area**, with a cyan region outline. Main-window regions are
 **Timeline, Tracks, Toolbar and Transport**. A track FX chain offers **Effects
-list**, **Presets and routing**, and the mapped **ReaEQ/ReaComp controls**. Floating
+list**, **Presets and routing**, and **Plugin controls** (named ReaEQ/ReaComp/ReaPitch for
+their specialized editors). Floating
 plug-ins offer their own header/editor regions. The left stick/D-pad move between
 actual region positions; release L2 to enter. B cancels. Bumpers, right-stick
 adjustment and editing actions are inactive while L2 is held. Return controls to
@@ -125,7 +137,8 @@ L3 opens/closes the current page's action menu with a single press.
 
 Within an FX region, the **left stick/D-pad** move spatially between visible,
 enabled controls. **A** activates a button, toggles a switch, or enters/accepts a
-band, combo or effects-list selector. Inside a selector, the stick/D-pad change
+band, combo, effects-list or plugin-list selector. A on a native value field opens
+a value editor; use the keyboard to enter text and A/B to accept/cancel. Inside a selector, the stick/D-pad change
 the choice; **B** restores its previous choice. L2 or window switching cancels a
 pending selector. Right-stick directions also step selectors or set switches;
 its angle adjusts numeric faders/knobs. Non-numeric controls disable the previous
@@ -137,10 +150,44 @@ audio routing, UI mode, Wet and Effect enabled. ReaEQ's editor includes the band
 selector, Frequency/Gain/Bandwidth, Global Gain, band type/enabled/log-frequency
 controls, **Add band / Remove band / Reset defaults**, Show tabs/grid/phase and
 metering. ReaComp includes its mapped faders, switches, detector-input combo and
-Limit output. Hidden, disabled and offscreen controls are skipped. A narrow tile
-can hide controls: **Select+Y** gives the interface full width through tabbed layout.
-Other custom plug-in editors require their own mappings; their available native
-header and FX-chain controls remain usable.
+Limit output. Hidden, disabled and offscreen controls are skipped. REAPER opens
+in tabs by default; **Select+Y** restores tabbing after a manual switch to split layout.
+ReaPitch has exact bindings for all nine shifter sliders: four pitch ranges,
+three formant ranges, Volume and Pan. The right stick's angle adjusts each one.
+Select **Shifter**, press A, choose with left/right and press A to accept (B
+cancels). The controller reveals its chosen native shifter before allowing
+adjustments, including after tab changes outside the controller. Add/Delete
+Shifter updates that selection without leaving a stale parameter target.
+Standard native plugin widgets are discovered without a per-plugin map:
+buttons, checkboxes, radio buttons, lists, combos and writable value fields.
+This includes ReaVerb's impulse-response list and Add/Remove buttons. Its list is
+separate from the host effects list even though both use the same native ID.
+Visible sliders with a nearby label matching one unambiguous plugin parameter
+use right-stick angle control; host Wet/Bypass/Delta are excluded from that match.
+For other native plugins, numbered parameter prefixes are accepted
+only when the remaining name uniquely identifies a parameter. Repeated names
+across multiple groups do not select an arbitrary instance. Sliders without a
+unique parameter match remain selectable when they have one adjacent writable
+value field: **A** edits that field, and the right stick stays inactive. This also
+covers mismatches between visible labels and automation names.
+Other numeric fields remain editable with A. EQ/Comp/ReaPitch adapters retain
+their exact parameter mappings. Group boxes and read-only fields are skipped.
+
+Discovery is limited to widgets the plugin exposes. When an editor has no
+discoverable controls, **Plugin parameters** provides a generic list of the
+plugin's named automation parameters. Left stick/D-pad moves through the list;
+right-stick angle sets the selected value. The controller panel shows its name,
+formatted value and neighboring entries; no outline is drawn on the original
+plugin interface. L2 chooses between this list and the host's other regions.
+Unused/empty slots and synthetic MIDI CC entries are omitted; duplicate names
+retain distinct parameter indices. Indices up to 65535 are supported.
+
+This is the support boundary for opaque plugin interfaces, including BYOD:
+exposed parameter values are controllable, but creating pedals, connecting
+cables and other custom GUI operations require touch/touchpad. We do not add
+plugin-specific adapters for those operations. The existing bundled-effect
+adapters remain. REAPER's **Custom / generic interface** button can still show
+its own parameter view; the controller fallback works with either view.
 
 Native popup menus use stick/D-pad arrows, **A = Enter**, **B = Escape**, and
 L1/R1 = Left/Right for submenus. Their separate X11 popup is detected even when
@@ -228,15 +275,16 @@ another application has focus, the action menu opens or the page/profile changes
 Its drawing process belongs to the controller script, exits when that script or
 REAPER stops and requires no session service. Native modal dialogs temporarily
 hide the outline; closing a dialog resumes it. Track controls and the supported
-toolbar/transport buttons have outline navigation; sends and arbitrary plugin
-widgets do not.
+toolbar/transport buttons and discoverable native plugin widgets have outline
+navigation; sends and arbitrary custom-painted plugin widgets do not.
 
 In the action menu, use D-pad up/down, then A to run or B/L3 to cancel. Arrange
 includes recording, insert track, copy/paste/cut, undo/redo, split/trim, markers,
 metronome and item removal. Mixer includes record arming, input monitoring,
 mute/solo, insert track, recording, level reset and pan centering. FX includes
 inserting stock ReaEQ, ReaComp, ReaGate, ReaDelay and ReaVerbate. Plugin-specific
-custom interfaces and dialogs are outside this layout's scope.
+custom-painted interfaces still need an adapter; standard native widgets use
+the shared discovery described above.
 
 Y plays/stops once on release; holding never repeats. Start saves. Triggers
 use L2 for window-local region selection and R2 for Ctrl / Arrange cursor movement while REAPER

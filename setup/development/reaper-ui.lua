@@ -66,10 +66,9 @@ function ui.scan_windows(path)
       if match then areas[#areas+1]={key='fx:'..window.id,label=window.title,page=2,id=window.id,rect=window.rect,track=match.track,fx=match.fx,hwnd=match.hwnd,kind=match.kind,focused=window.focused} end
     end
   end
-  table.sort(areas,function(a,b)
-    if a.main~=nil or b.main~=nil then return (a.main or 4)<(b.main or 4) end
-    return a.id<b.id
-  end)
+  -- The outline helper supplies Sway's tree order: tab/split order, not the
+  -- creation IDs or focus history. Keep each window's regions together here;
+  -- ui.windows() deduplicates them without changing that visible order.
   ui.areas=areas
 end
 -- Native widget IDs/classes for the bundled Linux ReaEQ/ReaComp interfaces.
@@ -83,6 +82,16 @@ local comp_widgets={
  ['Filter Preview']={1014,'Button'},['RMS size']={1079,'REAPERhfader'},
  ['Knee']={1080,'REAPERhfader'},['Auto Make Up Gain']={1018,'Button'},
  ['Auto Release']={1019,'Button'}
+}
+local pitch_widgets={
+ {1075,'Shift (full range)','Shift (full range)'},
+ {1076,'Shift (cents)','Shift (cents)'},
+ {1077,'Shift (semitones)','Shift (semitones)'},
+ {1078,'Shift (octaves)','Shift (oct)'},
+ {1083,'Formant shift (full)','Formant adjust (full range)'},
+ {1079,'Formant shift (cents)','Formant adjust (cents)'},
+ {1080,'Formant shift (semitones)','Formant adjust (semitones)'},
+ {1081,'Volume','Volume'}, {1082,'Pan','Pan'}
 }
 local function native_children(root)
  local result={}
@@ -103,6 +112,120 @@ local function widget(children,id,class,title)
   end
  end
  return match
+end
+local function direct_children(children,parent)
+ local result={}
+ for _,child in ipairs(children) do
+  if reaper.JS_Window_GetParent(child.hwnd)==parent then result[#result+1]=child end
+ end
+ return result
+end
+local function clean_label(text)
+ return (text or ''):gsub('&',''):gsub(':$',''):gsub('^%s+',''):gsub('%s+$','')
+end
+local function label_key(text) return clean_label(text):lower():gsub('[%s%-%_]+','') end
+-- Labels describe targets; native ownership/class determines how to activate
+-- them. Never infer a parameter from control IDs or a coincidental value.
+local function nearby_label(child,children)
+ local ok,l,t,r,b=reaper.JS_Window_GetRect(child.hwnd)
+ if not ok then return '' end
+ local parent=reaper.JS_Window_GetParent(child.hwnd)
+ local best,score,ambiguous='',math.huge,false
+ for _,other in ipairs(children) do
+  if other.class=='Static' and other.title~='' and reaper.JS_Window_GetParent(other.hwnd)==parent and reaper.JS_Window_IsVisible(other.hwnd) then
+   local valid,x,y,right,bottom=reaper.JS_Window_GetRect(other.hwnd)
+   if valid then
+    local cost
+    if right<=l+4 and math.abs((y+bottom-t-b)/2)<16 and l-right<150 then cost=l-right+math.abs((y+bottom-t-b)/2)*3
+    elseif bottom<=t+4 and t-bottom<40 and x<r and right>l then cost=40+t-bottom+math.abs((x+right-l-r)/2) end
+    if cost and cost<score then best,score,ambiguous=clean_label(other.title),cost,false
+    elseif cost and cost==score then ambiguous=true end
+   end
+  end
+ end
+ return not ambiguous and best or ''
+end
+-- A native slider can still be edited when its automation name is different or
+-- repeated across tabs. Bind only a unique adjacent value field in its parent.
+local function slider_editor(child,children)
+ local ok,l,t,r,b=reaper.JS_Window_GetRect(child.hwnd)
+ if not ok then return end
+ local parent=reaper.JS_Window_GetParent(child.hwnd)
+ local best,distance,ambiguous=nil,math.huge,false
+ for _,other in ipairs(children) do
+  if other.class=='Edit' and reaper.JS_Window_GetParent(other.hwnd)==parent and reaper.JS_Window_IsVisible(other.hwnd) and (reaper.JS_Window_GetLong(other.hwnd,'STYLE') & 0x08000800)==0 then
+   local valid,x,y,right,bottom=reaper.JS_Window_GetRect(other.hwnd)
+   local cost
+   if valid and x>=r and x-r<32 and math.abs((y+bottom-t-b)/2)<10 then cost=x-r
+   elseif valid and y>=b and y-b<32 and math.abs((x+right-l-r)/2)<10 then cost=y-b end
+   if cost and cost<distance then best,distance,ambiguous=other.hwnd,cost,false
+   elseif cost and cost==distance then ambiguous=true end
+  end
+ end
+ if not ambiguous then return best end
+end
+local function native_key(hwnd,key)
+ reaper.JS_WindowMessage_Send(hwnd,'WM_KEYDOWN',key,0,1,0)
+ reaper.JS_WindowMessage_Send(hwnd,'WM_KEYUP',key,0,1,0)
+end
+local function invalidate_shifter(state)
+ state.pitch_tab,state.pitch_pending,state.pitch_ready=nil,nil,false
+end
+ui.pitch_watches={}
+local function shifter_notification(tab)
+ if not reaper.JS_WindowMessage_Intercept then return false end
+ local parent=reaper.JS_Window_GetParent(tab)
+ local watch=ui.pitch_watches[parent]
+ if not watch then
+  local owned=reaper.JS_WindowMessage_Intercept(parent,'WM_NOTIFY',true)==1
+  local ok,passed,stamp=reaper.JS_WindowMessage_Peek(parent,'WM_NOTIFY')
+  if not ok or not passed then return false end
+  watch={owned=owned,stamp=stamp};ui.pitch_watches[parent]=watch
+ end
+ local ok,passed,stamp=reaper.JS_WindowMessage_Peek(parent,'WM_NOTIFY')
+ if not ok then
+  ui.pitch_watches[parent]=nil
+  return shifter_notification(tab)
+ end
+ local changed=ok and passed and stamp~=watch.stamp
+ if ok then watch.stamp=stamp end
+ return changed
+end
+function ui.close()
+ for hwnd,watch in pairs(ui.pitch_watches) do
+  if watch.owned then reaper.JS_WindowMessage_Release(hwnd,'WM_NOTIFY') end
+ end
+ ui.pitch_watches={}
+end
+local function prepare_shifter(state,tab,panel,now)
+ if not tab or not panel then state.pitch_ready=false;return false end
+ if shifter_notification(tab) then invalidate_shifter(state) end
+ if state.pitch_pending then
+  if now<state.pitch_pending then return false end
+  state.pitch_pending,state.pitch_panel,state.pitch_ready=nil,panel,true
+  return true
+ end
+ if state.pitch_tab~=tab or state.pitch_panel~=panel then
+  -- The controller owns the selected shifter, as it owns ReaEQ's selected band.
+  -- Gate rotary input until the native panel is ready. Watch pass-through tab
+  -- notifications because ReaPitch can also reuse the same panel on tab changes.
+  native_key(tab,36)
+  for _=1,state.shifter do native_key(tab,39) end
+  shifter_notification(tab) -- Acknowledge notifications from our own tab reveal.
+  state.pitch_tab,state.pitch_pending,state.pitch_ready=tab,now+.12,false
+  return false
+ end
+ return state.pitch_ready
+end
+local function native_index(node)
+ return reaper.JS_ListView_EnumSelItems(node.hwnd,-1)
+end
+local function select_native(node,index)
+ reaper.JS_ListView_SetItemState(node.hwnd,-1,0,3)
+ if index and index>=0 and index<reaper.JS_ListView_GetItemCount(node.hwnd) then
+  reaper.JS_ListView_SetItemState(node.hwnd,index,3,3)
+  reaper.JS_ListView_EnsureVisible(node.hwnd,index,false)
+ end
 end
 local function clipped_widget(hwnd,root)
  if not hwnd or not reaper.JS_Window_IsVisible(hwnd) then return nil,'Control is hidden' end
@@ -226,6 +349,7 @@ function ui.fx_regions(area,fx,param,now)
  local guid=count>0 and reaper.TrackFX_GetFXGUID(track,fx) or ''
  if state.guid~=guid then
   state.guid,state.band=guid,0
+  state.shifter,state.pitch=0,false;invalidate_shifter(state)
   if not state.editing or state.editing.kind~='effects' then state.editing=nil end
  end
  local all=native_children(root)
@@ -237,7 +361,7 @@ function ui.fx_regions(area,fx,param,now)
   return value
  end
  local function add(region,key,label,hwnd,kind,param)
-  if kind=='param' and (param==nil or param<0 or param>=256 or fx>=128) then return end
+  if kind=='param' and (param==nil or param<0 or param>=65536 or fx>=128) then return end
   local style=hwnd and reaper.JS_Window_GetLong(hwnd,'STYLE') or 0
   if (style & 0x08000000)~=0 then return end -- Disabled native controls are not activation targets.
   local rect=hwnd and clipped_widget(hwnd,root)
@@ -246,17 +370,26 @@ function ui.fx_regions(area,fx,param,now)
   region.nodes[#region.nodes+1]=node
   return node
  end
- local list=widget(all,1076,'SysListView32')
+ local chain_controls=direct_children(all,root)
+ local list=widget(chain_controls,1076,'SysListView32')
  if area.kind=='chain' and list then
   local effects=region('effects','Effects list',list)
   add(effects,'effects:list','Choose effect',list,'effects')
-  add(effects,'effects:add','Add FX',widget(all,1075,'Button','Add'))
-  add(effects,'effects:remove','Remove selected FX',widget(all,1058,'Button','Remove'))
+  add(effects,'effects:add','Add FX',widget(chain_controls,1075,'Button','Add'))
+  add(effects,'effects:remove','Remove selected FX',widget(chain_controls,1058,'Button','Remove'))
  end
+ local host=root
+ for _,child in ipairs(chain_controls) do
+  if child.class=='unknown' then
+   local siblings=direct_children(all,child.hwnd)
+   if widget(siblings,1192,'Button','UI') and widget(siblings,1422,'Button','Param') then host=child.hwnd;break end
+  end
+ end
+ local host_controls=direct_children(all,host)
  local header=region('header','Presets and routing')
- add(header,'header:preset','Preset',widget(all,1000,'combobox'),'combo')
+ add(header,'header:preset','Preset',widget(host_controls,1000,'combobox'),'combo')
  for _,item in ipairs({{1257,'+','Preset actions'},{1422,'Param','Parameter actions'},{1190,nil,'Audio routing'},{1192,'UI','Custom / generic interface'}}) do
-  add(header,'header:'..item[1],item[3],widget(all,item[1],'Button',item[2]))
+  add(header,'header:'..item[1],item[3],widget(host_controls,item[1],'Button',item[2]))
  end
  local function host_param(suffix)
   for index=0,reaper.TrackFX_GetNumParams(track,fx)-1 do
@@ -265,18 +398,20 @@ function ui.fx_regions(area,fx,param,now)
   end
  end
  if count>0 then
-  add(header,'header:wet','Wet',widget(all,1449,'REAPERknob'),'param',host_param('wet'))
-  add(header,'header:bypass','Effect enabled',widget(all,1426,'Button'),'toggle')
+  add(header,'header:wet','Wet',widget(host_controls,1449,'REAPERknob'),'param',host_param('wet'))
+  add(header,'header:bypass','Effect enabled',widget(host_controls,1426,'Button'),'toggle')
  end
  local plugin=''
  if count>0 then local ok;ok,plugin=reaper.TrackFX_GetNamedConfigParm(track,fx,'fx_ident');plugin=plugin or '' end
- local marker,eq
+ state.pitch=false -- The same FX can switch to the host's generic parameter UI.
+ local marker,eq,pitch
  if plugin:find('/reaeq.vst.so<',1,true) then marker,eq=widget(all,1034,'Static','ReaEQ'),true
  elseif plugin:find('/reacomp.vst.so<',1,true) then marker=widget(all,1112,'Button','ReaComp') end
+ if plugin:find('/reapitch.vst.so<',1,true) then marker,pitch=widget(all,1100,'Button','ReaPitch'),true end
  if marker then
   local body=reaper.JS_Window_GetParent(marker)
   local controls=native_children(body)
-  local editor=region('plugin',eq and 'ReaEQ controls' or 'ReaComp controls',body)
+  local editor=region('plugin',eq and 'ReaEQ controls' or pitch and 'ReaPitch controls' or 'ReaComp controls',body)
   local parameters={}
   for index=0,reaper.TrackFX_GetNumParams(track,fx)-1 do
    local _,name=reaper.TrackFX_GetParamName(track,fx,index,'')
@@ -304,6 +439,31 @@ function ui.fx_regions(area,fx,param,now)
     add(editor,'eq:'..item[2],item[2],widget(controls,item[1],'Button',item[2]),'toggle')
    end
    add(editor,'eq:meter','Metering',widget(controls,1038,'combobox'),'combo')
+  elseif pitch then
+   state.pitch=true
+   local groups=0
+   for name in pairs(parameters) do groups=math.max(groups,tonumber(name:match('^(%d+): Enabled$')) or 0) end
+   state.shifters=groups
+   local selected=math.max(0,math.min(state.shifter or 0,groups-1))
+   if selected~=state.shifter then state.shifter=selected;invalidate_shifter(state) end
+   local slider=widget(controls,1075,'REAPERhfader')
+   local panel=slider and reaper.JS_Window_GetParent(slider)
+   local tab=widget(controls,1026,'SysTabControl32')
+   local ready=state.pitch_ready or false
+   state.pitch_current_panel,state.pitch_current_tab=panel,tab
+   local tabs=add(editor,'pitch:shifter','Shifter '..(state.shifter+1),tab,'shifter')
+   if tabs then tabs.rect[4]=math.min(24,tabs.rect[4]) end
+   local prefix=(state.shifter+1)..': '
+   for _,item in ipairs(pitch_widgets) do
+    local node=add(editor,'pitch:'..item[1],item[2],widget(controls,item[1],'REAPERhfader'),'param',parameters[prefix..item[3]])
+    if node then node.ready,node.shifter_control=ready,true end
+   end
+   add(editor,'pitch:wet','Wet',widget(controls,1047,'REAPERvfader'),'param',parameters['Wet'])
+   add(editor,'pitch:dry','Dry',widget(controls,1046,'REAPERvfader'),'param',parameters['Dry'])
+   for _,item in ipairs({{1018,'Add shifter','pitch:add'},{1019,'Delete shifter','pitch:delete'},{1020,'Reset all','pitch:reset'}}) do
+    local node=add(editor,item[3],item[2],widget(controls,item[1],'Button',item[2]))
+    if node then node.shifter_control=true end
+   end
   else
    for name,param in pairs(parameters) do
     local map=comp_widgets[name]
@@ -314,6 +474,109 @@ function ui.fx_regions(area,fx,param,now)
     end
    end
    add(editor,'comp:limit','Limit output',widget(controls,1023,'Button','Limit output'),'toggle')
+  end
+ end
+ -- Standard SWELL widgets are discoverable even when a plug-in has no custom
+ -- adapter. Keep the exact EQ/Comp parameter maps, then fill their native gaps.
+ local bodies={}
+ for _,child in ipairs(host_controls) do
+  if child.class=='unknown' and reaper.JS_Window_IsVisible(child.hwnd) then bodies[#bodies+1]=child.hwnd end
+ end
+ local editor
+ for _,entry in ipairs(regions) do if entry.key=='plugin' then editor=entry end end
+ local mapped={}
+ if editor then for _,node in ipairs(editor.nodes) do mapped[node.hwnd]=true end end
+ local parameters,grouped_parameters={},{}
+ if count>0 then
+  for index=0,reaper.TrackFX_GetNumParams(track,fx)-1 do
+   local _,ident=reaper.TrackFX_GetParamIdent(track,fx,index)
+   if not ((ident or ''):match(':wet$') or (ident or ''):match(':bypass$') or (ident or ''):match(':delta$')) then
+    local _,name=reaper.TrackFX_GetParamName(track,fx,index,'')
+    local key=label_key(name)
+    parameters[key]=parameters[key]==nil and index or false
+    local ungrouped=name:match('^%d+:%s*(.+)$')
+    if ungrouped then
+     local alias=label_key(ungrouped)
+     grouped_parameters[alias]=grouped_parameters[alias]==nil and index or false
+    end
+   end
+  end
+ end
+ if count>0 then for _,body in ipairs(bodies) do
+  local controls=native_children(body)
+  for _,child in ipairs(controls) do
+   if not mapped[child.hwnd] then
+    local class,hwnd=child.class,child.hwnd
+    local style=reaper.JS_Window_GetLong(hwnd,'STYLE')
+    local label,kind,param,editor_hwnd=clean_label(child.title),nil,nil,nil
+    if class=='Button' then
+     local subtype=style & 0xf
+     -- Group boxes/static frames are not buttons (SWELL can mark them disabled).
+     if (style & 0x20000000)~=0 then -- SWELL BS_GROUPBOX differs from Win32.
+     elseif subtype==0 or subtype==1 then kind='command'
+     elseif subtype==2 or subtype==3 then kind='toggle'
+     elseif subtype==4 or subtype==5 or subtype==6 or subtype==9 then kind='native_button' end
+    elseif class=='combobox' then kind='combo';label=nearby_label(child,controls)
+    elseif class=='SysListView32' then kind='list';label=nearby_label(child,controls)
+    elseif class=='Edit' and (style & 0x800)==0 then
+     kind='edit';label=nearby_label(child,controls)
+     if label=='' then
+      local _,l,t,r,b=reaper.JS_Window_GetRect(hwnd)
+      local best,distance='',math.huge
+      for _,other in ipairs(controls) do
+       if (other.class=='REAPERhfader' or other.class=='REAPERvfader') and reaper.JS_Window_GetParent(other.hwnd)==reaper.JS_Window_GetParent(hwnd) then
+        local valid,x,y,right,bottom=reaper.JS_Window_GetRect(other.hwnd)
+        local cost
+        if valid and right<=l and l-right<30 and math.abs((y+bottom-t-b)/2)<10 then cost=l-right
+        elseif valid and bottom<=t and t-bottom<30 and math.abs((x+right-l-r)/2)<10 then cost=t-bottom end
+        if cost and cost<distance then best,distance=nearby_label(other,controls),cost end
+       end
+      end
+      label=best
+     end
+    elseif class=='REAPERhfader' or class=='REAPERvfader' or class=='REAPERknob' then
+     label=nearby_label(child,controls)
+     local candidate=parameters[label_key(label)]
+     if candidate==nil then candidate=grouped_parameters[label_key(label)] end
+     if type(candidate)=='number' then kind,param='param',candidate end
+     if not kind then
+      editor_hwnd=slider_editor(child,controls)
+      if editor_hwnd then kind='edit' end
+     end
+    end
+    if kind then
+     if label=='' then label=({combo='Choices',list='List',edit='Value',command='Button',toggle='Switch'})[kind] or kind end
+     if not editor then editor=region('plugin','Plugin controls',body) end
+     local node=add(editor,'native:'..tostring(hwnd),label,hwnd,kind,param)
+     if node then
+      node.editor=editor_hwnd
+      if pitch and reaper.JS_Window_GetParent(hwnd)==state.pitch_current_panel then node.ready,node.shifter_control=state.pitch_ready,true end
+     end
+    end
+   end
+  end
+ end end
+ -- Host automation is the portable fallback for opaque/custom-painted editors.
+ -- These are list entries, never pretend screen coordinates for native knobs.
+ local parameter_region
+ if count>0 and fx<128 and (not editor or #editor.nodes==0) then
+  for index=0,math.min(65536,reaper.TrackFX_GetNumParams(track,fx))-1 do
+   local _,ident=reaper.TrackFX_GetParamIdent(track,fx,index)
+   local _,name=reaper.TrackFX_GetParamName(track,fx,index,'')
+   name=clean_label(name)
+   local placeholder=name=='' or name:lower()=='blank' or name:lower()=='unused'
+   local host=(ident or ''):match(':wet$') or (ident or ''):match(':bypass$') or (ident or ''):match(':delta$')
+   -- REAPER exposes synthetic VST3 MIDI CC slots alongside real parameters.
+   local midi=name:match('^MIDI CC %d+|%d+$')
+   if not placeholder and not host and not midi then
+    if not parameter_region then
+     parameter_region=region('parameters','Plugin parameters')
+     local _,l,t,r,b=reaper.JS_Window_GetRect(root)
+     parameter_region.rect={l+4,t+80,math.max(12,r-l-8),math.max(8,b-t-84)}
+    end
+    parameter_region.nodes[#parameter_region.nodes+1]={key=string.format('parameter:%05d',index),
+     label=name,param=index,kind='param',list_only=true,rect=parameter_region.rect}
+   end
   end
  end
  local available={}
@@ -330,6 +593,7 @@ function ui.fx_regions(area,fx,param,now)
    local found=false
    for _,node in ipairs(region.nodes) do if node.key==selected then found=true end end
    if not found then
+    if state.editing and state.editing.key==selected then state.editing=nil end
     state.selection[region.key]=region.key=='plugin' and eq and 'eq:freq' or region.nodes[1].key
     local has=false
     for _,node in ipairs(region.nodes) do if node.key==state.selection[region.key] then has=true end end
@@ -341,7 +605,7 @@ function ui.fx_regions(area,fx,param,now)
  state.regions,state.track,state.fx,state.window=available,track,fx,area.id
  local valid=false
  for _,region in ipairs(available) do if region.key==state.region then valid=true end end
- if not valid and available[1] then state.region=available[1].key end
+ if not valid and available[1] then state.region=parameter_region and parameter_region.key or available[1].key end
  return available
 end
 function ui.fx_current(window)
@@ -353,16 +617,26 @@ function ui.fx_current(window)
   end
  end
 end
+function ui.fx_prepare(window,now)
+ local state=ui.fx_memory[window]
+ if not state or not state.pitch then return end
+ local ready=prepare_shifter(state,state.pitch_current_tab,state.pitch_current_panel,now)
+ for _,region in ipairs(state.regions or {}) do
+  for _,node in ipairs(region.nodes) do if node.shifter_control then node.ready=ready end end
+ end
+end
 local function show_band(state)
  ui.fx_band=nil
  ui.fx_outline(state.track,state.fx,state.band*3,reaper.time_precise())
 end
 function ui.fx_step(window,direction)
  local node,state=ui.fx_current(window)
- if not node then return end
+ if not node or node.ready==false then return end
  local delta=(direction=='left' or direction=='up') and -1 or 1
  if node.kind=='band' then
   state.band=math.max(0,math.min(state.bands-1,state.band+delta));show_band(state)
+ elseif node.kind=='shifter' then
+  state.shifter=math.max(0,math.min(state.shifters-1,state.shifter+delta));invalidate_shifter(state)
  elseif node.kind=='combo' then
   local index=combo_index(node.hwnd)
   if index then combo_index(node.hwnd,index+delta) end
@@ -372,38 +646,71 @@ function ui.fx_step(window,direction)
   if count>0 then reaper.TrackFX_Show(state.track,index,1);return index end
  elseif node.kind=='toggle' then
   reaper.JS_WindowMessage_Send(node.hwnd,'BM_SETCHECK',delta>0 and 1 or 0,0,0,0);command_widget(node.hwnd)
+ elseif node.kind=='list' then
+  native_key(node.hwnd,delta<0 and 38 or 40)
  end
 end
 function ui.fx_move(window,direction,choose)
  local node,state,region=ui.fx_current(window)
  if not node then return end
  if state.editing then return ui.fx_step(window,direction) end
+ if node.list_only then
+  for i,item in ipairs(region.nodes) do
+   if item.key==node.key then
+    local delta=(direction=='left' or direction=='up') and -1 or 1
+    state.selection[region.key]=region.nodes[math.max(1,math.min(#region.nodes,i+delta))].key
+    return
+   end
+  end
+ end
  local rectangles,current={},0
  for i,item in ipairs(region.nodes) do rectangles[i]=item.rect;if item.key==node.key then current=i-1 end end
  local next=region.nodes[choose(rectangles,current,direction)+1]
  if next then state.selection[region.key]=next.key end
 end
+local function expect_popup(state,prefix)
+ if not ui.path then return end
+ local ids={}
+ for _,window in ipairs(ui.native_windows or {}) do ids[#ids+1]=window.id end
+ write(ui.path..'.popup',os.time()..'\t'..state.window..'\t'..table.concat(ids,',')..'\t'..(prefix or ''))
+end
 function ui.fx_activate(window)
  local node,state=ui.fx_current(window)
  if not node then return end
+ if node.ready==false then return 'Selecting shifter '..(state.shifter+1) end
  if state.editing then state.editing=nil;return end
  if node.kind=='param' then return 'Turn the right stick to adjust '..node.label
  elseif node.kind=='toggle' then
   local checked=reaper.JS_WindowMessage_Send(node.hwnd,'BM_GETCHECK',0,0,0,0)
   reaper.JS_WindowMessage_Send(node.hwnd,'BM_SETCHECK',checked==0 and 1 or 0,0,0,0);command_widget(node.hwnd)
+ elseif node.kind=='list' then
+  if reaper.JS_ListView_GetItemCount(node.hwnd)==0 then return 'This list is empty; choose Add' end
+  local original=native_index(node)
+  state.editing={key=node.key,kind=node.kind,original=original}
+  if original<0 then select_native(node,0) end
+ elseif node.kind=='shifter' then
+  state.editing={key=node.key,kind=node.kind,original=state.shifter}
  elseif node.kind=='band' or node.kind=='combo' or node.kind=='effects' then
   state.editing={key=node.key,kind=node.kind,original=node.kind=='band' and state.band or node.kind=='effects' and state.fx or combo_index(node.hwnd)}
+ elseif node.kind=='edit' then
+  local hwnd=node.editor or node.hwnd
+  local original=reaper.JS_Window_GetTitle(hwnd)
+  expect_popup(state)
+  local accepted,value=reaper.GetUserInputs(node.label,1,'Value:,separator=\n',original)
+  if accepted and reaper.JS_Window_IsWindow(hwnd) and reaper.TrackFX_GetFXGUID(state.track,state.fx)==state.guid then
+   reaper.JS_Window_SetTitle(hwnd,value)
+   reaper.JS_WindowMessage_Send(reaper.JS_Window_GetParent(hwnd),'WM_COMMAND',reaper.JS_Window_GetLong(hwnd,'ID'),0x300,reaper.JS_Window_AddressFromHandle(hwnd),0)
+  end
+ elseif node.kind=='native_button' then native_key(node.hwnd,32)
  else
   if node.key=='eq:add' then state.band=state.bands
   elseif node.key=='eq:remove' then state.band=math.max(0,math.min(state.band,state.bands-2))
   elseif node.key=='eq:reset' then state.band=0 end
+  if node.key=='pitch:add' then state.shifter=state.shifters;invalidate_shifter(state)
+  elseif node.key=='pitch:delete' then state.shifter=math.max(0,state.shifter-1);invalidate_shifter(state)
+  elseif node.key=='pitch:reset' then state.shifter=0;invalidate_shifter(state) end
   ui.fx_band=nil
-  if ui.path then
-   local ids={}
-   for _,window in ipairs(ui.native_windows or {}) do ids[#ids+1]=window.id end
-   local prefix=node.key=='effects:add' and 'Add FX ' or ''
-   write(ui.path..'.popup',os.time()..'\t'..state.window..'\t'..table.concat(ids,',')..'\t'..prefix)
-  end
+  expect_popup(state,node.key=='effects:add' and 'Add FX ' or '')
   command_widget(node.hwnd)
  end
 end
@@ -413,7 +720,9 @@ function ui.fx_cancel(window)
  local editing=state.editing;state.editing=nil
  if node and node.key==editing.key then
   if editing.kind=='band' then state.band=editing.original;show_band(state)
+  elseif editing.kind=='shifter' then state.shifter=editing.original;invalidate_shifter(state)
   elseif editing.kind=='combo' then combo_index(node.hwnd,editing.original)
+  elseif editing.kind=='list' then select_native(node,editing.original)
   elseif editing.kind=='effects' and reaper.TrackFX_GetCount(state.track)>editing.original then reaper.TrackFX_Show(state.track,editing.original,1) end
  end
  return true

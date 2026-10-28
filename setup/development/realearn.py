@@ -10,6 +10,7 @@ import re
 import runpy
 from pathlib import Path
 import struct
+import subprocess
 import tempfile
 import urllib.request
 
@@ -151,6 +152,12 @@ def preset():
                   paramType='dynamic', paramExpression='p[2]')
     absolute('Set FX knob position', target, 2)
     mappings[-1]['eelCondition'] += ' && p[15] == 1'
+    absolute('Set native FX slider position', parameter(13), 2)
+    mappings[-1]['id'] = 'device-native-fx-position'
+    mappings[-1]['eelCondition'] += ' && p[15] == 0'
+    increment('Native FX slider sample',50,parameter(14),page=2,step=1/65535,wrap=True)
+    mappings[-1]['id'] = 'device-native-fx-sample'
+    mappings[-1]['eelCondition'] += ' && p[15] == 0'
     request('Bypass FX', 15, 3, 2)
     request('Show/hide FX window', 14, 4, 2)
     for cc, name, command in ((32, 'Copy items', 40698), (33, 'Paste', 40058),
@@ -247,6 +254,16 @@ def reaper_running():
     return False
 
 
+def build_dialog_focus():
+    """Build the small Linux focus reader using the existing development tools."""
+    with tempfile.TemporaryDirectory(prefix='reaper-dialog-focus-') as temporary:
+        output = Path(temporary) / 'reaper_device_dialog_focus.so'
+        subprocess.run(['g++', '-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror',
+                        '-shared', '-fPIC', str(HERE / 'reaper-dialog-focus.cpp'),
+                        '-ldl', '-o', str(output)], check=True)
+        return output.read_bytes()
+
+
 def install(resource=None, asset_dir=None, update_controller=False):
     if os.geteuid() == 0:
         raise SystemExit('Run as the desktop user')
@@ -258,6 +275,7 @@ def install(resource=None, asset_dir=None, update_controller=False):
     # Installation changes startup files; never race a running REAPER session.
     if reaper_running():
         raise RuntimeError('Save and close REAPER before installing its controller integration')
+    focus_reader = build_dialog_focus()
     cache = Path(os.environ.get('XDG_CACHE_HOME', Path.home() / '.cache')) / 'minion/audio/realearn'
     for asset in RELEASE['assets']:
         target = resource / 'UserPlugins' / asset['file']
@@ -280,6 +298,7 @@ def install(resource=None, asset_dir=None, update_controller=False):
     if not config_path.exists():
         atomic(config_path, b'[main]\nshowed_welcome_screen=1\nsend_errors_to_dev=0\nnotify_about_updates=0\n')
     atomic(resource / 'Scripts/Device/reaper-gamepad.lua', (HERE / 'reaper-gamepad.lua').read_bytes())
+    atomic(resource / 'UserPlugins/reaper_device_dialog_focus.so', focus_reader)
     atomic(resource / 'Scripts/Device/reaper-control-outline.py', (HERE / 'reaper-control-outline.py').read_bytes())
     atomic(resource / 'Scripts/Device/reaper-control-navigation.lua', (HERE / 'reaper-control-navigation.lua').read_bytes())
     for name in ('reaper-ui.lua','reaper-ui.py','reaper-transport.lua'):

@@ -154,6 +154,42 @@ class WindowPicker:
         atomic_write(Path(str(self.state) + '.focused'), f'{sequence} {int(success)}')
 
 
+def dialog_focus(outline, nodes, state):
+    """Use native keyboard focus only in the foreground REAPER dialog.
+
+    The producer runs on SWELL's GUI timer, including nested modal loops. Match
+    the exact XID and PID, never a title or stale rectangle from its owner.
+    """
+    node = next((node for node in nodes if node.get('focused')), {})
+    props = node.get('window_properties') or {}
+    title = node.get('name') or ''
+    dialog = (node.get('pid') == outline.pid
+              and (props.get('window_type') == 'dialog' or props.get('transient_for'))
+              and not title.startswith(('FX:', 'VST:', 'VSTi:', 'VST3:', 'JS:'))
+              and title != 'REAPER gamepad controls')
+    if not dialog:
+        return False, None, None
+    try:
+        if (state.parent / 'mode').read_text().strip() != 'reaper':
+            return True, None, None
+        path = Path(str(state) + '.native-focus')
+        if not 0 <= time.time() - path.stat().st_mtime <= .5:
+            return True, None, None
+        window, x, y, width, height = map(int, path.read_text().split())
+        if (window != node.get('window') or outline.owner(window) != outline.pid
+                or not outline.viewable(window) or min(width, height) <= 0
+                or max(width, height) > 32768):
+            return True, None, None
+        px, py, pw, ph = outline.geometry(window)
+        right, bottom = min(x + width, px + pw - 3), min(y + height, py + ph - 3)
+        x, y = max(x, px + 3), max(y, py + 3)
+        if right <= x or bottom <= y:
+            return True, None, None
+        return True, (x, y, right - x, bottom - y), window
+    except (OSError, ValueError):
+        return True, None, None
+
+
 class Outline:
     def __init__(self, pid):
         self.pid, self.parent, self.windows = pid, None, []
@@ -378,11 +414,21 @@ def main():
             while Path(f'/proc/{args.pid}').exists():
                 try:
                     menu_path=Path(str(args.state)+'.native-menu')
-                    if outline.native_menu():
+                    native_menu = outline.native_menu()
+                    if native_menu:
                         atomic_write(menu_path,str(args.pid))
                     else:
                         menu_path.unlink(missing_ok=True)
                     picker.update()
+                    dialog, rect, parent = dialog_focus(outline, picker.nodes, args.state)
+                    if dialog:
+                        # Never leave the previous DAW selection drawn under a
+                        # dialog; menus and missing/stale focus hide the border.
+                        if native_menu or not rect or not outline.show(rect, parent):
+                            outline.hide()
+                        previous = rect
+                        time.sleep(.1)
+                        continue
                     if time.time() - args.state.stat().st_mtime > 2:
                         # Native file dialogs pause deferred Lua scripts. Keep
                         # the drawing helper alive, with its outline hidden.
@@ -421,7 +467,7 @@ def main():
                 time.sleep(.1)
         finally:
             outline.close()
-            for suffix in ('.windows', '.focus', '.focused', '.native-menu', '.popup'):
+            for suffix in ('.windows', '.focus', '.focused', '.native-menu', '.popup', '.native-focus'):
                 Path(str(args.state) + suffix).unlink(missing_ok=True)
 
 

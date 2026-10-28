@@ -138,6 +138,7 @@
         "UP+RIGHT+B": "reaper_monitor",
         "DOWN+LEFT+B": "reaper_duplicate",
         "DOWN+RIGHT+B": "reaper_delete_items",
+        "A+B": "close",
         "SELECT+A": "fullscreen",
         "SELECT+B": "floating",
         "SELECT+Y": "layout",

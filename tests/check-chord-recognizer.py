@@ -1213,6 +1213,10 @@ def main():
         with patch.object(state,'focused_reaper',return_value=True), patch.object(state,'focused_window',return_value=project), patch.object(mapper,'ReaperMidi',return_value=connection):
             state.dispatch('reaper_save')
             assert connection.pulse.call_args_list == [call(123,22,0),call(123,17)]
+            connection.pulse.reset_mock()
+            state.transport_target=''
+            state.reaper_control(20,2730);state.reaper_control(20,2730)
+            assert connection.pulse.call_args_list == [call(123,22,0),call(123,20,2730),call(123,50)]*2
             state.reset();connection.close.assert_called_once();assert state.reaper_midi is None
         reaper_reset()
         with patch.object(state,'focused_reaper',return_value=False), patch.object(state,'notify'):

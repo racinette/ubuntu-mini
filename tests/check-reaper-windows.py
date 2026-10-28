@@ -118,12 +118,17 @@ reaper={
  JS_Window_IsVisible=function(hwnd) return rects[hwnd]~=nil end,
  JS_Window_GetRect=function(hwnd) return true,table.unpack(rects[hwnd]) end,
  JS_Window_GetTitle=function(hwnd) return titles[hwnd] end,
- JS_Window_Find=function(title) return title==titles.chain and 'chain' or nil end,
+ JS_Window_Find=function(title)
+  for hwnd,value in pairs(titles) do if title==value then return hwnd end end
+ end,
  GetMainHwnd=function() return 'main' end,
  CountTracks=function() return #tracks end,
  GetTrack=function(_,i) return tracks[i+1] end,
  GetTrackName=function(t) return true,t.name end,
- TrackFX_GetChainVisible=function(t) return t==tracks[1] and t.fx or -1 end,
+ GetSetMediaTrackInfo_String=function(t,key,_,set)
+  assert(key=='P_NAME' and not set);return true,t.name
+ end,
+ TrackFX_GetChainVisible=function(t) return t==tracks[1] and t.fx or t.chain or -1 end,
  TrackFX_GetCount=function() return 2 end,
  TrackFX_GetFloatingWindow=function(t,i) return t==tracks[2] and i==0 and 'floating' or nil end
 }
@@ -160,6 +165,20 @@ assert(ui.focused_window().id==8,'Focus must not reorder tabs')
 rows[1],rows[4]=rows[4],rows[1];tabs()
 ordered=ui.windows();assert(ordered[1].id==7 and ordered[2].id==8 and ordered[3].id==9)
 assert(ui.window_neighbor(8,1).id==9 and ui.window_neighbor(8,-1).id==7)
+-- Unnamed track chains omit the quoted name entirely. They must participate
+-- in the same visible tab order, including empty chains and later renaming.
+tracks[2].name='';tracks[2].chain=0
+titles.second='FX: Track 2';rects.second={0,0,400,300}
+rows[#rows+1]='19\t0\t0\t0\t400\t300\tFX: Track 2'
+tabs();ordered=ui.windows()
+assert(#ordered==4 and ordered[4].id==19 and ordered[4].track==tracks[2])
+assert(ui.window_neighbor(9,1).id==19 and ui.window_neighbor(7,-1).id==19)
+assert(ui.window_neighbor(19,1).id==7 and ui.window_neighbor(19,-1).id==9)
+tracks[2].chain=-2;tabs();assert(#ui.windows()==4,'Empty unnamed chain must remain reachable')
+tracks[2].name='Track 2';titles.second='FX: Track 2 "Track 2"'
+rows[#rows]='19\t0\t0\t0\t400\t300\tFX: Track 2 "Track 2"'
+tabs();assert(#ui.windows()==4,'Explicit default-looking names still have quotes')
+tracks[2].chain=-1;tabs();assert(#ui.windows()==3,'Closed unnamed chain must disappear')
 rects=saved_rects
 -- Closed chains and stale discovery cannot leave an editable ghost target.
 tracks[1].fx=-1;scan();assert(#ui.areas==5 and ui.areas[5].key=='fx:9')

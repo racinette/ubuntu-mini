@@ -216,8 +216,15 @@ For other native plugins, numbered parameter prefixes are accepted
 only when the remaining name uniquely identifies a parameter. Repeated names
 across multiple groups do not select an arbitrary instance. Sliders without a
 unique parameter match remain selectable when they have one adjacent writable
-value field: **A** edits that field, and the right stick stays inactive. This also
-covers mismatches between visible labels and automation names.
+value field: **A** edits that field. For native horizontal sliders, the right
+stick also sets a position along the slider's track, using its own range and
+scaling. This works when either the slider or its adjacent value field is
+selected, including ReaVerb's Echo Generator controls (Length, Spacing, Error,
+volumes and distribution). It sends control-local messages without moving the
+mouse pointer and restores keyboard focus afterward. Centering the stick keeps
+the value; changing targets requires returning to center before adjusting.
+Other unmatched slider classes retain the A-to-edit fallback. This also covers
+mismatches between visible labels and automation names.
 Other numeric fields remain editable with A. EQ/Comp/ReaPitch adapters retain
 their exact parameter mappings. Group boxes and read-only fields are skipped.
 
@@ -288,6 +295,12 @@ REAPER actions directly, including while a stock FX window has focus:
 | Down-left | Zoom to selected items | Duplicate items |
 | Down-right | Save | Delete selected items |
 
+**A+B** closes the focused window once both buttons are released. Use L1/R1
+to choose the window first. Closing an FX window leaves the effect on its track;
+closing the main window requests REAPER to quit, with its normal save prompt.
+This consumes the individual A/B actions and does not repeat while held.
+Standard dialogs retain **B = Escape/cancel** instead.
+
 Arrange shows the selected item count/name and whether the track is armed.
 X splits only when the edit cursor is inside a selected item; otherwise the
 display explains what to select. Select an item with D-pad left/right, hold R2
@@ -321,8 +334,10 @@ The outline is a click-through X11 child of the REAPER project window. It uses
 REAPER's reported control positions, follows resizing/scrolling and hides when
 another application has focus, the action menu opens or the page/profile changes.
 Its drawing process belongs to the controller script, exits when that script or
-REAPER stops and requires no session service. Native modal dialogs temporarily
-hide the outline; closing a dialog resumes it. Track controls and the supported
+REAPER stops and requires no session service. Standard native dialogs, including
+Add FX, outline the field that has keyboard focus. A small locally built REAPER
+extension reads native focus while modal dialogs pause Lua; it does not send
+input. Closing a dialog resumes the normal controller selection. Track controls and the supported
 toolbar/transport buttons and discoverable native plugin widgets have outline
 navigation; sends and arbitrary custom-painted plugin widgets do not.
 
@@ -349,6 +364,11 @@ keyboard layer, detected from their dialog/transient-window role and owning
 process rather than a list of titles. Left-stick up/left selects the previous
 field (Shift+Tab), down/right the next (Tab); L1/R1 do the same. D-pad sends ordinary
 arrows, A accepts (Enter), B cancels (Escape), X is held Backspace and Y held Space.
+The cyan border follows the focused field, list or button. Inside a list,
+REAPER's native row selection identifies the item; the border encloses the list.
+Native menus and controls with unavailable bounds hide the border rather than
+leaving it on the previous field. Custom-painted third-party dialogs may not
+expose individual controls.
 L2/R2 provide Shift/Ctrl. Center the sticks and release buttons on entry/exit;
 held controls cannot leak into a new field or the project. DAW editing actions
 and right-stick adjustment are suppressed while a dialog is focused. Use the

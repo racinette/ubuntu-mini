@@ -723,7 +723,9 @@ class Mapper:
                     self.reaper_midi.pulse(node['pid'], control)
                 else:
                     self.reaper_midi.pulse(node['pid'], control, value)
-                    if control==20 and self.transport_target=='60004':
+                    # Script-driven native sliders also need to distinguish
+                    # a fresh gesture from the same retained knob value.
+                    if control==20:
                         self.reaper_midi.pulse(node['pid'],50)
         except (ImportError, OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
             if time.monotonic() - self.reaper_error_at > 5:

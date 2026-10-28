@@ -14,6 +14,67 @@ Firefox-first browser preferences were applied on the WIN Mini: `xdg-settings ge
 
 ## Recent device checks
 
+On 2026-10-28, ReaVerb Echo Generator sliders were found to have native widgets
+but no corresponding automation parameters. The earlier fallback allowed A to
+edit their numeric fields but did not route right-stick input to them. Native
+horizontal sliders with one adjacent writable field now support right-stick
+track-position adjustment, including when that value field is selected. The
+widget applies its own range/scaling; control-local messages leave the pointer
+stationary and restore keyboard focus. No ReaVerb-specific parameter table was
+added. The mapper now sends a sample pulse for every rotary gesture so repeated
+identical angles remain actionable, previously only implemented for playback rate.
+
+The isolated muted REAPER check at 960×540 passed all seven Echo Generator
+sliders: start position, length, spacing, error, error distribution, start volume
+and end volume. It also checked numeric-editor cancellation, adjacent field
+adjustment, center retention, neutral gating after target changes, repeated
+angles, module removal, unchanged automation parameters and unchanged pointer
+position. Evidence: `.local/device-checks/realearn/verb-rotary-result.json`.
+The hierarchy, ReaLearn, FX-widget and mapper regression checks passed.
+Installation is prepared in `apply-verb-rotary.py` beside that report; it backs
+up the mapper/scripts and appends only the two new mappings to the existing
+controller state. Installed successfully after the reboot on 2026-10-28; REAPER
+was reopened. Installation hashes and backup paths are recorded in
+`verb-rotary-install-result.json` beside the live report.
+
+On 2026-10-28, standard REAPER dialogs gained a cyan border around the native
+keyboard-focused field. The local `reaper-dialog-focus.cpp` extension samples
+SWELL focus on its GUI timer and supplies control bounds and the exact X11
+window ID to the existing outline helper. This also works while modal dialogs
+pause Lua. Setup builds it with the existing development compiler; no new
+package or service is required. It neither sends input nor changes focus.
+The helper requires the foreground REAPER PID/XID, REAPER gamepad mode, a fresh
+sample and visible clipped bounds; native menus suppress it.
+
+A muted, private 960×540 REAPER instance passed six Add FX focus destinations,
+stick and bumper navigation, hiding on workspace/profile changes, modal focus
+changes after Lua had stopped updating for over two seconds, and clean return
+to normal controls. Native child-border geometry matched the focused widget;
+the captured image showed the cyan border around the picker filter. Regression
+checks passed for dialog guards, ReaLearn provisioning, window navigation and
+FX hierarchy. The isolated services were stopped. Installed after the user saved
+and closed REAPER, with backups and exact checks against the tested binary and
+scripts. A windowless REAPER process from the ended Sway session still blocked
+the installer; it exited promptly on SIGTERM. REAPER was reopened with the
+current desktop environment and the native focus reader was verified in its
+loaded modules. Physical acceptance is pending.
+[Private live report](../.local/device-checks/realearn/dialog-highlight-result.json),
+[installation report](../.local/device-checks/realearn/dialog-highlight-install-result.json).
+
+On 2026-10-28, an unnamed track's `FX: Track 2` window exposed a discovery bug:
+the controller constructed a quoted-name title from `GetTrackName`, which
+returns a synthetic name for unnamed tracks. Discovery now uses the stored
+`P_NAME` and omits the quoted suffix when empty. Window regression checks cover
+both directions, empty chains, explicit default-looking names and closed chains;
+the hierarchy checks also passed. A muted private REAPER instance verified real
+mapper L1/R1 cycling through the project, named and unnamed FX windows in visible
+order, plus entry into the unnamed chain's plugin controls.
+[Private live report](../.local/device-checks/realearn/unnamed-window-result.json).
+Installed after the user closed REAPER, with a backup of the previous script;
+the installed file matches the tested source. Normal REAPER was reopened.
+[Installation report](../.local/device-checks/realearn/unnamed-window-install-result.json).
+Physical acceptance remains pending.
+
 On 2026-10-27, the FX chain became directly navigable with left-stick/D-pad
 Up/Down. A enters the selected effect's controls; Down after the final row reaches
 Add/Remove, and Up returns. Right-stick directions no longer change chain

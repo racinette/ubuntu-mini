@@ -43,11 +43,21 @@ python3 tests/check-hhd-artifacts.py
 python3 tests/check-coding-clis.py
 python3 tests/check-development.py
 python3 tests/check-reaper.py
+python3 tests/check-reaper-dialog-focus.py
 python3 tests/check-realearn.py
 python3 tests/check-midi-routing.py
 python3 tests/check-audio-tooling.py
 python3 tests/check-audio-effects.py
 ```
+
+The REAPER dialog-focus check covers foreground window identity, stale/missing
+samples, profile gating, clipping and independence from the paused Lua state.
+For a live check after installing the controller, open Add FX in REAPER mode:
+the cyan border should follow the filter, lists and buttons with the left stick
+or L1/R1. The D-pad moves the native selection within a list. Also open a tempo
+or time-signature value editor and move between its fields; the border must
+keep updating while that modal dialog is open. Leaving REAPER or switching to
+Desktop mode must hide it, and closing the dialog must restore normal controls.
 
 The secret-store check verifies private settings, retention of personal configuration/keys/stores and symlink refusal. With `pass` and GnuPG installed, `python3 tests/check-secret-store.py --integration` additionally creates a disposable fixture key/store to check actual encryption and the documented standard shell example: command environment injection, literal argument preservation, child exit status and missing-entry blocking. It never opens the personal vault.
 

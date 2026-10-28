@@ -119,6 +119,7 @@ reaper-gamepad.lua  19a388d99692104e2d48bad9c735912586cb8b1033852ab1fbd0f6029baa
 | `setup/development/reaper-ui.lua` | Native FX discovery, window/region/control model and activation |
 | `setup/development/reaper-control-navigation.lua` | Spatial navigation |
 | `setup/development/reaper-control-outline.py` | Click-through X11 outlines, Sway window identities/order and focus requests |
+| `setup/development/reaper-dialog-focus.cpp` | Native SWELL focus reader for dialog outlines, including modal loops; built by `realearn.py` |
 | `setup/development/reaper-transport.lua` | Transport controls |
 | `setup/development/reaper-ui.py`, `reaper.py` | REAPER UI setup and application installation |
 | `setup/desktop/minion-workspaces` | Workspace compaction, launch origin placement and REAPER tabbing |

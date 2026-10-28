@@ -34,6 +34,7 @@ with tempfile.TemporaryDirectory(prefix='realearn-install-check-') as temporary:
     with patch.object(realearn.os, 'geteuid', return_value=1000), \
          patch.object(realearn, 'reaper_running', return_value=False), \
          patch.object(realearn, 'RELEASE', release), \
+         patch.object(realearn, 'build_dialog_focus', return_value=b'focus reader fixture'), \
          contextlib.redirect_stdout(io.StringIO()):
         realearn.install(resource, assets)
         assert 'lastproject=/personal/song.rpp' in ini.read_text()
@@ -43,6 +44,7 @@ with tempfile.TemporaryDirectory(prefix='realearn-install-check-') as temporary:
         assert keys.read_text().startswith('KEY 1 83 40757 0\n')
         assert keys.read_text().count(realearn.ACTION_ID) == 1
         state = json.loads((resource / 'Data/device-gamepad.json').read_text())
+        assert (resource / 'UserPlugins/reaper_device_dialog_focus.so').read_bytes() == b'focus reader fixture'
         assert (resource / 'Scripts/Device/reaper-control-outline.py').read_bytes() == (PROJECT / 'setup/development/reaper-control-outline.py').read_bytes()
         assert (resource / 'Scripts/Device/reaper-control-navigation.lua').read_bytes() == (PROJECT / 'setup/development/reaper-control-navigation.lua').read_bytes()
         for name in ('reaper-ui.lua', 'reaper-ui.py','reaper-transport.lua'):
@@ -148,4 +150,12 @@ for mapping in fx_stick:
 assert realearn.preset()['mainUnit']['parameters']['2']['valueCount']==65536
 fx_knob=next(m for m in mappings if m['name']=='Set FX knob position')
 assert 'p[15] == 1' in fx_knob['eelCondition']
+native_knob=next(m for m in mappings if m['name']=='Set native FX slider position')
+native_sample=next(m for m in mappings if m['name']=='Native FX slider sample')
+for mapping,index in ((native_knob,13),(native_sample,14)):
+    assert mapping['target']=={'type':63,'paramIndex':index}
+    for condition in ('p[0] == 2','p[9] == 0','p[6] == 0','p[15] == 0'):
+        assert condition in mapping['eelCondition']
+assert native_knob['source']['is14Bit'] and native_knob['mode']=={}
+assert native_sample['source']['number']==50 and native_sample['mode']['rotateIsEnabled']
 print('Passed: window bumpers, window-local FX spatial requests and numeric-control-only absolute knob gate.')

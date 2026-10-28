@@ -35,8 +35,10 @@ function ui.scan_windows(path)
   local candidates={}
   for index=0,reaper.CountTracks(0)-1 do
     local track=reaper.GetTrack(0,index)
-    local _,name=reaper.GetTrackName(track)
-    local title='FX: Track '..(index+1)..' "'..name..'"'
+    -- GetTrackName supplies a synthetic "Track N" for unnamed tracks, but
+    -- their chain title has no quoted suffix. Use the actual stored name.
+    local _,name=reaper.GetSetMediaTrackInfo_String(track,'P_NAME','',false)
+    local title='FX: Track '..(index+1)..(name~='' and ' "'..name..'"' or '')
     local fx=reaper.TrackFX_GetChainVisible(track)
     if fx>=0 or fx==-2 then
       local rect=window_rect(reaper.JS_Window_Find(title,true))
@@ -550,6 +552,20 @@ function ui.fx_regions(area,fx,param,now)
      local node=add(editor,'native:'..tostring(hwnd),label,hwnd,kind,param)
      if node then
       node.editor=editor_hwnd
+      -- Unautomated native sliders still have a usable track. Also associate
+      -- their value fields so selecting either representation behaves alike.
+      if kind=='edit' then
+       if class=='REAPERhfader' and editor_hwnd then node.slider=hwnd
+       elseif class=='Edit' then
+        local match,ambiguous
+        for _,other in ipairs(controls) do
+         if other.class=='REAPERhfader' and slider_editor(other,controls)==hwnd then
+          if match then ambiguous=true end;match=other.hwnd
+         end
+        end
+        if not ambiguous then node.slider=match end
+       end
+      end
       if pitch and reaper.JS_Window_GetParent(hwnd)==state.pitch_current_panel then node.ready,node.shifter_control=state.pitch_ready,true end
      end
     end
@@ -602,7 +618,7 @@ function ui.fx_regions(area,fx,param,now)
    available[#available+1]=region
   end
  end
- state.regions,state.track,state.fx,state.window=available,track,fx,area.id
+ state.regions,state.track,state.fx,state.window,state.hwnd=available,track,fx,area.id,root
  local valid=false
  for _,region in ipairs(available) do if region.key==state.region then valid=true end end
  if not valid and available[1] then state.region=parameter_region and parameter_region.key or available[1].key end
@@ -628,6 +644,33 @@ end
 local function show_band(state)
  ui.fx_band=nil
  ui.fx_outline(state.track,state.fx,state.band*3,reaper.time_precise())
+end
+function ui.fx_native_absolute(window,value)
+ local node,state=ui.fx_current(window)
+ if not node or node.ready==false or not node.slider or not state or
+    reaper.TrackFX_GetFXGUID(state.track,state.fx)~=state.guid then return false end
+ local hwnd=node.slider
+ if not reaper.JS_Window_IsWindow(hwnd) or not reaper.JS_Window_IsVisible(hwnd) or
+    reaper.JS_Window_GetClassName(hwnd)~='REAPERhfader' or
+    (reaper.JS_Window_GetLong(hwnd,'STYLE') & 0x08000000)~=0 then return false end
+ local parent=hwnd
+ while parent and parent~=state.hwnd do parent=reaper.JS_Window_GetParent(parent) end
+ if not parent then return false end
+ local ok,l,t,r,b=reaper.JS_Window_GetClientRect(hwnd)
+ if not ok or r-l<=20 or b-t<=2 then return false end
+ -- Address the native track, letting the widget apply its own range/scaling.
+ -- SWELL does not expose GETRANGEMIN/MAX; guessing 0..1000 would corrupt
+ -- controls with another range. These synchronous messages never warp the
+ -- pointer, and release capture/restore keyboard focus before returning.
+ local radius=math.min(math.floor((b-t)/2)-1,10)
+ local x=math.floor(radius+math.max(0,math.min(1,value))*(r-l-2*radius))
+ local y=math.floor((b-t)/2)
+ local focus=reaper.JS_Window_GetFocus()
+ reaper.JS_WindowMessage_Send(hwnd,'WM_LBUTTONDOWN',1,0,x,y)
+ reaper.JS_WindowMessage_Send(hwnd,'WM_MOUSEMOVE',1,0,x,y)
+ reaper.JS_WindowMessage_Send(hwnd,'WM_LBUTTONUP',0,0,x,y)
+ if focus and reaper.JS_Window_IsWindow(focus) then reaper.JS_Window_SetFocus(focus) end
+ return true
 end
 function ui.fx_step(window,direction)
  local node,state=ui.fx_current(window)

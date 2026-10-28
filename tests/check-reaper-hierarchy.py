@@ -162,6 +162,27 @@ nodes[38].title='Shift (full range):';names[1]='1: Shift (full range)';names[2]=
 ui.fx_regions(area,0,0,6);assert(choose('plugin','native:39').param==0)
 names[2]='2: Shift (full range)';ui.fx_regions(area,0,0,7)
 local fallback=choose('plugin','native:39');assert(fallback.kind=='edit' and fallback.editor==40 and fallback.param==nil)
+assert(fallback.slider==39 and choose('plugin','native:40').slider==39)
+local focus,events=6,{}
+reaper.JS_Window_GetFocus=function() return focus end
+reaper.JS_Window_SetFocus=function(hwnd) focus=hwnd end
+reaper.JS_Window_GetClientRect=function(hwnd) local r=nodes[hwnd].rect;return true,0,0,r[3]-r[1],r[4]-r[2] end
+local send=reaper.JS_WindowMessage_Send
+reaper.JS_WindowMessage_Send=function(hwnd,msg,low,high,x,y)
+ if msg=='WM_LBUTTONDOWN' or msg=='WM_MOUSEMOVE' or msg=='WM_LBUTTONUP' then
+  assert(hwnd==39 and x>=0 and x<=150 and y>=0 and y<=25)
+  events[#events+1]=msg;focus=39
+ end
+ return send(hwnd,msg,low,high,x,y)
+end
+assert(ui.fx_native_absolute(30,.8) and #events==3 and focus==6)
+assert(events[1]=='WM_LBUTTONDOWN' and events[3]=='WM_LBUTTONUP')
+nodes[39].style=0x08000000
+assert(not ui.fx_native_absolute(30,.2) and #events==3,'Disabled slider must not receive input')
+nodes[39].style=0;nodes[39].parent=nil
+assert(not ui.fx_native_absolute(30,.2) and #events==3,'Foreign slider must not receive input')
+nodes[39].parent=2
+choose('plugin','native:39')
 nodes[40].title='0';ui.fx_activate(30)
 assert(nodes[40].title=='0.75' and commands[#commands].pointer==40,'Slider editor must notify the paired value field')
 add(43,2006,'Edit','0',2,390,105,50,25);ui.fx_regions(area,0,0,8)

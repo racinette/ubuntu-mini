@@ -186,13 +186,15 @@ pending selector. Right-stick directions also step selectors or set switches;
 left/right adjusts horizontal sliders, while up/down adjusts vertical sliders
 (up increases, down decreases). Knobs use angle control. A slider nudge starts
 slowly; holding starts acceleration after **0.2 seconds** and reaches maximum
-speed at **1 second**. Maximum normal speed is four times the previous maximum,
-using both faster repeats and larger steps. Once engaged, hold duration controls
-speed rather than deflection distance. **R2** uses the smallest positive step reported by the plugin, or one unit
+speed at **1 second**. Repeat cadence ramps from 4 to 16 requests per second,
+and normal step size increases from 1× to 4×. Once engaged, hold duration controls
+speed rather than deflection distance. **R2** uses the smallest positive step
+reported by the plugin, or one unit
 of its adjacent numeric field’s displayed precision (for example, `1000.0`
 changes by `0.1`). Fine steps stay the same size while repeat cadence accelerates;
 they do not receive the large-step boost. If neither step metadata nor a usable
-numeric field is exposed, the panel explains that fine adjustment is unavailable. Release, direction reversal, control changes and lost focus
+numeric field is exposed, the panel explains that fine adjustment is unavailable.
+Release, direction reversal, control changes and lost focus
 reset acceleration; centering retains the value. Perpendicular movement is
 ignored. Non-numeric controls disable the previous
 rotary target, and changing targets requires the stick to return to center.

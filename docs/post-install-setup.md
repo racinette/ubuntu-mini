@@ -493,7 +493,16 @@ After installing fonts in an existing session, open a new terminal or restart an
 affected application so it can discover them. Private-use icons from Nerd Fonts
 and CJK fonts are not included in this fallback set.
 
-The REAPER profile uses ReaLearn for direct MIDI control. Select cycles Arrange, Mixer, FX, Toolbar and Transport; holding L2 chooses a native area, releasing L2 enters it, and L3 toggles its action menu. L1/R1 select tracks while REAPER is focused. The bar shows the current `RP:` page, and a compact native REAPER panel shows the selected track and current values. Start+Left/Up/Right selects the overall Desktop/REAPER/Gamepad mode directly. No mouse events are emitted in the DAW. See [REAPER controls](gamepad-controls.md#reaper-editing-profile).
+The REAPER profile uses ReaLearn for direct MIDI control. L1/R1 cycle the main
+window and open track FX windows in visible tab order. Hold L2 and use the left
+stick to choose a region within that window; release L2 to enter it. L3 toggles
+the page action menu. Select cycles Arrange → Mixer → Toolbar → Transport in
+the main window and opens the region picker in an FX window. The right stick
+turns knobs by angle and adjusts sliders along their orientation, with hold
+acceleration and R2 fine steps. The bar shows the current `RP:` page, and REAPER's
+controller panel shows the selection and values. Start+Left/Up/Right selects
+Desktop/REAPER/Gamepad mode directly. No mouse events are emitted in the DAW.
+See [REAPER controls](gamepad-controls.md#reaper-editing-profile).
 
 The WIN Mini's built-in keyboard supports English (US) and Russian typing. Press **Ctrl+Space** to switch; the bar shows **US** or **RU**, and a centered popup briefly confirms the active language. It disappears after one second; switching again updates the same popup. `minion-layout-popup.service` watches actual Sway layout changes, including the gamepad shortcut, without displaying anything at login or changing focus. Select remains the gamepad window picker. Menus and system messages remain English. Desktop shortcuts keep the same physical keys in either layout. The physical keyboard and gamepad share a keymap so L2/R2 modifiers also work with physical typing; hold R2 and press the spacebar to switch languages. Personal layout overrides in `~/.config/sway/minion.conf` still take precedence.
 

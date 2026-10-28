@@ -44,11 +44,31 @@ python3 tests/check-coding-clis.py
 python3 tests/check-development.py
 python3 tests/check-reaper.py
 python3 tests/check-reaper-dialog-focus.py
+python3 tests/check-reaper-hierarchy.py
+python3 tests/check-reaper-fx-ui.py
+python3 tests/check-reaper-windows.py
 python3 tests/check-realearn.py
 python3 tests/check-midi-routing.py
 python3 tests/check-audio-tooling.py
 python3 tests/check-audio-effects.py
 ```
+
+For slider changes, run the chord-recognizer, MIDI-routing, ReaLearn, hierarchy
+and FX-widget checks. Together they cover axis/neutral gating, hold acceleration,
+continuous speed CCs, preset persistence, fine precision and alternating native
+fine/normal edits. These fixtures do not replace a live plugin check.
+
+For a physical retest, use a disposable project with a muted track and ReaVerb.
+Select Width and verify left/right movement; select Wet and verify up/down.
+For each, nudge normally, hold R2 and nudge, release R2, then nudge normally again.
+Repeat several times: neither direction nor mode should stop responding. Check
+that the fine value advances by one displayed unit and stays when centered;
+normal hold should accelerate after 0.2 s and reach full speed at 1 s. Keep R2
+held until the fine gesture has settled when measuring its exact step. Repeat on
+an unautomated numeric slider and a plugin exposing explicit step metadata when
+changing either path. Use the isolated-display workflow in
+[the handoff](agent-handoff.md#testing-without-disturbing-the-user) for automation;
+never drive these checks into the user's working project.
 
 The REAPER dialog-focus check covers foreground window identity, stale/missing
 samples, profile gating, clipping and independence from the paused Lua state.

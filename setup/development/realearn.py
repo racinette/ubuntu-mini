@@ -148,16 +148,14 @@ def preset():
     for controls,value in (((0,24,4),11),((1,25,5),12),((2,6),13),((3,7),14)):
         for cc in controls:request('Navigate FX controls',cc,value,2)
     for cc in (8,9,10,11):request('Adjust FX selector',cc,23+cc-8,2)
+    add('Slider acceleration',51,parameter(16),page=2,mode={})
+    mappings[-1]['id']='device-slider-acceleration'
+    mappings[-1]['mode']={} # Accept zero too, resetting the previous gesture.
+    mappings[-1]['eelCondition'] += ' && p[15] == 0'
     target = dict(type=1, trackGUID='selected', fxAnchor='dynamic', fxExpression='p[1]',
                   paramType='dynamic', paramExpression='p[2]')
     absolute('Set FX knob position', target, 2)
     mappings[-1]['eelCondition'] += ' && p[15] == 1'
-    absolute('Set native FX slider position', parameter(13), 2)
-    mappings[-1]['id'] = 'device-native-fx-position'
-    mappings[-1]['eelCondition'] += ' && p[15] == 0'
-    increment('Native FX slider sample',50,parameter(14),page=2,step=1/65535,wrap=True)
-    mappings[-1]['id'] = 'device-native-fx-sample'
-    mappings[-1]['eelCondition'] += ' && p[15] == 0'
     request('Bypass FX', 15, 3, 2)
     request('Show/hide FX window', 14, 4, 2)
     for cc, name, command in ((32, 'Copy items', 40698), (33, 'Paste', 40058),
@@ -186,7 +184,8 @@ def preset():
                                       (12, 'Area hold', 3, ['Released','Cancelled','Held']),
                                       (13, 'Transport knob', 16384, []),
                                       (14, 'Transport sample', 65536, []),
-                                      (15, 'FX knob active', 2, [])):
+                                      (15, 'FX knob active', 2, []),
+                                      (16, 'Slider acceleration', 128, [])):
         parameters[str(index)] = dict(name=name, valueCount=count, valueLabels=labels, value=0)
     return dict(mainUnit=dict(version=RELEASE['version'], name='Device gamepad',
                              controlDeviceId='0', letMatchedEventsThrough=False,

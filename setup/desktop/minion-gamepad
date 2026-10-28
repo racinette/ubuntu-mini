@@ -254,7 +254,7 @@ class ReaperMidi:
                 return
             self.fine_value = value
         output.send_message([0xBF, control, value])
-        if control not in (22,26):
+        if control not in (22,26,51): # Continuous modifier/hold/acceleration values stay latched.
             output.send_message([0xBF, control, 0])
 
 # Xbox/xpad uses Linux's historical BTN_X=BTN_NORTH, BTN_Y=BTN_WEST
@@ -508,6 +508,7 @@ class Mapper:
         self.reaper_area_held = self.reaper_area_cancelled = False
         self.rotary_target, self.rotary_ready = '', False
         self.rotary_value, self.rotary_time = None, float('-inf')
+        self.slider_started = None
         self.transport_target,self.transport_ready='',False
         self.dialog_active,self.dialog_ready=False,False
         self.dialog_buttons=set()
@@ -538,6 +539,7 @@ class Mapper:
         self.reaper_area_held = self.reaper_area_cancelled = False
         self.rotary_target, self.rotary_ready = '', False
         self.rotary_value, self.rotary_time = None, float('-inf')
+        self.slider_started = None
         self.transport_target,self.transport_ready='',False
         self.dialog_active,self.dialog_ready=False,False
         self.dialog_buttons=set()
@@ -666,6 +668,7 @@ class Mapper:
                           'Mixer — D-pad up/down: tracks; left/right: outlined control',
                           'Mixer — L: outline in 2D; R angle: knob position; A: activate',
                           'FX — L / D-pad: move spatially; A: activate / choose; R: adjust',
+                          'Sliders — R follows slider direction; hold: accelerate; R2: fine',
                           'Knobs — lower-left: min; up: midpoint; lower-right: max; center: hold',
                           'X: split / mute / bypass; R3: loop / solo / FX window',
                           'R2: Ctrl / Arrange cursor; L1/R1: previous / next REAPER window',
@@ -703,6 +706,7 @@ class Mapper:
             # Gate immediately on controller navigation, before the display's
             # next context publication, so a held angle cannot hit a new knob.
             self.rotary_ready = False
+            self.slider_started = None
         if cleanup:
             if self.reaper_midi and self.reaper_midi.pid is not None:
                 try:
@@ -723,8 +727,8 @@ class Mapper:
                     self.reaper_midi.pulse(node['pid'], control)
                 else:
                     self.reaper_midi.pulse(node['pid'], control, value)
-                    # Script-driven native sliders also need to distinguish
-                    # a fresh gesture from the same retained knob value.
+                    # Script-driven knobs need to distinguish a fresh gesture
+                    # from the same retained value (for example playback rate).
                     if control==20:
                         self.reaper_midi.pulse(node['pid'],50)
         except (ImportError, OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
@@ -1470,15 +1474,44 @@ class Mapper:
         if target != self.rotary_target:
             self.rotary_target, self.rotary_ready = target, magnitude <= self.config['stick_release']
             self.rotary_value, self.rotary_time = None, float('-inf')
+            self.slider_started = None
         if not target:
             return False
         if magnitude <= self.config['stick_release']:
             self.rotary_ready, self.rotary_value = True, None
+            self.slider_started = None
             return True
         if not self.rotary_ready or magnitude < self.config['stick_press']:
             return True
         if not self.focused_reaper():
             self.rotary_ready = False
+            self.slider_started = None
+            return True
+        if target.startswith('slider:'):
+            # Follow the native slider axis; ignore the perpendicular axis.
+            vertical = target.startswith('slider:v:')
+            axis = -y if vertical else x
+            amount = abs(axis)
+            if amount <= self.config['stick_release']:
+                self.rotary_value, self.rotary_time = None, float('-inf')
+                self.slider_started = None
+                return True
+            if amount < self.config['stick_press']:
+                self.slider_started = None
+                return True
+            direction = (11 if axis < 0 else 10) if vertical else (8 if axis < 0 else 9)
+            if (self.slider_started is None or direction != self.rotary_value
+                    or now-self.rotary_time > .3):
+                self.slider_started = now
+            # Begin gently; accelerate after 0.2s and reach full speed at 1s.
+            # Increase step size as well as cadence: the 20Hz Lua loop cannot
+            # reliably consume an arbitrarily high rate of direction requests.
+            ramp = max(0, min(1, (now-self.slider_started-.2)/.8))
+            interval = 1 / (4 + 12*ramp)
+            if direction != self.rotary_value or now-self.rotary_time >= interval:
+                self.reaper_control(51, round(ramp*127))
+                self.reaper_control(direction)
+                self.rotary_value, self.rotary_time = direction, now
             return True
         angle = math.atan2(x, -y)
         limit = 3 * math.pi / 4

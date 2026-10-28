@@ -150,12 +150,11 @@ for mapping in fx_stick:
 assert realearn.preset()['mainUnit']['parameters']['2']['valueCount']==65536
 fx_knob=next(m for m in mappings if m['name']=='Set FX knob position')
 assert 'p[15] == 1' in fx_knob['eelCondition']
-native_knob=next(m for m in mappings if m['name']=='Set native FX slider position')
-native_sample=next(m for m in mappings if m['name']=='Native FX slider sample')
-for mapping,index in ((native_knob,13),(native_sample,14)):
-    assert mapping['target']=={'type':63,'paramIndex':index}
-    for condition in ('p[0] == 2','p[9] == 0','p[6] == 0','p[15] == 0'):
-        assert condition in mapping['eelCondition']
-assert native_knob['source']['is14Bit'] and native_knob['mode']=={}
-assert native_sample['source']['number']==50 and native_sample['mode']['rotateIsEnabled']
+assert not any(m['id'] in ('device-native-fx-position','device-native-fx-sample') for m in mappings)
+acceleration=next(m for m in mappings if m['id']=='device-slider-acceleration')
+assert acceleration['source']['number']==51 and acceleration['mode']=={}
+assert acceleration['target']=={'type':63,'paramIndex':16}
+for condition in ('p[0] == 2','p[9] == 0','p[6] == 0','p[15] == 0'):
+    assert condition in acceleration['eelCondition']
+assert realearn.preset()['mainUnit']['parameters']['16']['valueCount']==128
 print('Passed: window bumpers, window-local FX spatial requests and numeric-control-only absolute knob gate.')

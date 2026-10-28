@@ -60,6 +60,12 @@ with patch.object(mapper.time,'monotonic',return_value=0):
         connection.jack_output.send_message.reset_mock()
         connection.pulse(123,26,value)
         assert [c.args[0] for c in connection.jack_output.send_message.call_args_list]==[[0xBF,26,value]]
+    # Acceleration is a continuous value too; a synthetic release erases it
+    # before the following direction request can use the speed.
+    for value in (0,64,127,127,0):
+        connection.jack_output.send_message.reset_mock()
+        connection.pulse(123,51,value)
+        assert [c.args[0] for c in connection.jack_output.send_message.call_args_list]==[[0xBF,51,value]]
     # Cancellation remains an ordinary press pulse, not an area commit.
     connection.jack_output.send_message.reset_mock()
     connection.pulse(123,31)

@@ -29,6 +29,7 @@ add(14,1022,'Button','Enabled',2,160,330,80,20)
 add(15,1015,'combobox','Band',2,300,330,150,20)
 add(16,1449,'REAPERknob','',1,780,40,25,25)
 add(17,1426,'Button','',1,820,40,20,20)
+add(18,1047,'REAPERvfader','',2,740,150,25,200)
 local plugin='/opt/reaeq.vst.so<1'
 local fx=0
 reaper={
@@ -77,7 +78,37 @@ local function choose(region,key)
  state.region=region;state.selection[region]=key
  local node=ui.fx_current(30);assert(node and node.key==key);return node
 end
-assert(ui.fx_current(30).key=='eq:freq')
+assert(ui.fx_current(30).key=='eq:freq' and ui.fx_current(30).control_type=='slider')
+local param_value=.5
+local step_metadata={true,.01,.001,.1,false}
+local raw_scale=1
+reaper.TrackFX_GetParameterStepSizes=function() return table.unpack(step_metadata) end
+reaper.TrackFX_GetParam=function() return param_value*raw_scale,0,raw_scale end
+reaper.TrackFX_SetParam=function(_,_,_,value) param_value=value/raw_scale;return true end
+reaper.TrackFX_GetParamNormalized=function() return param_value end
+reaper.TrackFX_SetParamNormalized=function(_,_,index,value) assert(index==0 or index==3);param_value=value end
+ui.fx_step(30,'right');assert(math.abs(param_value-.51)<.00001)
+ui.fx_step(30,'left',true);assert(math.abs(param_value-.509)<.00001)
+ui.fx_step(30,'up');assert(math.abs(param_value-.509)<.00001)
+param_value=.5;ui.fx_step(30,'right',false,4);assert(math.abs(param_value-.54)<.00001)
+param_value=.5;ui.fx_step(30,'right',true,4);assert(math.abs(param_value-.501)<.00001,'Fine mode must ignore acceleration boost')
+raw_scale=100;step_metadata={true,1,0,0,false};param_value=.5
+ui.fx_step(30,'right',true);assert(math.abs(param_value-.51)<.00001,'Reported JS step must use raw units')
+step_metadata={true,1,.1,10,false};ui.fx_step(30,'right',true)
+assert(math.abs(param_value-.511)<.00001,'Use the smallest positive reported step')
+step_metadata={false,0,0,0,false};local before=param_value
+local _,note=ui.fx_step(30,'right',true);assert(param_value==before and note:find('No minimum step'),'Unknown precision must not silently use a percentage')
+raw_scale=1;step_metadata={true,.01,.001,.1,false}
+param_value=.999;ui.fx_step(30,'right');assert(param_value==1)
+param_value=.001;ui.fx_step(30,'left');assert(param_value==0)
+assert(choose('header','header:wet').control_type=='knob')
+choose('plugin','eq:freq')
+assert(choose('plugin','eq:global').slider_axis=='vertical')
+param_value=.5;ui.fx_step(30,'left');ui.fx_step(30,'right');assert(param_value==.5)
+ui.fx_step(30,'up');assert(math.abs(param_value-.51)<.00001)
+ui.fx_step(30,'down');assert(math.abs(param_value-.5)<.00001)
+choose('plugin','eq:freq')
+
 local band=choose('plugin','eq:band');assert(band.rect[4]==24)
 choose('plugin','eq:freq')
 local spatial=dofile(NAVIGATION)
@@ -153,6 +184,34 @@ accept=true;ui.fx_activate(30);assert(nodes[40].title=='0.75' and commands[#comm
 choose('plugin','native:42');ui.fx_activate(30);assert(nodes[42].check==0)
 choose('plugin','native:34');ui.fx_activate(30);nodes[34]=nil
 ui.fx_regions(area,0,0,4);assert(not state.editing,'Removed native controls must leave selector mode')
+-- Alternate fine and normal input without switching from native fields to
+-- host setters: plugins may ignore host writes after a native numeric edit.
+local send,setter=reaper.JS_WindowMessage_Send,reaper.TrackFX_SetParamNormalized
+step_metadata={false,0,0,0,false}
+reaper.TrackFX_SetParamNormalized=function() error('Mixed native/API edits can lock the slider') end
+reaper.TrackFX_FormatParamValueNormalized=function(_,_,_,value) return true,string.format('%.1f dB',value*100) end
+reaper.JS_WindowMessage_Send=function(hwnd,msg,value,high,pointer)
+ if msg=='WM_COMMAND' and high==0x300 and pointer==40 then param_value=tonumber(nodes[40].title)/100 end
+ return send(hwnd,msg,value,high,pointer)
+end
+for _,axis in ipairs({'horizontal','vertical'}) do
+ local node=choose('plugin','native:39');node.slider_axis=axis
+ local direction=axis=='vertical' and 'up' or 'right'
+ nodes[40].title='50.0';param_value=.5
+ for i=1,3 do
+  local before=tonumber(nodes[40].title)
+  ui.fx_step(30,direction,true);assert(math.abs(tonumber(nodes[40].title)-before-.1)<.00001)
+  ui.fx_step(30,direction,false);assert(math.abs(tonumber(nodes[40].title)-before-1.1)<.00001,'Normal step must still work after fine input')
+ end
+ local before=tonumber(nodes[40].title);ui.fx_step(30,direction,false,4)
+ assert(math.abs(tonumber(nodes[40].title)-before-4)<.00001,'Preserve range-based normal acceleration in native units')
+end
+reaper.TrackFX_FormatParamValueNormalized=function() return true,'different units' end
+local before=tonumber(nodes[40].title);ui.fx_step(30,'up',false)
+assert(tonumber(nodes[40].title)>before,'Unusable formatting must keep the native numeric fallback')
+reaper.TrackFX_FormatParamValueNormalized=nil
+reaper.JS_WindowMessage_Send=send;reaper.TrackFX_SetParamNormalized=setter
+
 -- Duplicate parameter names must disable inferred rotary binding.
 names[2]='Wet';ui.fx_regions(area,0,0,5)
 for _,r in ipairs(state.regions) do for _,n in ipairs(r.nodes) do assert(n.hwnd~=39 or (n.kind=='edit' and n.editor==40 and n.param==nil),'Ambiguous slider names must use their value field, not an arbitrary parameter') end end
@@ -163,25 +222,26 @@ ui.fx_regions(area,0,0,6);assert(choose('plugin','native:39').param==0)
 names[2]='2: Shift (full range)';ui.fx_regions(area,0,0,7)
 local fallback=choose('plugin','native:39');assert(fallback.kind=='edit' and fallback.editor==40 and fallback.param==nil)
 assert(fallback.slider==39 and choose('plugin','native:40').slider==39)
-local focus,events=6,{}
-reaper.JS_Window_GetFocus=function() return focus end
-reaper.JS_Window_SetFocus=function(hwnd) focus=hwnd end
-reaper.JS_Window_GetClientRect=function(hwnd) local r=nodes[hwnd].rect;return true,0,0,r[3]-r[1],r[4]-r[2] end
-local send=reaper.JS_WindowMessage_Send
-reaper.JS_WindowMessage_Send=function(hwnd,msg,low,high,x,y)
- if msg=='WM_LBUTTONDOWN' or msg=='WM_MOUSEMOVE' or msg=='WM_LBUTTONUP' then
-  assert(hwnd==39 and x>=0 and x<=150 and y>=0 and y<=25)
-  events[#events+1]=msg;focus=39
- end
- return send(hwnd,msg,low,high,x,y)
-end
-assert(ui.fx_native_absolute(30,.8) and #events==3 and focus==6)
-assert(events[1]=='WM_LBUTTONDOWN' and events[3]=='WM_LBUTTONUP')
+local before_commands=#commands
+nodes[40].title='10.0'
+ui.fx_step(30,'right',false,4);assert(nodes[40].title=='11.6','Native field must receive acceleration with preserved precision')
+nodes[40].title='10.0'
+ui.fx_step(30,'right',true,4);assert(nodes[40].title=='10.1','Native field fine steps must ignore boost')
+nodes[40].title='1000.0';ui.fx_step(30,'right',true,4)
+assert(nodes[40].title=='1000.1','Fine step must not grow with the current numeric value')
+nodes[40].title='0.000000000001';ui.fx_step(30,'right',true)
+assert(nodes[40].title=='0.000000000002','Displayed precision must not be replaced by a fixed quantum')
+nodes[40].title='10.0'
+ui.fx_step(30,'right');assert(tonumber(nodes[40].title)>10 and commands[#commands].pointer==40)
+ui.fx_step(30,'left');assert(tonumber(nodes[40].title)<10.4)
+local value=nodes[40].title;ui.fx_step(30,'up');ui.fx_step(30,'down');assert(nodes[40].title==value)
 nodes[39].style=0x08000000
-assert(not ui.fx_native_absolute(30,.2) and #events==3,'Disabled slider must not receive input')
+ui.fx_step(30,'right');assert(nodes[40].title==value,'Disabled slider must not receive input')
 nodes[39].style=0;nodes[39].parent=nil
-assert(not ui.fx_native_absolute(30,.2) and #events==3,'Foreign slider must not receive input')
+ui.fx_step(30,'right');assert(nodes[40].title==value,'Foreign slider must not receive input')
 nodes[39].parent=2
+nodes[40].title='not numeric';before_commands=#commands
+ui.fx_step(30,'right');assert(#commands==before_commands and nodes[40].title=='not numeric')
 choose('plugin','native:39')
 nodes[40].title='0';ui.fx_activate(30)
 assert(nodes[40].title=='0.75' and commands[#commands].pointer==40,'Slider editor must notify the paired value field')

@@ -9,7 +9,6 @@ local choose_control = dofile(reaper.GetResourcePath() .. '/Scripts/Device/reape
 local ui = dofile(reaper.GetResourcePath() .. '/Scripts/Device/reaper-ui.lua')
 local transport = dofile(reaper.GetResourcePath() .. '/Scripts/Device/reaper-transport.lua')
 local transport_choices, previous_transport_knob, previous_transport_sample = nil,nil,nil
-local previous_native_slider
 local REQUEST_COUNT, PAGE_COUNT = 29, 5
 local choosing_area, area_choice, area_held = false, 'Timeline', false
 local last_main_area, main_page, active_window = 0, 0, nil
@@ -180,7 +179,6 @@ local function loop()
     reaper.SetExtState('device-gamepad', 'focus-path', mode == 'reaper' and outline_path .. '.native-focus' or '', false)
   end
   if mode ~= 'reaper' then
-    previous_native_slider=nil
     choosing_area, menu, area_held, transport_choices = false, false, false, nil
     ui.cancel_focus(outline_path)
     ui.fx_band=nil
@@ -204,7 +202,6 @@ local function loop()
   ui.scan(now,outline_path)
   if page~=2 then ui.fx_band=nil;main_page=page end
   local function adopt_window(area)
-    previous_native_slider=nil
     if area.track then
       page=2
       reaper.SetOnlyTrackSelected(area.track)
@@ -361,7 +358,9 @@ local function loop()
       local next_fx=ui.fx_move(active_window,({'left','right','up','down'})[request-10],choose_control)
       if next_fx then set(master,controller,1,128,next_fx);old_fx=-1;reaper.defer(loop);return end
     elseif page==2 and not choosing_area and not menu and request>=23 and request<=26 then
-      local next_fx=ui.fx_step(active_window,({'left','right','up','down'})[request-22])
+      local next_fx,note=ui.fx_step(active_window,({'left','right','up','down'})[request-22],parameter(master,controller,5,2)==1,
+        1+3*parameter(master,controller,16,128)/127)
+      if note then status(note) end
       if next_fx then set(master,controller,1,128,next_fx);old_fx=-1;reaper.defer(loop);return end
     elseif request == 15 then
       if page==2 and ui.fx_cancel(active_window) then
@@ -464,7 +463,6 @@ local function loop()
   local native_button = page >= 3 and not transport_choices and (menu and ui.buttons[pages[page+1]][menu_index+1] or ui.current(pages[page+1]))
   local knob=parameter(master,controller,13,16384)
   local sample=parameter(master,controller,14,65536)
-  local rotary_changed=previous_transport_knob~=nil and (knob~=previous_transport_knob or sample~=previous_transport_sample)
   if page==4 and not choosing_area and not menu and native_button and native_button.command==60004 then
     if previous_transport_knob~=nil and (knob~=previous_transport_knob or sample~=previous_transport_sample) then transport.absolute(60004,knob/16383) end
   end
@@ -478,13 +476,10 @@ local function loop()
     local rectangle,_,note=ui.fx_outline(track,fx_index,fx_node.param,now)
     fx_ready=rectangle~=nil;fx_note=note or ''
   end
-  local fx_knob=page==2 and not choosing_area and not menu and fx_ready and fx_node and fx_node.kind=='param' and fx_node.param~=nil
+  local fx_knob=page==2 and not choosing_area and not menu and fx_ready and fx_node and fx_node.kind=='param' and fx_node.param~=nil and fx_node.control_type~='slider'
   set(master,controller,15,2,fx_knob and 1 or 0)
   if fx_knob then param_index=fx_node.param;set(master,controller,2,65536,param_index) end
-  local native_slider=page==2 and focused_window and focused_window.id==active_window and not choosing_area and not menu and fx_ready and fx_node and fx_node.slider and
-    (tostring(active_window)..':'..fx_state.guid..':'..fx_node.key) or nil
-  if native_slider and native_slider==previous_native_slider and rotary_changed then ui.fx_native_absolute(active_window,knob/16383) end
-  previous_native_slider=native_slider
+  local fx_slider=page==2 and focused_window and focused_window.id==active_window and not choosing_area and not menu and fx_ready and fx_node and fx_node.control_type=='slider' and (fx_node.param~=nil or fx_node.slider)
   if choosing_area then
     local area=chosen_area()
     local rect=area and area.rect
@@ -528,8 +523,9 @@ local function loop()
       if not fx_ready then detail=detail..' | '..fx_note end
       if fx_state.editing then detail=detail..' | Choose with L / D-pad; A accept; B cancel'
       elseif fx_node.kind=='effects' then detail=detail..' | Up/down: effect; A: controls'
+      elseif fx_slider then detail=detail..' | R '..(fx_node.slider_axis=='vertical' and 'up/down' or 'left/right')..': adjust'..(fx_node.kind=='edit' and '; A: edit value' or '')
       elseif fx_node.kind=='param' then detail=detail..(fx_node.list_only and ' | L: choose; R: adjust' or ' | R: adjust')
-      elseif fx_node.kind=='edit' then detail=detail..(fx_node.slider and ' | R: adjust; A: edit value' or ' | A: edit value')
+      elseif fx_node.kind=='edit' then detail=detail..' | A: edit value'
       else detail=detail..' | A: activate / choose' end
     else detail='No mapped controls in this window; L2: choose a region' end
   elseif page == 0 then
@@ -550,8 +546,8 @@ local function loop()
       rotary_target = pid .. ':' .. guid .. ':control:' .. control
     elseif fx_knob and track and fx_count>0 then
       rotary_target = pid .. ':' .. tostring(active_window) .. ':' .. guid .. ':' .. reaper.TrackFX_GetFXGUID(track,fx_index) .. ':' .. param_index .. ':' .. fx_node.label
-    elseif native_slider then
-      rotary_target=pid..':native-slider:'..native_slider
+    elseif fx_slider then
+      rotary_target='slider:'..(fx_node.slider_axis=='vertical' and 'v:' or 'h:')..pid..':'..tostring(active_window)..':'..fx_state.guid..':'..fx_node.key
     end
   end
   write(directory .. 'reaper-rotary-target', rotary_target)

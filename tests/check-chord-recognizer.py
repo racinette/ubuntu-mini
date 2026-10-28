@@ -1189,6 +1189,41 @@ def main():
             assert midi.call_count==count,'Focus return failed neutral gate'
             state.reset();assert not state.rotary_ready and state.rotary_value is None
         assert not keyboard.events
+        # Sliders accelerate by hold duration, keeping axis and neutral guards.
+        rotary_path.write_text('slider:h:fx:horizontal')
+        reaper_reset()
+        xaxis,yaxis=config['right_stick']
+        with patch.object(state,'focused_reaper',return_value=True),patch.object(state,'reaper_control') as midi:
+            state.tick(0,True)
+            state.raw_axes[yaxis]=-32768;state.tick(.1,True)
+            assert not midi.called,'Perpendicular motion adjusted a slider'
+            state.raw_axes[xaxis]=32767;state.tick(.2,True)
+            assert midi.call_args_list==[call(51,0),call(9)]
+            state.tick(.39,True);assert midi.call_count==2,'Short hold accelerated'
+            for i in range(40,129):state.tick(i/100,True)
+            speeds=[c.args[1] for c in midi.call_args_list if c.args[0]==51]
+            assert speeds[0]==0 and any(0<v<127 for v in speeds) and speeds[-1]==127
+            assert speeds==sorted(speeds),'Acceleration was not monotonic'
+            state.raw_axes[xaxis]=-32768;state.tick(1.29,True)
+            assert midi.call_args_list[-2:]==[call(51,0),call(8)],'Reversal inherited speed'
+            rotary_path.write_text('slider:v:fx:vertical');state.tick(1.4,True)
+            count=midi.call_count;state.tick(1.45,True);assert midi.call_count==count
+            state.raw_axes[xaxis]=state.raw_axes[yaxis]=0;state.tick(1.5,True)
+            state.raw_axes[xaxis]=32767;state.tick(1.6,True);assert midi.call_count==count
+            state.raw_axes[xaxis]=0;state.raw_axes[yaxis]=-32768;state.tick(1.7,True)
+            assert midi.call_args_list[-2:]==[call(51,0),call(10)]
+            for i in range(171,281):state.tick(i/100,True)
+            assert midi.call_args_list[-2:]==[call(51,127),call(10)]
+            state.raw_axes[yaxis]=32767;state.tick(2.81,True)
+            assert midi.call_args_list[-2:]==[call(51,0),call(11)]
+            with patch.object(state,'focused_reaper',return_value=False):state.tick(2.9,True)
+            count=midi.call_count;state.tick(3,True);assert midi.call_count==count
+            state.raw_axes[yaxis]=0;state.tick(3.1,True)
+            state.raw_axes[yaxis]=-32768;state.tick(3.2,True)
+            assert midi.call_args_list[-2:]==[call(51,0),call(10)]
+            state.tick(3.6,True)
+            assert midi.call_args_list[-2:]==[call(51,0),call(10)],'Scheduling gap inherited acceleration'
+            state.reset();assert state.slider_started is None
         # Painted transport values repeat at selection speed and require
         # neutral before a newly selected field can be adjusted.
         rotary_path.write_text('')

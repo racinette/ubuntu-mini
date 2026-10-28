@@ -14,6 +14,116 @@ Firefox-first browser preferences were applied on the WIN Mini: `xdg-settings ge
 
 ## Recent device checks
 
+On 2026-10-28, the user reported that normal right-stick input stopped working
+after R2 fine adjustment. The issue reproduced in a private ReaVerb instance:
+fine mode edited the native numeric field, while normal mode used host parameter
+setters that the plugin subsequently ignored. Native completion notifications
+introduced rounding and a dropped first nudge, so the final implementation keeps
+both modes on the same native numeric path when precision comes from a field.
+Plugins reporting explicit steps retain their host/API path in both modes.
+Host formatting converts normal range-based steps into matching native units;
+unavailable or mismatched formatting retains the existing numeric-step fallback.
+
+Live checks passed repeated horizontal and vertical normal/fine/normal cycles,
+including three single-nudge transitions. Exact Width, Wet, unautomated Spacing
+and declared JS steps were rechecked separately. Regression fixtures reject
+mixed native/API updates, verify both orientations and accelerated normal steps,
+and retain numeric fallback for unusable formatting. Hierarchy and FX-widget
+checks passed. Evidence: `.local/device-checks/realearn/fine-transition-result.json`,
+`fine-transition-nudge-result.json` and `slider-minimum-step-result.json` in the
+same directory. The one-script update was installed with a backup after verifying
+REAPER was closed, and REAPER reopened successfully. Installed source matched.
+Evidence: `.local/device-checks/realearn/fine-transition-install-result.json`.
+Physical confirmation remains pending.
+
+On 2026-10-28, R2 slider fine adjustment stopped using fixed normalized percentages
+or magnitude-dependent numeric increments. It now uses the smallest positive
+reported parameter step in raw units, falling back to one displayed numeric unit
+from an adjacent writable field. REAPER's tested stock effects returned no step
+metadata; a disposable JS effect reported a raw integer step over 0–100.
+Unknown precision produces a panel message instead of a guessed fine increment.
+Normal accelerated gestures are unchanged; fine cadence still accelerates.
+
+Hierarchy and FX-widget checks passed, including raw-unit conversion, missing
+metadata, high numeric magnitude and small decimal precision. A muted isolated
+live controller check passed ReaVerb Width 0.50→0.51, vertical Wet -12.0→-11.9 dB,
+Echo Generator Spacing 1000.0→1000.1 and a JS integer slider 10→11. Evidence:
+`.local/device-checks/realearn/slider-minimum-step-result.json`. The two Lua scripts
+were installed with backups after confirming REAPER was closed, then REAPER was
+reopened successfully. Installed files matched the tested source. Evidence:
+`.local/device-checks/realearn/slider-minimum-step-install-result.json`. Physical
+confirmation of fine-step comfort remains pending.
+
+On 2026-10-28, slider gestures changed from deflection-controlled repeat speed
+to hold acceleration: a precise initial nudge, acceleration after 0.2 seconds,
+and maximum speed at 1 second. Repeat cadence ramps from 4 to 16 requests/second
+while normal step size ramps from 1× to 4×, making the peak four times the prior
+maximum without flooding the 20Hz controller loop. R2 ignores the step boost.
+Release, reversal, target changes, lost focus and scheduling gaps reset the ramp.
+Native slider axes and angle-controlled knobs retain their existing behavior.
+
+A dedicated ReaLearn parameter carries acceleration. Its MIDI CC is continuous,
+so the transport must not append the synthetic zero-release used for buttons.
+The first live test found that release clearing the value; a transport regression
+now checks intermediate, repeated and zero acceleration values stay latched.
+The final muted live check passed timed ramping, horizontal/vertical adjustment,
+release retention, reversal reset and fine steps. Five maximum-speed requests
+changed the normalized value by 0.20 versus 0.05 with the installed old code;
+a short nudge changed it by 0.01, while a 1.4-second fine hold changed it by
+about 0.014. Mapper, MIDI routing, hierarchy, FX-widget and ReaLearn unit checks
+passed. Evidence: `.local/device-checks/realearn/slider-acceleration-result.json`.
+Installed and checked successfully after REAPER closed, with the existing
+controller state preserved and only the speed parameter/mapping added alongside
+the mapper/script update. REAPER was reopened. Evidence:
+`.local/device-checks/realearn/slider-acceleration-install-result.json`.
+
+On 2026-10-28, follow-up feedback on relative sliders requested faster full-stick
+adjustment and up/down for vertical faders. Slider orientation now comes from
+the native widget class and is carried into its adjacent value-field selection,
+published target identity and hint. Vertical sliders increase on up/decrease on
+down; horizontal sliders keep right/left. The perpendicular axis is ignored.
+Normal step size doubled (including unautomated numeric fields), while R2 fine
+steps and the bounded 4–16 request/second repeat rate remain unchanged.
+
+Live isolated checks passed on vertical Wet/Dry, a vertical value field,
+horizontal Width and unautomated Echo Generator Spacing. Equal consumed requests
+changed the normalized value by approximately 0.05 before and 0.10 after;
+fine steps remained approximately 0.001. A full-deflection hold moved Width by
+about 0.11, versus 0.055 in the previous check. Unit checks covered both axis
+directions, ignored perpendicular input and neutral gating. Evidence:
+`.local/device-checks/realearn/slider-axis-result.json`. The prepared installer
+`apply-slider-axis.py` changes only the mapper and two Lua scripts, with backups
+and rollback. Installed and checked successfully on 2026-10-28 after verifying
+REAPER had exited; the mapper restarted and REAPER was reopened. Physical
+acceptance of the faster, orientation-aware gestures remains pending.
+
+On 2026-10-28, after committing the installed fixes as `b33be38`, native FX
+control classes gained distinct gestures. REAPER horizontal and vertical faders
+use relative right-stick left/right adjustment (4–16 requests/second depending
+on horizontal deflection), with R2 for finer steps. Native knobs retain absolute
+angle control. Center retains the value, pure vertical movement does nothing
+on sliders, and target/focus changes retain the neutral gate. Opaque parameter
+lists have no shape metadata and keep their previous gesture.
+
+Automation-mapped faders use bounded normalized parameter steps; their adjacent
+numeric fields share that parameter when identifiable. Unautomated sliders use
+numeric field edits with preserved precision and the plugin's input validation.
+The previous control-local pointer simulation and its two ReaLearn mappings
+were removed. Slider hints now distinguish left/right adjustment from knobs.
+
+The muted isolated 960×540 check passed all seven ReaVerb Echo Generator
+sliders, adjacent fields, horizontal Width and vertical Wet/Dry faders, ignored
+vertical stick movement, deflection-dependent repeat speed, target neutral gating,
+and retained angle control for the circular host Wet knob. The measured change
+over the same hold interval was about 0.025 normalized at light deflection and
+0.055 at full deflection. Unit checks covered bounded/fine parameter steps,
+control classes, field precision, stale/disabled targets, mapper rates/focus
+gates and removal of the old mappings. Evidence:
+`.local/device-checks/realearn/slider-gestures-result.json`.
+Installation is prepared in `apply-slider-gestures.py` beside that report;
+installed successfully on 2026-10-28. User feedback confirmed adjustment but
+requested faster steps and up/down for vertical sliders (see the later entry).
+
 On 2026-10-28, ReaVerb Echo Generator sliders were found to have native widgets
 but no corresponding automation parameters. The earlier fallback allowed A to
 edit their numeric fields but did not route right-stick input to them. Native

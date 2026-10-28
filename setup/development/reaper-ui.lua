@@ -369,6 +369,9 @@ function ui.fx_regions(area,fx,param,now)
   local rect=hwnd and clipped_widget(hwnd,root)
   if not rect then return end
   local node={key=key,label=label,hwnd=hwnd,rect=rect,kind=kind or 'command',param=param}
+  local class=reaper.JS_Window_GetClassName(hwnd)
+  node.control_type=(class=='REAPERhfader' or class=='REAPERvfader') and 'slider' or class=='REAPERknob' and 'knob' or nil
+  node.slider_axis=class=='REAPERvfader' and 'vertical' or class=='REAPERhfader' and 'horizontal' or nil
   region.nodes[#region.nodes+1]=node
   return node
  end
@@ -555,15 +558,19 @@ function ui.fx_regions(area,fx,param,now)
       -- Unautomated native sliders still have a usable track. Also associate
       -- their value fields so selecting either representation behaves alike.
       if kind=='edit' then
-       if class=='REAPERhfader' and editor_hwnd then node.slider=hwnd
+       if (class=='REAPERhfader' or class=='REAPERvfader') and editor_hwnd then node.slider=hwnd
        elseif class=='Edit' then
         local match,ambiguous
         for _,other in ipairs(controls) do
-         if other.class=='REAPERhfader' and slider_editor(other,controls)==hwnd then
+         if (other.class=='REAPERhfader' or other.class=='REAPERvfader') and slider_editor(other,controls)==hwnd then
           if match then ambiguous=true end;match=other.hwnd
          end
         end
         if not ambiguous then node.slider=match end
+       end
+       if node.slider then
+        node.control_type='slider'
+        node.slider_axis=reaper.JS_Window_GetClassName(node.slider)=='REAPERvfader' and 'vertical' or 'horizontal'
        end
       end
       if pitch and reaper.JS_Window_GetParent(hwnd)==state.pitch_current_panel then node.ready,node.shifter_control=state.pitch_ready,true end
@@ -572,6 +579,21 @@ function ui.fx_regions(area,fx,param,now)
    end
   end
  end end
+ -- A numeric field beside an automation-mapped fader uses the same parameter
+ -- for relative adjustments, including displays such as -inf dB.
+ if editor then
+  for _,node in ipairs(editor.nodes) do
+   if node.control_type=='slider' and node.param~=nil and node.kind=='param' then
+    node.slider=node.hwnd
+    node.value_editor=slider_editor({hwnd=node.hwnd},all)
+   end
+   if node.slider then
+    for _,other in ipairs(editor.nodes) do
+     if other.hwnd==node.slider and other.kind=='param' then node.param=other.param end
+    end
+   end
+  end
+ end
  -- Host automation is the portable fallback for opaque/custom-painted editors.
  -- These are list entries, never pretend screen coordinates for native knobs.
  local parameter_region
@@ -645,38 +667,108 @@ local function show_band(state)
  ui.fx_band=nil
  ui.fx_outline(state.track,state.fx,state.band*3,reaper.time_precise())
 end
-function ui.fx_native_absolute(window,value)
- local node,state=ui.fx_current(window)
- if not node or node.ready==false or not node.slider or not state or
-    reaper.TrackFX_GetFXGUID(state.track,state.fx)~=state.guid then return false end
- local hwnd=node.slider
- if not reaper.JS_Window_IsWindow(hwnd) or not reaper.JS_Window_IsVisible(hwnd) or
-    reaper.JS_Window_GetClassName(hwnd)~='REAPERhfader' or
-    (reaper.JS_Window_GetLong(hwnd,'STYLE') & 0x08000000)~=0 then return false end
- local parent=hwnd
- while parent and parent~=state.hwnd do parent=reaper.JS_Window_GetParent(parent) end
- if not parent then return false end
- local ok,l,t,r,b=reaper.JS_Window_GetClientRect(hwnd)
- if not ok or r-l<=20 or b-t<=2 then return false end
- -- Address the native track, letting the widget apply its own range/scaling.
- -- SWELL does not expose GETRANGEMIN/MAX; guessing 0..1000 would corrupt
- -- controls with another range. These synchronous messages never warp the
- -- pointer, and release capture/restore keyboard focus before returning.
- local radius=math.min(math.floor((b-t)/2)-1,10)
- local x=math.floor(radius+math.max(0,math.min(1,value))*(r-l-2*radius))
- local y=math.floor((b-t)/2)
- local focus=reaper.JS_Window_GetFocus()
- reaper.JS_WindowMessage_Send(hwnd,'WM_LBUTTONDOWN',1,0,x,y)
- reaper.JS_WindowMessage_Send(hwnd,'WM_MOUSEMOVE',1,0,x,y)
- reaper.JS_WindowMessage_Send(hwnd,'WM_LBUTTONUP',0,0,x,y)
- if focus and reaper.JS_Window_IsWindow(focus) then reaper.JS_Window_SetFocus(focus) end
+-- Keep fine and normal adjustment on the same native numeric editing path.
+-- Switching from field edits to host setters can leave the plugin ignoring
+-- host updates. Use the native field's validation; do not guess a
+-- trackbar range (SWELL has no range getter) or synthesize a pointer gesture.
+local function formatted_number(text)
+ local number,suffix=text:match('^%s*([+-]?%d*%.?%d+[eE][+-]?%d+)(.*)$')
+ if not number then number,suffix=text:match('^%s*([+-]?%d*%.?%d+)(.*)$') end
+ return tonumber(number),suffix
+end
+local function step_native_field(node,state,delta,fine,speed)
+ local hwnd=node.editor or node.value_editor or (node.kind=='edit' and node.hwnd)
+ if not hwnd or not node.slider or not reaper.JS_Window_IsWindow(hwnd) or
+    reaper.JS_Window_GetClassName(hwnd)~='Edit' or
+    not reaper.JS_Window_IsWindow(node.slider) or not reaper.JS_Window_IsVisible(hwnd) or
+    not reaper.JS_Window_IsVisible(node.slider) or
+    (reaper.JS_Window_GetLong(hwnd,'STYLE') & 0x08000800)~=0 or
+    (reaper.JS_Window_GetLong(node.slider,'STYLE') & 0x08000000)~=0 then return end
+ for _,handle in ipairs({hwnd,node.slider}) do
+  local parent=handle
+  while parent and parent~=state.hwnd do parent=reaper.JS_Window_GetParent(parent) end
+  if not parent then return end
+ end
+ local text=reaper.JS_Window_GetTitle(hwnd)
+ local value=tonumber(text)
+ if not value or value~=value or math.abs(value)==math.huge then return end
+ local fraction=text:match('%.(%d+)') or ''
+ local exponent=tonumber(text:match('[eE]([+-]?%d+)')) or 0
+ local quantum=10^(exponent-#fraction)
+ if #fraction>15 or quantum<=0 or quantum==math.huge then return end
+ local step=fine and quantum or math.max(quantum,math.abs(value)*.02)
+ step=math.max(1,math.floor(step/quantum+.5))*quantum
+ if not fine then step=step*2 end
+ step=math.max(1,math.floor(step*speed/quantum+.5))*quantum
+ local result=value+delta*step
+ if not fine and node.param~=nil and reaper.TrackFX_FormatParamValueNormalized then
+  -- Preserve normal range-based speed where the host display and native field
+  -- use matching units. Otherwise retain the native numeric step above.
+  local current=reaper.TrackFX_GetParamNormalized(state.track,state.fx,node.param)
+  local target=math.max(0,math.min(1,current+delta*.01*speed))
+  local ok,before=reaper.TrackFX_FormatParamValueNormalized(state.track,state.fx,node.param,current)
+  local valid,after=reaper.TrackFX_FormatParamValueNormalized(state.track,state.fx,node.param,target)
+  if ok and valid then
+   local original,units=formatted_number(before)
+   local next_value,next_units=formatted_number(after)
+   if original and next_value and units==next_units and math.abs(original-value)<=quantum*.51 then
+    result=next_value
+   end
+  end
+ end
+ if result~=result or math.abs(result)==math.huge then return end
+ -- Preserve the field's precision: changing "10.0" to "11" must not turn
+ -- subsequent 0.1-unit nudges into 1-unit jumps.
+ local format='%.'..#fraction..(text:find('[eE]') and 'e' or 'f')
+ reaper.JS_Window_SetTitle(hwnd,string.format(format,result))
+ reaper.JS_WindowMessage_Send(reaper.JS_Window_GetParent(hwnd),'WM_COMMAND',reaper.JS_Window_GetLong(hwnd,'ID'),0x300,reaper.JS_Window_AddressFromHandle(hwnd),0)
  return true
 end
-function ui.fx_step(window,direction)
+local function reported_parameter_step(node,state)
+ if not reaper.TrackFX_GetParameterStepSizes then return end
+ local ok,step,small,large,toggle=reaper.TrackFX_GetParameterStepSizes(state.track,state.fx,node.param)
+ if not ok then return end
+ local value,low,high=reaper.TrackFX_GetParam(state.track,state.fx,node.param)
+ if not value or not low or not high or high<=low then return end
+ local increment
+ for _,candidate in ipairs({step or 0,small or 0,large or 0}) do
+  if candidate>0 and candidate<math.huge and candidate<=high-low then
+   increment=increment and math.min(increment,candidate) or candidate
+  end
+ end
+ if toggle then increment=high-low end
+ if not increment then return end
+ return increment,value,low,high
+end
+local function step_reported_parameter(node,state,delta)
+ local increment,value,low,high=reported_parameter_step(node,state)
+ if not increment then return end
+ -- Step sizes are in raw parameter units (e.g. a JS 0..100 slider with
+ -- step=1), not percentages of the normalized range.
+ return reaper.TrackFX_SetParam(state.track,state.fx,node.param,math.max(low,math.min(high,value+delta*increment)))
+end
+function ui.fx_step(window,direction,fine,speed)
  local node,state=ui.fx_current(window)
  if not node or node.ready==false then return end
  local delta=(direction=='left' or direction=='up') and -1 or 1
- if node.kind=='band' then
+ if node.control_type=='slider' then
+  speed=fine and 1 or math.max(1,math.min(4,tonumber(speed) or 1))
+  if node.slider_axis=='vertical' then
+   if direction~='up' and direction~='down' then return end
+   delta=direction=='up' and 1 or -1
+  elseif direction~='left' and direction~='right' then return end
+  if reaper.TrackFX_GetFXGUID(state.track,state.fx)~=state.guid then return end
+  if fine then
+   if node.param~=nil and step_reported_parameter(node,state,delta) then return end
+   if not step_native_field(node,state,delta,true,1) then
+    return nil,'No minimum step or numeric precision exposed for '..node.label
+   end
+  elseif not (node.param~=nil and reported_parameter_step(node,state)) and step_native_field(node,state,delta,false,speed) then
+  elseif node.param~=nil then
+   local value=reaper.TrackFX_GetParamNormalized(state.track,state.fx,node.param)
+   reaper.TrackFX_SetParamNormalized(state.track,state.fx,node.param,math.max(0,math.min(1,value+delta*.01*speed)))
+  end
+ elseif node.kind=='band' then
   state.band=math.max(0,math.min(state.bands-1,state.band+delta));show_band(state)
  elseif node.kind=='shifter' then
   state.shifter=math.max(0,math.min(state.shifters-1,state.shifter+delta));invalidate_shifter(state)
@@ -731,7 +823,7 @@ function ui.fx_activate(window)
  if not node then return end
  if node.ready==false then return 'Selecting shifter '..(state.shifter+1) end
  if state.editing then state.editing=nil;return end
- if node.kind=='param' then return 'Turn the right stick to adjust '..node.label
+ if node.kind=='param' then return (node.control_type=='slider' and ('Hold the right stick '..(node.slider_axis=='vertical' and 'up/down' or 'left/right')..' to adjust ') or 'Turn the right stick to adjust ')..node.label
  elseif node.kind=='effects' then
   if reaper.TrackFX_GetCount(state.track)==0 then return 'The FX chain is empty; choose Add FX' end
   for _,key in ipairs({'plugin','parameters','header'}) do

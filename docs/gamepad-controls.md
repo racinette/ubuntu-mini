@@ -141,7 +141,7 @@ does not switch workspaces or take focus. Later manual window moves remain yours
 | D-pad left/right | Previous/next item; hold R2 for cursor by grid | Previous/next visible track control | Move spatially / choose within a selector |
 | D-pad up/down | Previous/next track | Previous/next track | Move spatially / choose within a selector |
 | Left stick | Scroll viewport | Move outline spatially within track | Move between native controls in the region |
-| Right stick | Timeline zoom / track height | Angle sets outlined knob; directions set switches | Angle sets selected fader/knob; directions adjust selectors/switches |
+| Right stick | Timeline zoom / track height | Angle sets outlined knob; directions set switches | Along-axis motion adjusts sliders; angle sets knobs; directions adjust selectors/switches |
 | X | Split selected items at cursor | Mute/unmute track | Bypass/enable selected FX |
 | R3 | Toggle loop | Solo/unsolo track | Show/hide FX window |
 | L3 | Toggle action menu | Same | Same |
@@ -183,7 +183,18 @@ band, combo or plugin-list selector. A on a native value field opens
 a value editor; use the keyboard to enter text and A/B to accept/cancel. Inside a selector, the stick/D-pad change
 the choice; **B** restores its previous choice. L2 or window switching cancels a
 pending selector. Right-stick directions also step selectors or set switches;
-its angle adjusts numeric faders/knobs. Non-numeric controls disable the previous
+left/right adjusts horizontal sliders, while up/down adjusts vertical sliders
+(up increases, down decreases). Knobs use angle control. A slider nudge starts
+slowly; holding starts acceleration after **0.2 seconds** and reaches maximum
+speed at **1 second**. Maximum normal speed is four times the previous maximum,
+using both faster repeats and larger steps. Once engaged, hold duration controls
+speed rather than deflection distance. **R2** uses the smallest positive step reported by the plugin, or one unit
+of its adjacent numeric field’s displayed precision (for example, `1000.0`
+changes by `0.1`). Fine steps stay the same size while repeat cadence accelerates;
+they do not receive the large-step boost. If neither step metadata nor a usable
+numeric field is exposed, the panel explains that fine adjustment is unavailable. Release, direction reversal, control changes and lost focus
+reset acceleration; centering retains the value. Perpendicular movement is
+ignored. Non-numeric controls disable the previous
 rotary target, and changing targets requires the stick to return to center.
 
 The **Effects list** region starts on the selected effect. Left stick/D-pad
@@ -201,7 +212,7 @@ metering. ReaComp includes its mapped faders, switches, detector-input combo and
 Limit output. Hidden, disabled and offscreen controls are skipped. REAPER opens
 in tabs by default; **Select+Y** restores tabbing after a manual switch to split layout.
 ReaPitch has exact bindings for all nine shifter sliders: four pitch ranges,
-three formant ranges, Volume and Pan. The right stick's angle adjusts each one.
+three formant ranges, Volume and Pan. Hold the right stick left/right to adjust each one.
 Select **Shifter**, press A, choose with left/right and press A to accept (B
 cancels). The controller reveals its chosen native shifter before allowing
 adjustments, including after tab changes outside the controller. Add/Delete
@@ -211,20 +222,22 @@ buttons, checkboxes, radio buttons, lists, combos and writable value fields.
 This includes ReaVerb's impulse-response list and Add/Remove buttons. Its list is
 separate from the host effects list even though both use the same native ID.
 Visible sliders with a nearby label matching one unambiguous plugin parameter
-use right-stick angle control; host Wet/Bypass/Delta are excluded from that match.
+use relative right-stick adjustment along their orientation; host Wet/Bypass/Delta are excluded from that match.
 For other native plugins, numbered parameter prefixes are accepted
 only when the remaining name uniquely identifies a parameter. Repeated names
 across multiple groups do not select an arbitrary instance. Sliders without a
 unique parameter match remain selectable when they have one adjacent writable
-value field: **A** edits that field. For native horizontal sliders, the right
-stick also sets a position along the slider's track, using its own range and
-scaling. This works when either the slider or its adjacent value field is
-selected, including ReaVerb's Echo Generator controls (Length, Spacing, Error,
-volumes and distribution). It sends control-local messages without moving the
-mouse pointer and restores keyboard focus afterward. Centering the stick keeps
-the value; changing targets requires returning to center before adjusting.
-Other unmatched slider classes retain the A-to-edit fallback. This also covers
-mismatches between visible labels and automation names.
+value field: **A** edits that field. The right stick adjusts horizontal or
+vertical native sliders from their current value along the matching axis,
+including when their adjacent value field is selected. Unautomated controls such as ReaVerb's Echo Generator
+use relative numeric steps through that field, retaining its decimal precision
+and the plugin's own input validation; no slider range is guessed. Larger values
+get larger normal steps; R2 uses one displayed numeric unit regardless of magnitude. This path does not send mouse events.
+Where fine steps use a native numeric field, normal adjustment uses that field too,
+so releasing R2 immediately restores normal adjustment. Host formatting preserves
+range-based normal speed when its units match; otherwise native numeric steps apply.
+Controls without usable numeric fields retain A-to-edit behavior. This also
+covers mismatches between visible labels and automation names.
 Other numeric fields remain editable with A. EQ/Comp/ReaPitch adapters retain
 their exact parameter mappings. Group boxes and read-only fields are skipped.
 
@@ -321,8 +334,9 @@ lower-left is minimum, up is midpoint, lower-right is maximum, following a
 270-degree clockwise sweep. Deflection distance does not set speed. Centering
 the stick retains the value; the bottom gap is inactive. A new knob selection
 requires returning the right stick to center before engaging it again.
-Values use 14-bit MIDI. Numeric FX controls use the same angle adjustment,
-with cyan outlines on their real native widgets. ReaEQ reveals the selected band
+Knobs use 14-bit MIDI. Native FX sliders instead use relative adjustment along their orientation, with cyan outlines on their real native widgets. Shape is determined
+from exposed native widget classes, not parameter names. Opaque plugin parameter
+lists have no widget shape metadata and retain their existing angle adjustment. ReaEQ reveals the selected band
 before a band fader becomes adjustable; Add/Remove Band cannot leave a stale
 parameter target. This keeps custom plug-in interfaces enabled.
 

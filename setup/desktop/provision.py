@@ -229,6 +229,13 @@ for directory in ('/etc/systemd/user', '/etc/xdg/systemd/user'):
 # The indicator starts its own Gammastep process; our launcher supplies the UI.
 run('systemctl', '--global', 'disable', 'gammastep-indicator.service')
 run('systemctl', '--global', 'mask', 'gammastep-indicator.service')
+# Docker owns these virtual interfaces. Letting NetworkManager assume their
+# connections makes nm-applet announce normal container cleanup as a disconnect.
+# Match Docker's default bridge names without excluding unrelated named bridges.
+write('/etc/NetworkManager/conf.d/90-minion-docker.conf', '''[device-minion-docker]
+match-device=interface-name:docker0;interface-name:br-????????????;interface-name:veth*
+managed=0
+''')
 # Merge the renderer through Netplan; retain existing interface matches/DHCP.
 write('/etc/netplan/90-minion-renderer.yaml', 'network:\n  version: 2\n  renderer: NetworkManager\n', 0o600)
 run('netplan', 'generate')
@@ -246,6 +253,7 @@ if args.defer_activation:
     raise SystemExit(0)
 # Start/apply only after package/config writes. Existing SSH remains a fallback.
 run('systemctl', 'start', 'NetworkManager.service', 'bluetooth.service')
+run('nmcli', 'general', 'reload', 'conf')
 run('systemctl', 'restart' if battery_changed else 'start', 'upower.service')
 run('netplan', 'apply')
 run('nm-online', '--quiet', '--wait-for-startup', '--timeout=60')
